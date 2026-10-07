@@ -1,0 +1,157 @@
+{
+	"tooltips": {
+		"hideHUD": "Skrýt HUD",
+		"hideHUDTip": "Skrýt panel. Znovu ho zobrazíte z ikony v oznamovací oblasti.",
+		"closeApp": "Zavřít aplikaci",
+		"restartRecording": "Smazat tuto nahrávku a začít novou",
+		"cancelRecording": "Zastavit a smazat tuto nahrávku",
+		"pauseRecording": "Pozastavit nahrávání",
+		"resumeRecording": "Obnovit nahrávání",
+		"useVerticalTray": "Použít svislý panel",
+		"useHorizontalTray": "Použít vodorovný panel",
+		"changeSource": "Vybrat jinou obrazovku nebo okno",
+		"systemAudio": "Systémový zvuk: nahrává zvuk, který přehrává počítač",
+		"microphone": "Mikrofon: nahrává váš hlas",
+		"camera": "Kamera: nahrává vás jako samostatnou vrstvu, kterou můžete v editoru přesouvat",
+		"openStudio": "Otevřít Studio: editor vašich nahrávek",
+		"openNotes": "Otevřít poznámky: text ke čtení během nahrávání",
+		"openNotesPlaceholder": "Pište poznámky zde...",
+		"notesToolbar": {
+			"bold": "Tučně",
+			"italic": "Kurzíva",
+			"strikethrough": "Přeškrtnutí",
+			"bulletList": "Odrážkový seznam",
+			"numberedList": "Číslovaný seznam",
+			"blockquote": "Bloková citace",
+			"codeBlock": "Blok kódu",
+			"play": "Spustit automatické posouvání",
+			"pause": "Pozastavit automatické posouvání",
+			"speed": "Rychlost posouvání",
+			"decreaseSpeed": "Snížit rychlost posouvání",
+			"increaseSpeed": "Zvýšit rychlost posouvání",
+			"fontSize": "Velikost písma",
+			"decreaseFontSize": "Zmenšit písmo",
+			"increaseFontSize": "Zvětšit písmo",
+			"mirror": "Zrcadlit vodorovně",
+			"mirrorTip": "Otočí text zrcadlově, aby se dal číst v zrcadle"
+		}
+	},
+	"audio": {
+		"systemAudio": "Systémový zvuk",
+		"microphone": "Mikrofon",
+		"inputDevice": "Vstupní zařízení"
+	},
+	"webcam": {
+		"searching": "Hledání...",
+		"noneFound": "Kamera nenalezena",
+		"unavailable": "Kamera nedostupná",
+		"camera": "Kamera",
+		"cameraDevice": "Zařízení kamery",
+		"quality": "Kvalita kamery",
+		"quality1080p": "1080p",
+		"quality1440p": "1440p",
+		"quality2160p": "4K"
+	},
+	"cursor": {
+		"name": "Upravitelný kurzor",
+		"editableTip": "Upravitelný kurzor: nahrává se zvlášť, takže v editoru můžete změnit jeho styl a použít automatické přiblížení",
+		"systemTip": "Systémový kurzor: váš skutečný kurzor, zaznamenaný ve videu. Bez změny stylu a bez automatického přiblížení."
+	},
+	"sourceSelector": {
+		"loading": "Načítání zdrojů...",
+		"screens": "Obrazovky ({{count}})",
+		"windows": "Okna ({{count}})",
+		"emptyTitle": "Žádné obrazovky ani okna nenalezena",
+		"emptyDescription": "Pokud jste právě udělili oprávnění pro záznam obrazovky, znovu načtěte tento výběr. Na macOS může být nutné znovu otevřít OpenScreen.",
+		"loadFailedDescription": "OpenScreen nemohl načíst zdroje záznamu. Znovu načtěte tento výběr a zkuste to znovu.",
+		"defaultSourceName": "Obrazovka"
+	},
+	"recording": {
+		"selectSource": "Vyberte prosím zdroj pro nahrávání",
+		"systemPicker": "Systém se zeptá, co sdílet",
+		"start": "Spustit nahrávání",
+		"stop": "Zastavit a uložit nahrávku",
+		"saving": "Ukládání..."
+	},
+	"language": "Jazyk",
+	"languageWithName": "Jazyk: {{language}}",
+	"systemLanguagePrompt": {
+		"title": "Použít jazyk systému?",
+		"description": "Detekovali jsme {{language}} jako jazyk vašeho systému. Chcete přepnout OpenScreen na {{language}}?",
+		"switch": "Přepnout na {{language}}",
+		"keepDefault": "Ponechat aktuální jazyk"
+	},
+	"softwareEncoderFallback": {
+		"title": "Přepnuto na softwarové kódování",
+		"description": "Výchozí GPU enkodér se nepodařilo spustit, takže OpenScreen přepnul na softwarové kódování H.264. Nahrávání by mělo pokračovat normálně, ale využití CPU může být vyšší.",
+		"dismiss": "Rozumím",
+		"dontShowAgain": "Již nezobrazovat"
+	},
+	"deviceSettings": {
+		"title": "Nastavení zařízení",
+		"close": "Zavřít",
+		"micLevel": "Úroveň vstupu",
+		"micHint": "Mluvte pro kontrolu mikrofonu",
+		"noMicrophones": "Mikrofon nenalezen",
+		"preview": "Náhled",
+		"previewUnavailable": "Náhled nedostupný",
+		"about": "O aplikaci",
+		"version": "Verze {{version}}",
+		"checkingForUpdates": "Kontrola…"
+	},
+	"permissions": {
+		"title": "OpenScreen potřebuje několik oprávnění",
+		"subtitle": "macOS vás o každé požádá jen jednou. Kdykoli je můžete změnit v Nastavení systému.",
+		"level": {
+			"required": "Povinné",
+			"recommended": "Doporučené",
+			"optional": "Volitelné"
+		},
+		"rows": {
+			"screen": {
+				"name": "Obrazovka a zvuk systému",
+				"description": "K nahrávání obrazovky a zvuku z vašeho Macu."
+			},
+			"systemAudio": {
+				"name": "Zvuk systému",
+				"description": "K nahrávání zvuku z vašeho Macu. Výběr obrazovky nebo okna žádné oprávnění nepotřebuje."
+			},
+			"accessibility": {
+				"name": "Zpřístupnění",
+				"description": "Aby nahrávky zobrazovaly správný kurzor (šipka, text)."
+			},
+			"microphone": {
+				"name": "Mikrofon",
+				"description": "K nahrávání vašeho hlasu."
+			},
+			"camera": {
+				"name": "Kamera",
+				"description": "K přidání webkamery do nahrávek."
+			}
+		},
+		"status": {
+			"granted": "Povoleno",
+			"restricted": "Spravováno vaší organizací"
+		},
+		"actions": {
+			"continue": "Pokračovat",
+			"allow": "Povolit",
+			"openSettings": "Otevřít Nastavení",
+			"restart": "Restartovat OpenScreen",
+			"start": "Začít"
+		},
+		"help": {
+			"screenPrompt": "macOS vás pak požádá, abyste OpenScreen zapnuli v Nastavení systému.",
+			"screenSettings": "V Nastavení systému zapněte OpenScreen. Pokud macOS nabídne aplikaci ukončit a znovu otevřít, přijměte: toto okno se vrátí.",
+			"screenNotListed": "OpenScreen v seznamu chybí? Klikněte na + a vyberte OpenScreen ve složce Aplikace.",
+			"screenRestart": "Povoleno. OpenScreen se musí restartovat, aby oprávnění mohl použít.",
+			"screenRecurring": "Při prvním nahrávání se vás macOS zeptá, zda smí OpenScreen přistupovat k obrazovce přímo, bez systémového výběru. Klikněte na Povolit. macOS se čas od času zeptá znovu, to je v pořádku.",
+			"systemAudioPrompt": "macOS se vás zeptá, zda smí OpenScreen nahrávat zvuk z vašeho Macu.",
+			"systemAudioRequested": "Pokud jste odmítli, zapněte OpenScreen v části „Jen záznam systémového zvuku“ v Nastavení systému."
+		},
+		"footer": {
+			"screenRequired": "K nahrávání je potřeba nahrávání obrazovky.",
+			"ready": "Vše je připraveno."
+		}
+	}
+}

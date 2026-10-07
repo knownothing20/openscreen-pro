@@ -1,0 +1,762 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type { WebFrameMain } from "electron";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CURSOR_THEMES, DEFAULT_CURSOR_SPRITES } from "../../../src/lib/cursor/cursorThemes";
+import type { CompositorViewAddon, GifExportStats } from "../../native/compositor-view/addon";
+import {
+	buildCandidatePaths,
+	CompositorViewService,
+	ffmpegSharedBinCandidates,
+	resolveSceneAssetPaths,
+} from "./compositorViewService";
+
+describe("native GIF cancellation capability", () => {
+	it("passes one opaque control to native start and cancel before settlement", async () => {
+		const control = {};
+		let finish!: (stats: GifExportStats) => void;
+		const exportGif = vi.fn(
+			() =>
+				new Promise<GifExportStats>((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const cancelGifExport = vi.fn(() => true);
+		const service = new CompositorViewService({
+			addon: {
+				createGifExportControl: () => control,
+				cancelGifExport,
+				exportGif,
+			} as unknown as CompositorViewAddon,
+		});
+		const progress = vi.fn();
+		const job = service.startGifExport([], "/tmp/test.gif", undefined, { fps: 15 }, progress);
+		expect(exportGif).toHaveBeenCalledWith(
+			[],
+			"/tmp/test.gif",
+			undefined,
+			{ fps: 15 },
+			progress,
+			control,
+		);
+		expect(job.cancel()).toBe(true);
+		expect(cancelGifExport).toHaveBeenCalledWith(control);
+		const stats = { frames: 1, wallS: 1, fps: 1, videoDurationS: 1, fileBytes: 100 };
+		finish(stats);
+		await expect(job.result).resolves.toEqual(stats);
+	});
+
+	it("rejects a stale addon before starting an export that cannot be cancelled", () => {
+		const exportGif = vi.fn();
+		const service = new CompositorViewService({
+			addon: { exportGif } as unknown as CompositorViewAddon,
+		});
+		expect(() => service.startGifExport([], "/tmp/test.gif")).toThrow(
+			"cancellation is unavailable",
+		);
+		expect(exportGif).not.toHaveBeenCalled();
+	});
+});
+
+describe("CompositorViewService frames handed over as shared GPU textures", () => {
+	const target = { frameTreeNodeId: 1 } as unknown as WebFrameMain;
+	const sharedFrame = {
+		gen: 3,
+		slot: 1,
+		handle: Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]),
+		width: 4,
+		height: 2,
+		footage: null,
+		footageProjective: false,
+	};
+
+	function setup(options: { addon?: Partial<CompositorViewAddon>; gpuCompositing?: boolean } = {}) {
+		const addon = {
+			createView: vi.fn(() => 7),
+			setSharedFrames: vi.fn(() => true),
+			readSharedFrame: vi.fn(() => sharedFrame),
+			readFrame: vi.fn(() => null),
+			releaseSharedFrame: vi.fn(),
+			destroyView: vi.fn(),
+			...options.addon,
+		};
+		const imported = { release: vi.fn() };
+		let allReferencesReleased: (() => void) | undefined;
+		const sharedTexture = {
+			importSharedTexture: vi.fn((importOptions: Electron.ImportSharedTextureOptions) => {
+				allReferencesReleased = importOptions.allReferencesReleased as () => void;
+				return imported as unknown as Electron.SharedTextureImported;
+			}),
+			sendSharedTexture: vi.fn(async () => undefined),
+		};
+		const service = new CompositorViewService({
+			addon: addon as unknown as CompositorViewAddon,
+			sharedTexture,
+			gpuCompositing: () => options.gpuCompositing ?? true,
+		});
+		const id = service.createView({ x: 0, y: 0, width: 4, height: 2 });
+		return {
+			addon,
+			id,
+			imported,
+			service,
+			sharedTexture,
+			releaseEverywhere: () => allReferencesReleased?.(),
+		};
+	}
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
+	it("sends the texture to the frame that asked, and answers with its receipt", async () => {
+		const { addon, id, imported, service, sharedTexture } = setup();
+		expect(addon.setSharedFrames).toHaveBeenCalledWith(id, true);
+
+		const receipt = await service.readFrame(id, 2, target);
+
+		expect(addon.readSharedFrame).toHaveBeenCalledWith(id, 2);
+		expect(sharedTexture.importSharedTexture).toHaveBeenCalledWith(
+			expect.objectContaining({
+				textureInfo: {
+					pixelFormat: "rgba",
+					codedSize: { width: 4, height: 2 },
+					handle: { ntHandle: sharedFrame.handle },
+				},
+			}),
+		);
+		const meta = {
+			viewId: id,
+			gen: 3,
+			width: 4,
+			height: 2,
+			footage: null,
+			footageProjective: false,
+		};
+		expect(sharedTexture.sendSharedTexture).toHaveBeenCalledWith(
+			{ frame: target, importedSharedTexture: imported },
+			meta,
+		);
+		expect(receipt).toEqual({ ...meta, shared: true });
+		// This process's reference goes at once: the renderer holds its own.
+		expect(imported.release).toHaveBeenCalled();
+		expect(addon.releaseSharedFrame).not.toHaveBeenCalled();
+	});
+
+	it("hands the slot back once Chromium has let go of the texture everywhere", async () => {
+		const { addon, id, releaseEverywhere, service } = setup();
+		await service.readFrame(id, 0, target);
+
+		releaseEverywhere();
+
+		expect(addon.releaseSharedFrame).toHaveBeenCalledWith(id, 1, 3);
+	});
+
+	it("goes back to read-back when a delivery fails", async () => {
+		const { addon, id, service, sharedTexture } = setup();
+		sharedTexture.sendSharedTexture.mockRejectedValueOnce(new Error("timed out after 1000ms"));
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			expect(await service.readFrame(id, 0, target)).toBeNull();
+		} finally {
+			warn.mockRestore();
+		}
+		expect(addon.setSharedFrames).toHaveBeenLastCalledWith(id, false);
+
+		vi.mocked(addon.readSharedFrame).mockClear();
+		await service.readFrame(id, 3, target);
+		expect(addon.readSharedFrame).not.toHaveBeenCalled();
+		expect(addon.readFrame).toHaveBeenCalledWith(id, 3);
+	});
+
+	it("frees the slot itself when the texture never got imported", async () => {
+		const { addon, id, service, sharedTexture } = setup();
+		sharedTexture.importSharedTexture.mockImplementationOnce(() => {
+			throw new TypeError("Invalid ntHandle value");
+		});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		try {
+			await service.readFrame(id, 0, target);
+		} finally {
+			warn.mockRestore();
+		}
+		expect(addon.releaseSharedFrame).toHaveBeenCalledWith(id, 1, 3);
+	});
+
+	it("reads pixels for a view whose render thread went back to read-back on its own", async () => {
+		const packet = { gen: 4, width: 4, height: 2, data: Buffer.alloc(32) };
+		const { id, service, sharedTexture } = setup({
+			addon: { readSharedFrame: vi.fn(() => null), readFrame: vi.fn(() => packet) },
+		});
+
+		expect(await service.readFrame(id, 3, target)).toBe(packet);
+		expect(sharedTexture.sendSharedTexture).not.toHaveBeenCalled();
+	});
+
+	it("keeps a view on read-back when Chromium does not composite on the GPU", async () => {
+		const { addon, id, service } = setup({ gpuCompositing: false });
+		expect(addon.setSharedFrames).not.toHaveBeenCalled();
+
+		await service.readFrame(id, 0, target);
+		expect(addon.readSharedFrame).not.toHaveBeenCalled();
+		expect(addon.readFrame).toHaveBeenCalledWith(id, 0);
+	});
+
+	it("keeps a view on read-back when OPENSCREEN_PREVIEW_READBACK=1", () => {
+		vi.stubEnv("OPENSCREEN_PREVIEW_READBACK", "1");
+		const { addon } = setup();
+		expect(addon.setSharedFrames).not.toHaveBeenCalled();
+	});
+
+	it("keeps a view on read-back when the addon cannot share (not Windows, software backend)", async () => {
+		const { id, service, sharedTexture } = setup({
+			addon: { setSharedFrames: vi.fn(() => false) },
+		});
+
+		await service.readFrame(id, 0, target);
+		expect(sharedTexture.importSharedTexture).not.toHaveBeenCalled();
+	});
+});
+
+/** A source checkout's `crates/.cargo/config.toml`, with `FFMPEG_DIR` written as `body`. */
+function writeCargoConfig(root: string, body: string): void {
+	const cargoDir = path.join(root, "crates", ".cargo");
+	fs.mkdirSync(cargoDir, { recursive: true });
+	fs.writeFileSync(
+		path.join(cargoDir, "config.toml"),
+		`# pin comment\n[env]\n${body}\nLIBCLANG_PATH = "C:\\\\Program Files\\\\LLVM\\\\bin"\n`,
+		"utf8",
+	);
+}
+
+describe("ffmpegSharedBinCandidates", () => {
+	let tmpRoot: string;
+
+	beforeEach(() => {
+		tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openscreen-ffmpeg-pin-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpRoot, { recursive: true, force: true });
+	});
+
+	it("reads the dev-vendored dir off the cargo pin instead of a second hardcoded copy of the name", () => {
+		// The pin has moved before (floating `master-latest` → fixed `n8.1.2`) and
+		// left this list probing a directory that no longer existed. Deriving it
+		// means the next repin cannot rot the loader.
+		writeCargoConfig(
+			tmpRoot,
+			`FFMPEG_DIR = { value = "thirdparty/ffmpeg-n9.9.9-win64-lgpl-shared", relative = true }`,
+		);
+		const candidates = ffmpegSharedBinCandidates(tmpRoot).map((p) => p.replace(/\\/g, "/"));
+
+		expect(candidates[0]).toBe(
+			`${tmpRoot.replace(/\\/g, "/")}/crates/thirdparty/ffmpeg-n9.9.9-win64-lgpl-shared/bin`,
+		);
+		expect(candidates[1]).toMatch(/electron\/native\/bin\/(win32|darwin|linux)-(x64|arm64)$/);
+	});
+
+	it("accepts the plain-string spelling of the pin as well as the table one", () => {
+		writeCargoConfig(tmpRoot, `FFMPEG_DIR = "thirdparty/ffmpeg-plain"`);
+		const candidates = ffmpegSharedBinCandidates(tmpRoot).map((p) => p.replace(/\\/g, "/"));
+
+		expect(candidates[0]).toBe(`${tmpRoot.replace(/\\/g, "/")}/crates/thirdparty/ffmpeg-plain/bin`);
+	});
+
+	it("keeps an absolute pin absolute rather than nesting it under the crate dir", () => {
+		// `path.isAbsolute` is platform-dependent — "C:/vendor" is absolute on
+		// Windows and relative on POSIX — so spell the pin through path.resolve
+		// and assert the behaviour rather than one platform's drive letter.
+		const absolutePin = path.resolve("/vendor/ffmpeg").replace(/\\/g, "/");
+		writeCargoConfig(tmpRoot, `FFMPEG_DIR = "${absolutePin}"`);
+		const candidates = ffmpegSharedBinCandidates(tmpRoot).map((p) => p.replace(/\\/g, "/"));
+
+		expect(candidates[0]).toBe(`${absolutePin}/bin`);
+		expect(candidates[0]).not.toContain("crates");
+	});
+
+	it("starts at the arch-tagged native bin dir when there is no cargo pin to read", () => {
+		// Packaged builds ship no `crates/` at all — the dev candidate must drop
+		// out silently rather than contribute a path that can never exist.
+		const candidates = ffmpegSharedBinCandidates(tmpRoot).map((p) => p.replace(/\\/g, "/"));
+
+		expect(candidates[0]).toMatch(/electron\/native\/bin\/(win32|darwin|linux)-(x64|arm64)$/);
+		expect(candidates.some((c) => c.includes("crates"))).toBe(false);
+	});
+
+	it("ignores a cargo config that pins no FFMPEG_DIR", () => {
+		writeCargoConfig(tmpRoot, `SOME_OTHER_VAR = "thirdparty/nope"`);
+		const candidates = ffmpegSharedBinCandidates(tmpRoot).map((p) => p.replace(/\\/g, "/"));
+
+		expect(candidates.some((c) => c.includes("crates"))).toBe(false);
+	});
+
+	it("also probes process.resourcesPath, since electron/native/bin ships only via extraResources in packaged builds", () => {
+		writeCargoConfig(tmpRoot, `FFMPEG_DIR = { value = "thirdparty/ffmpeg-x", relative = true }`);
+		const original = process.resourcesPath;
+		Object.defineProperty(process, "resourcesPath", {
+			value: "C:/fake/resources",
+			configurable: true,
+		});
+		try {
+			const candidates = ffmpegSharedBinCandidates(tmpRoot).map((p) => p.replace(/\\/g, "/"));
+			expect(candidates).toContain(
+				`C:/fake/resources/electron/native/bin/${candidates[1]!.split("/").at(-1)}`,
+			);
+		} finally {
+			Object.defineProperty(process, "resourcesPath", { value: original, configurable: true });
+		}
+	});
+});
+
+describe("buildCandidatePaths", () => {
+	let tmpRoot: string;
+
+	beforeEach(() => {
+		tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openscreen-addon-path-test-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpRoot, { recursive: true, force: true });
+	});
+
+	const norm = (p: string) => p.replace(/\\/g, "/");
+
+	it("finds the addon from dist-electron, which is what app.getAppPath() returns unpackaged", () => {
+		// The regression this exists for: `electron dist-electron/main.js` — the entry
+		// `npm run dev` uses — makes app.getAppPath() the dist-electron DIRECTORY, not
+		// the checkout root. Every candidate was built by joining "electron/native/..."
+		// onto it, so none of them existed and the editor ran with a no-op compositor
+		// on a machine that had a perfectly good addon one level up.
+		fs.mkdirSync(path.join(tmpRoot, "electron", "native", "bin"), { recursive: true });
+		const appRoot = path.join(tmpRoot, "dist-electron");
+		fs.mkdirSync(appRoot, { recursive: true });
+
+		const candidates = buildCandidatePaths(appRoot, false, null).map(norm);
+
+		expect(
+			candidates.some((c) => c.startsWith(norm(tmpRoot)) && !c.includes("dist-electron")),
+		).toBe(true);
+	});
+
+	it("stops walking up when no ancestor holds electron/native", () => {
+		const appRoot = path.join(tmpRoot, "nothing", "here");
+		fs.mkdirSync(appRoot, { recursive: true });
+
+		const candidates = buildCandidatePaths(appRoot, false, null).map(norm);
+
+		expect(candidates.every((c) => c.startsWith(norm(appRoot)) || c.includes("resources"))).toBe(
+			true,
+		);
+	});
+
+	it("also probes process.resourcesPath, where extraResources actually puts the addon", () => {
+		// electron-builder ships electron/native/bin/<tag>/** through extraResources,
+		// so in a packaged build the addon is at <resources>/electron/native/bin/<tag>
+		// and NEVER inside app.asar — the .asar → .asar.unpacked rewrite cannot reach a
+		// file that was never in the archive.
+		const original = process.resourcesPath;
+		Object.defineProperty(process, "resourcesPath", {
+			value: "/fake/resources",
+			configurable: true,
+		});
+		try {
+			const candidates = buildCandidatePaths("/fake/resources/app.asar", true, null).map(norm);
+			expect(
+				candidates.some(
+					(c) => c.startsWith("/fake/resources/electron/native/bin/") && c.endsWith(".node"),
+				),
+			).toBe(true);
+		} finally {
+			Object.defineProperty(process, "resourcesPath", { value: original, configurable: true });
+		}
+	});
+
+	it("keeps the env override first", () => {
+		const candidates = buildCandidatePaths(tmpRoot, false, "/explicit/compositor_view.node");
+		expect(norm(candidates[0]!)).toBe("/explicit/compositor_view.node");
+	});
+});
+
+describe("CompositorViewService ffmpeg PATH prepend", () => {
+	let tmpRoot: string;
+	let originalPath: string | undefined;
+	let originalPlatform: PropertyDescriptor | undefined;
+
+	beforeEach(() => {
+		tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openscreen-compositor-test-"));
+		originalPath = process.env.PATH;
+		originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+		Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmpRoot, { recursive: true, force: true });
+		process.env.PATH = originalPath;
+		if (originalPlatform) {
+			Object.defineProperty(process, "platform", originalPlatform);
+		}
+	});
+
+	/** Lay down a source checkout: the cargo pin plus the tree it points at. */
+	function vendorPinnedFfmpeg(root: string): string {
+		writeCargoConfig(
+			root,
+			`FFMPEG_DIR = { value = "thirdparty/ffmpeg-n8.1.2-win64-lgpl-shared", relative = true }`,
+		);
+		const dir = path.join(root, "crates", "thirdparty", "ffmpeg-n8.1.2-win64-lgpl-shared", "bin");
+		fs.mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+
+	it("prepends the ffmpeg shared-DLL dir to PATH when it exists, even though the addon itself is absent", () => {
+		const ffmpegDir = vendorPinnedFfmpeg(tmpRoot);
+		process.env.PATH = "C:\\Windows\\System32";
+
+		const service = new CompositorViewService({ appRoot: tmpRoot, isPackaged: false });
+		expect(service.hasAddon()).toBe(false); // no compositor_view.node under tmpRoot
+		expect(process.env.PATH?.split(path.delimiter)).toContain(ffmpegDir);
+	});
+
+	it("skips a pinned dir the checkout never vendored, instead of putting a dead path on PATH", () => {
+		// The exact rot this derivation removes: a pin naming a tree that isn't
+		// on disk must contribute nothing, not a candidate that can never resolve.
+		writeCargoConfig(tmpRoot, `FFMPEG_DIR = "thirdparty/ffmpeg-not-vendored"`);
+		process.env.PATH = "C:\\Windows\\System32";
+		const before = process.env.PATH;
+
+		new CompositorViewService({ appRoot: tmpRoot, isPackaged: false }).hasAddon();
+
+		expect(process.env.PATH).toBe(before);
+	});
+
+	it("leaves PATH untouched when no ffmpeg shared-DLL dir exists", () => {
+		process.env.PATH = "C:\\Windows\\System32";
+		const before = process.env.PATH;
+
+		const service = new CompositorViewService({ appRoot: tmpRoot, isPackaged: false });
+		service.hasAddon();
+
+		expect(process.env.PATH).toBe(before);
+	});
+
+	it("does not duplicate the entry when PATH already contains it", () => {
+		const ffmpegDir = vendorPinnedFfmpeg(tmpRoot);
+		process.env.PATH = "C:\\Windows\\System32";
+
+		// simulates a second view/service instance loading after PATH was
+		// already primed by the first — same appRoot, fresh instance.
+		new CompositorViewService({ appRoot: tmpRoot, isPackaged: false }).hasAddon();
+		new CompositorViewService({ appRoot: tmpRoot, isPackaged: false }).hasAddon();
+
+		const occurrences = process.env.PATH?.split(path.delimiter).filter((p) => p === ffmpegDir);
+		expect(occurrences?.length).toBe(1);
+	});
+});
+
+describe("CompositorViewService text fonts", () => {
+	// The compositor reads the font directory off OPENSCREEN_FONTS_DIR when it builds its text
+	// rasterizer. Unset, it draws every family in a system fallback, which is the bug this pins.
+	let tmpRoot: string;
+	let resources: string;
+	let originalResourcesPath: PropertyDescriptor | undefined;
+	let originalVitePublic: string | undefined;
+	let originalFontsDir: string | undefined;
+
+	beforeEach(() => {
+		tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openscreen-fonts-root-"));
+		resources = fs.mkdtempSync(path.join(os.tmpdir(), "openscreen-fonts-res-"));
+		originalResourcesPath = Object.getOwnPropertyDescriptor(process, "resourcesPath");
+		Object.defineProperty(process, "resourcesPath", { value: resources, configurable: true });
+		originalVitePublic = process.env.VITE_PUBLIC;
+		// Packaged layout: VITE_PUBLIC points into the asar, which the addon cannot read.
+		process.env.VITE_PUBLIC = path.join(resources, "app.asar", "dist");
+		originalFontsDir = process.env.OPENSCREEN_FONTS_DIR;
+		Reflect.deleteProperty(process.env, "OPENSCREEN_FONTS_DIR");
+	});
+
+	afterEach(() => {
+		if (originalResourcesPath) {
+			Object.defineProperty(process, "resourcesPath", originalResourcesPath);
+		} else {
+			// Absent before the test (plain Node): leaving the temp dir set would point later
+			// tests at a directory this hook is about to delete.
+			Reflect.deleteProperty(process, "resourcesPath");
+		}
+		if (originalVitePublic === undefined) {
+			Reflect.deleteProperty(process.env, "VITE_PUBLIC");
+		} else {
+			process.env.VITE_PUBLIC = originalVitePublic;
+		}
+		if (originalFontsDir === undefined) {
+			Reflect.deleteProperty(process.env, "OPENSCREEN_FONTS_DIR");
+		} else {
+			process.env.OPENSCREEN_FONTS_DIR = originalFontsDir;
+		}
+		fs.rmSync(tmpRoot, { recursive: true, force: true });
+		fs.rmSync(resources, { recursive: true, force: true });
+	});
+
+	it("points the compositor at the extraResources copy before the addon loads", () => {
+		fs.mkdirSync(path.join(resources, "fonts"));
+
+		new CompositorViewService({ appRoot: tmpRoot, isPackaged: true }).hasAddon();
+
+		expect(process.env.OPENSCREEN_FONTS_DIR).toBe(path.join(resources, "fonts"));
+	});
+
+	it("leaves the variable unset when no fonts ship, so text falls back instead of failing", () => {
+		new CompositorViewService({ appRoot: tmpRoot, isPackaged: true }).hasAddon();
+
+		expect(process.env.OPENSCREEN_FONTS_DIR).toBeUndefined();
+	});
+
+	it("keeps a directory set by the environment", () => {
+		fs.mkdirSync(path.join(resources, "fonts"));
+		process.env.OPENSCREEN_FONTS_DIR = "/explicit/fonts";
+
+		new CompositorViewService({ appRoot: tmpRoot, isPackaged: true }).hasAddon();
+
+		expect(process.env.OPENSCREEN_FONTS_DIR).toBe("/explicit/fonts");
+	});
+});
+
+describe("resolveSceneAssetPaths", () => {
+	// A packaged install: `wallpapers/` and `cursors/` exist as real files under
+	// resourcesPath (extraResources), while VITE_PUBLIC points into the asar, where
+	// nothing is readable by the Rust addon — the exact layout that broke both features.
+	let resources: string;
+	let originalResourcesPath: PropertyDescriptor | undefined;
+	let originalVitePublic: string | undefined;
+	const themed = CURSOR_THEMES.find((t) => t.assets.arrow);
+
+	beforeEach(() => {
+		resources = fs.mkdtempSync(path.join(os.tmpdir(), "openscreen-scene-assets-"));
+		fs.mkdirSync(path.join(resources, "wallpapers"), { recursive: true });
+		fs.writeFileSync(path.join(resources, "wallpapers", "wallpaper1.jpg"), "jpg");
+		const modelDir = path.join(resources, "mediapipe", "selfie_segmentation");
+		fs.mkdirSync(modelDir, { recursive: true });
+		fs.writeFileSync(path.join(modelDir, "selfie_segmentation_landscape.onnx"), "onnx");
+		const assetPaths = [
+			...Object.values(themed?.assets ?? {}).map((asset) => asset.assetPath),
+			...Object.values(DEFAULT_CURSOR_SPRITES).map((s) => s.assetPath),
+		];
+		for (const assetPath of assetPaths) {
+			const file = path.join(resources, assetPath);
+			fs.mkdirSync(path.dirname(file), { recursive: true });
+			fs.writeFileSync(file, "png");
+		}
+		originalResourcesPath = Object.getOwnPropertyDescriptor(process, "resourcesPath");
+		Object.defineProperty(process, "resourcesPath", { value: resources, configurable: true });
+		originalVitePublic = process.env.VITE_PUBLIC;
+		// vite copies public/ into dist, so the names exist inside the archive — but the
+		// archive is a file, so no candidate under it can ever pass an existence check.
+		process.env.VITE_PUBLIC = path.join(resources, "app.asar", "dist");
+	});
+
+	afterEach(() => {
+		if (originalResourcesPath) {
+			Object.defineProperty(process, "resourcesPath", originalResourcesPath);
+		}
+		if (originalVitePublic === undefined) {
+			// `NodeJS.ProcessEnv.VITE_PUBLIC` is declared non-optional (electron-env.d.ts),
+			// so `delete` is rejected outright even though main.ts only assigns it at
+			// startup and it really is absent under vitest. Reflect deletes the same key.
+			Reflect.deleteProperty(process.env, "VITE_PUBLIC");
+		} else {
+			process.env.VITE_PUBLIC = originalVitePublic;
+		}
+		fs.rmSync(resources, { recursive: true, force: true });
+	});
+
+	function resolved(scene: Record<string, unknown>) {
+		return JSON.parse(resolveSceneAssetPaths(JSON.stringify(scene)));
+	}
+
+	/** What `resolveSceneAssetPaths` writes into `cursor.cursorSprites` — same shape the
+	 *  service declares for the sprite map it builds. */
+	type ResolvedSprite = {
+		path: string;
+		hotspotX: number;
+		hotspotY: number;
+		sculpt?: string;
+	};
+
+	// The renderer asks for an effect and knows nothing about the disk; this process answers
+	// where the model is. Same division as the wallpaper and the cursor sprites above.
+	it("fills in the segmentation model path when the scene asks for an effect", () => {
+		const out = resolved({ webcamEffect: { mode: "blur", blurIntensity: 0.5 } });
+		expect(out.webcamEffect.modelPath).toBe(
+			path.join(
+				resources,
+				"mediapipe",
+				"selfie_segmentation",
+				"selfie_segmentation_landscape.onnx",
+			),
+		);
+	});
+
+	it("leaves the model path alone when no effect is requested", () => {
+		expect(resolved({ webcamEffect: { mode: "none" } }).webcamEffect.modelPath).toBeUndefined();
+		expect(resolved({ background: { kind: "color", color: "#000" } }).webcamEffect).toBeUndefined();
+	});
+
+	// A model that does not resolve must turn the effect off in the compositor, not fail the
+	// scene — the same contract a missing cursor sprite has.
+	it("leaves the model path unset rather than inventing one when the file is absent", () => {
+		fs.rmSync(path.join(resources, "mediapipe"), { recursive: true, force: true });
+		const out = resolved({ webcamEffect: { mode: "transparent" } });
+		expect(out.webcamEffect.modelPath).toBeUndefined();
+		expect(out.webcamEffect.mode).toBe("transparent");
+	});
+
+	it("resolves a bundled wallpaper to the extraResources copy, not the unreadable asar path", () => {
+		const out = resolved({ background: { kind: "image", path: "/wallpapers/wallpaper1.jpg" } });
+
+		expect(out.background.path).toBe(path.join(resources, "wallpapers", "wallpaper1.jpg"));
+		expect(out.background.path).not.toContain("app.asar");
+		expect(fs.existsSync(out.background.path)).toBe(true);
+	});
+
+	// The camera's own background under the "custom" mode. It was NOT resolved, and the failure
+	// was silent and total: the compositor got "/wallpapers/wallpaper1.jpg", could not open it,
+	// and painted the bubble black — behind every one of the 18 bundled wallpapers, including
+	// the default. The screen's background had the fix; this one was simply missed.
+	it("resolves the camera's custom background, not just the screen's", () => {
+		const out = resolved({
+			webcamEffect: {
+				mode: "custom",
+				background: { kind: "image", path: "/wallpapers/wallpaper1.jpg" },
+			},
+		});
+
+		expect(out.webcamEffect.background.path).toBe(
+			path.join(resources, "wallpapers", "wallpaper1.jpg"),
+		);
+		expect(out.webcamEffect.background.path).not.toContain("app.asar");
+		expect(fs.existsSync(out.webcamEffect.background.path)).toBe(true);
+	});
+
+	// The two are independent: a scene can put a wallpaper behind the screen and a different one
+	// behind the camera, and resolving one must not depend on the other being present.
+	it("resolves both backgrounds in the same scene", () => {
+		const out = resolved({
+			background: { kind: "image", path: "/wallpapers/wallpaper1.jpg" },
+			webcamEffect: {
+				mode: "custom",
+				background: { kind: "image", path: "/wallpapers/wallpaper1.jpg" },
+			},
+		});
+
+		expect(out.background.path).toBe(path.join(resources, "wallpapers", "wallpaper1.jpg"));
+		expect(out.webcamEffect.background.path).toBe(out.background.path);
+	});
+
+	// A colour or a gradient carries no path, and the compositor renders both itself. Rewriting
+	// them would be a bug, not a no-op.
+	it("leaves a colour or gradient camera background untouched", () => {
+		const colour = resolved({
+			webcamEffect: { mode: "custom", background: { kind: "color", color: "#ff0080" } },
+		});
+		expect(colour.webcamEffect.background).toEqual({ kind: "color", color: "#ff0080" });
+
+		const gradient = resolved({
+			webcamEffect: {
+				mode: "custom",
+				background: { kind: "gradient", angleDeg: 90, stops: ["#000", "#fff"] },
+			},
+		});
+		expect(gradient.webcamEffect.background.stops).toEqual(["#000", "#fff"]);
+	});
+
+	it("resolves a cursor theme's arrow sprite to a path that exists on disk", () => {
+		if (!themed) return; // no bundled theme ships an arrow override
+		const arrow = resolved({ cursor: { theme: themed.id } }).cursor.cursorSprites.arrow;
+
+		expect(arrow.path).toBe(path.join(resources, themed.assets.arrow!.assetPath));
+		expect(fs.existsSync(arrow.path)).toBe(true);
+	});
+
+	// In 3D the compositor draws the theme's own sculpted arrow; the flat sprite still has to
+	// resolve, since the state falls back to it when the model is unknown.
+	it("names a themed arrow's sculpted 3D model next to its flat sprite", () => {
+		if (!themed) throw new Error("a bundled theme needs an arrow");
+		const arrow: ResolvedSprite = resolved({ cursor: { theme: themed.id, model3d: true } }).cursor
+			.cursorSprites.arrow;
+
+		expect(arrow.path).toBe(path.join(resources, themed.assets.arrow!.assetPath));
+		expect(arrow.sculpt).toBe(`${themed.id}/arrow`);
+		expect(fs.existsSync(arrow.path)).toBe(true);
+	});
+
+	it("fills the states a theme doesn't ship with the built-in art", () => {
+		if (!themed) return;
+		const sprites = resolved({ cursor: { theme: themed.id } }).cursor.cursorSprites;
+
+		// A pack may carry only an arrow and a pointer, but a recording walks through far
+		// more states than that — each one still has to get its own sprite.
+		expect(sprites.text.path).toBe(path.join(resources, "cursors", "default", "text.png"));
+		expect(sprites["resize-ew"].path).toContain(path.join("cursors", "default"));
+		expect(Object.keys(sprites).sort()).toEqual(Object.keys(DEFAULT_CURSOR_SPRITES).sort());
+	});
+
+	it("draws the kinds the scene names with the arrow, and only those", () => {
+		const sprites = resolved({ cursor: { theme: "default", asArrow: ["text", "resize"] } }).cursor
+			.cursorSprites;
+
+		expect(Object.keys(sprites).sort()).toEqual(Object.keys(DEFAULT_CURSOR_SPRITES).sort());
+		for (const type of ["text", "resize-ew", "resize-ns", "resize-nwse", "resize-nesw", "move"]) {
+			expect(sprites[type], type).toEqual(sprites.arrow);
+		}
+		expect(sprites.pointer.path).toBe(path.join(resources, "cursors", "default", "pointer.png"));
+		expect(sprites.arrow.path).toBe(path.join(resources, "cursors", "default", "arrow.png"));
+	});
+
+	// The scene is JSON from the renderer: a kind this build does not know changes nothing.
+	it("ignores a cursor kind it does not know", () => {
+		const sprites = resolved({ cursor: { theme: "default", asArrow: ["sparkles", 3] } }).cursor
+			.cursorSprites;
+
+		expect(sprites.text.path).toBe(path.join(resources, "cursors", "default", "text.png"));
+	});
+
+	it("carries each sprite's hotspot as a fraction of its own image", () => {
+		const sprites = resolved({ cursor: { theme: "default" } }).cursor.cursorSprites;
+
+		// The whole point of the fraction: it survives the size slider. A hotspot in source
+		// pixels would have to be rescaled at draw time, and drifted when it wasn't.
+		for (const [type, sprite] of Object.entries<ResolvedSprite>(sprites)) {
+			expect(sprite.hotspotX, type).toBeGreaterThanOrEqual(0);
+			expect(sprite.hotspotX, type).toBeLessThanOrEqual(1);
+			expect(sprite.hotspotY, type).toBeGreaterThanOrEqual(0);
+			expect(sprite.hotspotY, type).toBeLessThanOrEqual(1);
+		}
+		// The arrow's tip is near its top-left corner, nowhere near the centre it used to
+		// be drawn from.
+		expect(sprites.arrow.hotspotX).toBeLessThan(0.25);
+		expect(sprites.arrow.hotspotY).toBeLessThan(0.25);
+	});
+
+	it("leaves a custom upload's data: URL untouched — the addon decodes it in memory", () => {
+		const dataUrl = "data:image/png;base64,SGkh";
+		const out = resolved({ background: { kind: "image", path: dataUrl } });
+
+		expect(out.background.path).toBe(dataUrl);
+	});
+
+	it("gives the default theme the built-in arrow, not a placeholder", () => {
+		// Regression: "default" used to resolve to no sprite at all, and the compositor drew
+		// its dot-and-ring fallback — a dot in a circle where the standard arrow belongs.
+		const sprites = resolved({ cursor: { theme: "default" } }).cursor.cursorSprites;
+
+		expect(sprites.arrow.path).toBe(path.join(resources, "cursors", "default", "arrow.png"));
+		expect(fs.existsSync(sprites.arrow.path)).toBe(true);
+	});
+
+	it("leaves the scene alone when no base dir holds the asset", () => {
+		const out = resolved({ background: { kind: "image", path: "/wallpapers/absent.jpg" } });
+
+		expect(out.background.path).toBe("/wallpapers/absent.jpg");
+	});
+});

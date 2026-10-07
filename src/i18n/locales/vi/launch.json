@@ -1,0 +1,157 @@
+{
+	"tooltips": {
+		"hideHUD": "Ẩn HUD",
+		"hideHUDTip": "Ẩn thanh ghi hình. Hiện lại từ biểu tượng ở khay hệ thống.",
+		"closeApp": "Đóng ứng dụng",
+		"restartRecording": "Xóa bản ghi hình này và bắt đầu bản mới",
+		"cancelRecording": "Dừng và xóa bản ghi hình này",
+		"pauseRecording": "Tạm dừng ghi hình",
+		"resumeRecording": "Tiếp tục ghi hình",
+		"useVerticalTray": "Dùng khay dọc",
+		"useHorizontalTray": "Dùng khay ngang",
+		"changeSource": "Chọn màn hình hoặc cửa sổ khác",
+		"systemAudio": "Âm thanh hệ thống: ghi âm thanh máy tính phát ra",
+		"microphone": "Micro: ghi giọng nói của bạn",
+		"camera": "Máy ảnh: ghi bạn thành một lớp riêng có thể di chuyển trong trình chỉnh sửa",
+		"openStudio": "Mở Studio: trình chỉnh sửa cho các bản ghi hình của bạn",
+		"openNotes": "Mở ghi chú: văn bản để đọc khi ghi hình",
+		"openNotesPlaceholder": "Ghi chú của bạn tại đây...",
+		"notesToolbar": {
+			"bold": "In đậm",
+			"italic": "In nghiêng",
+			"strikethrough": "Gạch ngang",
+			"bulletList": "Danh sách dấu đầu dòng",
+			"numberedList": "Danh sách đánh số",
+			"blockquote": "Trích dẫn",
+			"codeBlock": "Khối mã",
+			"play": "Bắt đầu tự động cuộn",
+			"pause": "Tạm dừng tự động cuộn",
+			"speed": "Tốc độ cuộn",
+			"decreaseSpeed": "Giảm tốc độ cuộn",
+			"increaseSpeed": "Tăng tốc độ cuộn",
+			"fontSize": "Cỡ chữ",
+			"decreaseFontSize": "Giảm cỡ chữ",
+			"increaseFontSize": "Tăng cỡ chữ",
+			"mirror": "Lật ngang",
+			"mirrorTip": "Lật văn bản theo chiều ngang để đọc qua gương"
+		}
+	},
+	"audio": {
+		"systemAudio": "Âm thanh hệ thống",
+		"microphone": "Micro",
+		"inputDevice": "Thiết bị đầu vào"
+	},
+	"webcam": {
+		"searching": "Đang tìm kiếm...",
+		"noneFound": "Không tìm thấy máy ảnh",
+		"unavailable": "Máy ảnh không khả dụng",
+		"camera": "Máy ảnh",
+		"cameraDevice": "Thiết bị máy ảnh",
+		"quality": "Chất lượng camera",
+		"quality1080p": "1080p",
+		"quality1440p": "1440p",
+		"quality2160p": "4K"
+	},
+	"sourceSelector": {
+		"loading": "Đang tải nguồn...",
+		"screens": "Màn hình ({{count}})",
+		"windows": "Cửa sổ ({{count}})",
+		"emptyTitle": "Không tìm thấy màn hình hoặc cửa sổ nào",
+		"emptyDescription": "Nếu bạn vừa cấp quyền ghi màn hình, hãy tải lại bộ chọn này. Trên macOS, bạn có thể cần mở lại OpenScreen.",
+		"loadFailedDescription": "OpenScreen không thể tải các nguồn ghi hình. Hãy tải lại bộ chọn này và thử lại.",
+		"defaultSourceName": "Màn hình"
+	},
+	"recording": {
+		"selectSource": "Vui lòng chọn một nguồn để ghi",
+		"systemPicker": "Hệ thống sẽ hỏi bạn muốn chia sẻ gì",
+		"start": "Bắt đầu ghi hình",
+		"stop": "Dừng và lưu bản ghi hình",
+		"saving": "Đang lưu..."
+	},
+	"language": "Ngôn ngữ",
+	"languageWithName": "Ngôn ngữ: {{language}}",
+	"systemLanguagePrompt": {
+		"title": "Sử dụng ngôn ngữ hệ thống của bạn?",
+		"description": "Chúng tôi phát hiện {{language}} là ngôn ngữ hệ thống của bạn. Bạn có muốn chuyển OpenScreen sang {{language}} không?",
+		"switch": "Chuyển sang {{language}}",
+		"keepDefault": "Giữ ngôn ngữ hiện tại"
+	},
+	"cursor": {
+		"name": "Con trỏ có thể chỉnh sửa",
+		"editableTip": "Con trỏ có thể chỉnh sửa: được ghi riêng, nên bạn có thể đổi kiểu và dùng thu phóng tự động trong trình chỉnh sửa",
+		"systemTip": "Con trỏ hệ thống: con trỏ thật của bạn, được ghi vào video. Không đổi kiểu, không thu phóng tự động."
+	},
+	"softwareEncoderFallback": {
+		"title": "Đã chuyển sang mã hóa bằng phần mềm",
+		"description": "Bộ mã hóa GPU mặc định không khởi động được, nên OpenScreen đã chuyển sang mã hóa H.264 bằng phần mềm. Quá trình ghi vẫn tiếp tục bình thường, nhưng mức sử dụng CPU có thể cao hơn.",
+		"dismiss": "Đã hiểu",
+		"dontShowAgain": "Không hiển thị lại"
+	},
+	"deviceSettings": {
+		"title": "Cài đặt thiết bị",
+		"close": "Đóng",
+		"micLevel": "Mức đầu vào",
+		"micHint": "Hãy nói để kiểm tra micrô",
+		"noMicrophones": "Không tìm thấy micrô",
+		"preview": "Xem trước",
+		"previewUnavailable": "Không thể xem trước",
+		"about": "Giới thiệu",
+		"version": "Phiên bản {{version}}",
+		"checkingForUpdates": "Đang kiểm tra…"
+	},
+	"permissions": {
+		"title": "OpenScreen cần một vài quyền",
+		"subtitle": "macOS chỉ yêu cầu bạn cấp mỗi quyền một lần. Bạn có thể thay đổi bất cứ lúc nào trong Cài đặt hệ thống.",
+		"level": {
+			"required": "Bắt buộc",
+			"recommended": "Nên dùng",
+			"optional": "Tùy chọn"
+		},
+		"rows": {
+			"screen": {
+				"name": "Màn hình & âm thanh hệ thống",
+				"description": "Để ghi màn hình và âm thanh của máy Mac."
+			},
+			"systemAudio": {
+				"name": "Âm thanh hệ thống",
+				"description": "Để ghi âm thanh của máy Mac. Chọn màn hình hoặc cửa sổ không cần quyền nào."
+			},
+			"accessibility": {
+				"name": "Trợ năng",
+				"description": "Để hiển thị đúng con trỏ (mũi tên, văn bản) trong bản ghi."
+			},
+			"microphone": {
+				"name": "Micrô",
+				"description": "Để ghi giọng nói của bạn."
+			},
+			"camera": {
+				"name": "Camera",
+				"description": "Để thêm webcam vào bản ghi."
+			}
+		},
+		"status": {
+			"granted": "Đã cho phép",
+			"restricted": "Do tổ chức của bạn quản lý"
+		},
+		"actions": {
+			"continue": "Tiếp tục",
+			"allow": "Cho phép",
+			"openSettings": "Mở Cài đặt",
+			"restart": "Khởi động lại OpenScreen",
+			"start": "Bắt đầu"
+		},
+		"help": {
+			"screenPrompt": "Sau đó macOS sẽ yêu cầu bạn bật OpenScreen trong Cài đặt hệ thống.",
+			"screenSettings": "Trong Cài đặt hệ thống, hãy bật OpenScreen. Nếu macOS đề nghị thoát và mở lại, hãy đồng ý: cửa sổ này sẽ quay lại.",
+			"screenNotListed": "Không thấy OpenScreen trong danh sách? Bấm +, rồi chọn OpenScreen trong Ứng dụng.",
+			"screenRestart": "Đã cho phép. OpenScreen cần khởi động lại để sử dụng quyền này.",
+			"screenRecurring": "Ở lần ghi đầu tiên, macOS sẽ hỏi OpenScreen có được truy cập trực tiếp màn hình mà không qua bộ chọn của hệ thống hay không. Hãy bấm Cho phép. Thỉnh thoảng macOS sẽ hỏi lại; điều đó là bình thường.",
+			"systemAudioPrompt": "macOS sẽ hỏi bạn có cho phép OpenScreen ghi âm thanh của máy Mac không.",
+			"systemAudioRequested": "Nếu bạn đã từ chối, hãy bật OpenScreen trong mục “Chỉ bản ghi âm thanh hệ thống” ở Cài đặt hệ thống."
+		},
+		"footer": {
+			"screenRequired": "Cần quyền ghi màn hình để ghi.",
+			"ready": "Mọi thứ đã sẵn sàng."
+		}
+	}
+}

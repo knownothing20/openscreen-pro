@@ -1,0 +1,1085 @@
+{
+  "appLanguages.line": {
+    "message": "Interface em {count} idiomas: {names}",
+    "description": "{count} is a number; {names} is the list of language names, each in its own language"
+  },
+  "download.macos.arm.label": {
+    "message": "Apple Silicon"
+  },
+  "download.macos.arm.sublabel": {
+    "message": "M1 ou mais recente · .dmg"
+  },
+  "download.macos.intel.label": {
+    "message": "Intel"
+  },
+  "download.macos.intel.sublabel": {
+    "message": "x86_64 · .dmg"
+  },
+  "download.macos.footnote": {
+    "message": "Assinado e notarizado, por isso abre sem nenhuma etapa no terminal. Na primeira execução, conceda as permissões na janela que ele mostra."
+  },
+  "download.windows.store.label": {
+    "message": "Microsoft Store"
+  },
+  "download.windows.store.sublabel": {
+    "message": "Recomendado · assinado pela Microsoft"
+  },
+  "download.windows.exe.label": {
+    "message": "Windows 10 e 11"
+  },
+  "download.windows.exe.sublabel": {
+    "message": "Instalador · .exe · sem assinatura"
+  },
+  "download.windows.footnote": {
+    "message": "O áudio do sistema é capturado sem drivers extras. Gráficos integrados anteriores à ~8ª geração da Intel (ou à série equivalente AMD Ryzen 2000) podem ter problemas conhecidos ao encerrar a gravação — veja os {systemRequirements}."
+  },
+  "download.windows.footnote.systemRequirements": {
+    "message": "requisitos de sistema"
+  },
+  "download.linux.deb.sublabel": {
+    "message": "Pacote · .deb"
+  },
+  "download.linux.rpm.sublabel": {
+    "message": "Pacote · .rpm"
+  },
+  "download.linux.pacman.sublabel": {
+    "message": "Pacote · .pacman"
+  },
+  "download.linux.appImage.label": {
+    "message": "Qualquer distribuição"
+  },
+  "download.linux.appImage.sublabel": {
+    "message": "Portátil · .AppImage"
+  },
+  "download.linux.footnote": {
+    "message": "A captura passa pelo PipeWire e pelo xdg-desktop-portal; os dois são obrigatórios."
+  },
+  "download.meta.title": {
+    "message": "Baixar para Windows, macOS e Linux"
+  },
+  "download.meta.description": {
+    "message": "Baixe o OpenScreen grátis para Windows, macOS e Linux: Microsoft Store, .exe, .dmg, .deb, .rpm, .pacman, AppImage e flake Nix. Código aberto, sem conta."
+  },
+  "download.hero.badge.release": {
+    "message": "{tag} · licença MIT",
+    "description": "{tag} is the release tag, e.g. v1.11.0"
+  },
+  "download.hero.badge.noRelease": {
+    "message": "Licença MIT · gratuito para sempre"
+  },
+  "download.hero.title": {
+    "message": "Baixe o OpenScreen"
+  },
+  "download.hero.tagline": {
+    "message": "Um gravador de tela e editor de vídeo gratuito e de código aberto. Sem conta, sem marca d'água, sem assinatura."
+  },
+  "download.hero.published": {
+    "message": "Última versão estável, publicada em {date}",
+    "description": "{date} is formatted for your language at build time"
+  },
+  "download.panels.winget.title": {
+    "message": "Windows: a versão da Store pelo terminal"
+  },
+  "download.panels.winget.foot": {
+    "message": "O .exe não tem assinatura de código, então o SmartScreen mostra “O Windows protegeu o computador”: escolha Mais informações e depois Executar assim mesmo. Baixe-o somente pela {releasesPage}.",
+    "description": "Windows protected your PC, More info and Run anyway are SmartScreen's own words: use the ones Windows shows in your language."
+  },
+  "download.panels.winget.foot.releasesPage": {
+    "message": "página de Releases"
+  },
+  "download.panels.nix.title": {
+    "message": "Nix: execute sem instalar"
+  },
+  "download.panels.nix.foot": {
+    "message": "Os passos para cada distribuição estão no {installationGuide}."
+  },
+  "download.panels.nix.foot.installationGuide": {
+    "message": "guia de instalação"
+  },
+  "download.preRelease.title": {
+    "message": "Quer testar o que vem por aí?"
+  },
+  "download.preRelease.body": {
+    "message": "Versões candidatas (release candidates) são publicadas entre as versões estáveis, junto com as versões anteriores, os checksums e as notas de versão completas."
+  },
+  "download.preRelease.cta": {
+    "message": "Ver todas as versões"
+  },
+  "home.meta.title": {
+    "message": "Gravador de tela e editor de vídeo grátis e de código aberto"
+  },
+  "home.meta.description": {
+    "message": "Transforme gravações de tela em demos bem-acabadas com zooms automáticos, fundos personalizados e um cursor editável. Grátis e de código aberto para Windows, macOS e Linux. Sem marca-d’água."
+  },
+  "home.hero.tagline": {
+    "message": "Zooms automáticos, um cursor suave e uma moldura bem-acabada. Grave, ajuste e compartilhe."
+  },
+  "home.hero.download": {
+    "message": "Baixar"
+  },
+  "home.features.kicker": {
+    "message": "Também é verdade"
+  },
+  "home.features.title": {
+    "message": "Gratuito, local, multiplataforma: três coisas que uma captura de tela não mostra."
+  },
+  "home.features.summary": {
+    "message": "O OpenScreen é um gravador de tela e editor de vídeo gratuito e de código aberto para Windows, macOS e Linux: entra uma captura bruta e sai uma demo pronta, na categoria que o {screenStudio} definiu. Tem licença MIT, sem marca d'água e sem conta, e dá continuidade ao {originalProject}, que o criador arquivou após a v1.5.0.",
+    "description": "{screenStudio} is a link to the Screen Studio comparison page."
+  },
+  "home.features.summary.screenStudio": {
+    "message": "Screen Studio",
+    "description": "A product name, used as a link."
+  },
+  "home.features.summary.originalProject": {
+    "message": "projeto OpenScreen original"
+  },
+  "home.features.free.title": {
+    "message": "MIT, gratuito para sempre"
+  },
+  "home.features.free.body": {
+    "message": "Sem paywall, sem plano premium, sem limite de uso. Todos os recursos são gratuitos para uso pessoal e comercial."
+  },
+  "home.features.local.title": {
+    "message": "Nada é enviado"
+  },
+  "home.features.local.body": {
+    "message": "Gravação, transcrição e renderização acontecem no seu computador, e o seu vídeo nunca sai dele. Só sai texto quando você pede: pelo painel de chat e pela tradução de legendas, cada um com uma chave fornecida por você. A transcrição baixa o modelo Whisper de 264 MB uma única vez, na primeira execução."
+  },
+  "home.features.platforms.title": {
+    "message": "Windows, macOS, Linux"
+  },
+  "home.features.platforms.body": {
+    "message": "Uma única base de código, com captura nativa em cada sistema. Uma página na Microsoft Store, um .dmg, um .exe, um .deb, um .rpm, um .pacman, um AppImage e um flake Nix."
+  },
+  "home.install.kicker": {
+    "message": "Início rápido"
+  },
+  "home.install.title": {
+    "message": "Baixe e instale"
+  },
+  "home.install.mac.comment": {
+    "message": "# abra o .dmg e depois"
+  },
+  "home.install.mac.action": {
+    "message": "Arraste o OpenScreen para Aplicativos."
+  },
+  "home.install.mac.foot": {
+    "message": "Assinado e notarizado. Captura via ScreenCaptureKit; formato do cursor e cliques assim que a permissão de Acessibilidade é concedida."
+  },
+  "home.install.windows.comment": {
+    "message": "# Microsoft Store, pelo terminal"
+  },
+  "home.install.windows.foot": {
+    "message": "Windows Graphics Capture, áudio do sistema sem configuração, captura de webcam via Media Foundation."
+  },
+  "home.install.linux.comment": {
+    "message": "# baixe o .deb em Releases e depois"
+  },
+  "home.install.linux.foot": {
+    "message": "Captura via PipeWire pelo portal ScreenCast; requer PipeWire e xdg-desktop-portal."
+  },
+  "home.install.note": {
+    "message": "O Windows também tem um instalador {exe}. Ele não tem assinatura de código, então o SmartScreen avisa antes da execução: escolha Mais informações e depois Executar assim mesmo. O Linux também tem {rpm}, {pacman}, um AppImage e um flake Nix. Todos os arquivos estão na {releasesPage}, e a página {installation} traz o passo a passo completo. O que cada sistema grava está nas páginas {windows}, {mac} e {linux}.",
+    "description": "{exe}, {rpm} and {pacman} are file extensions shown as code. {windows}, {mac} and {linux} link to the platform pages. More info and Run anyway are SmartScreen's buttons: use the labels Windows shows in your language."
+  },
+  "home.install.note.releasesPage": {
+    "message": "página de Releases"
+  },
+  "home.install.note.installation": {
+    "message": "Instalação"
+  },
+  "home.install.note.windows": {
+    "message": "Windows"
+  },
+  "home.install.note.mac": {
+    "message": "Mac"
+  },
+  "home.install.note.linux": {
+    "message": "Linux"
+  },
+  "editor.skipLink": {
+    "message": "Pular o editor e ir para os downloads"
+  },
+  "editor.title": {
+    "message": "Cinco coisas que você vai fazer de verdade",
+    "description": "Read by screen readers only: the heading of the five captioned steps below"
+  },
+  "showcase.record.kicker": {
+    "message": "gravação"
+  },
+  "showcase.record.claim": {
+    "message": "Ele grava pelo sistema operacional, e não por fora dele."
+  },
+  "showcase.record.body": {
+    "message": "Escolha uma janela ou uma tela. No macOS a captura passa pelo ScreenCaptureKit, no Windows pelo Windows Graphics Capture, no Linux pelo PipeWire e pelo portal ScreenCast — em cada um, o caminho de captura que o próprio sistema oferece. O ponteiro é gravado como dados, em vez de ser embutido nos pixels, e é só por isso que você pôde mudar o visual dele mais acima nesta página."
+  },
+  "showcase.record.fact": {
+    "message": "ScreenCaptureKit · Windows Graphics Capture · PipeWire · áudio do sistema sem driver extra"
+  },
+  "showcase.record.link.docs": {
+    "message": "Documentação da gravação de tela"
+  },
+  "showcase.record.label": {
+    "message": "Um desenho do gravador: dois alvos de captura lado a lado, Display 1 selecionado e uma janela chamada Terminal ao lado, depois as configurações da gravação — ScreenCaptureKit, áudio do sistema, 1920 × 1080 a 60 fps —, um interruptor de microfone e outro de áudio do sistema, e um botão Start recording.",
+    "description": "Describes a drawing of the app for screen readers. The drawing is in English: keep the quoted words as drawn."
+  },
+  "showcase.export.kicker": {
+    "message": "exportação"
+  },
+  "showcase.export.claim": {
+    "message": "Depois, ele gera o arquivo."
+  },
+  "showcase.export.body": {
+    "message": "MP4 de 720p até a resolução de origem, a 24, 30 ou 60, em H.264 — ou um GIF. A codificação roda no seu computador e conta os quadros enquanto trabalha. Sem fila, sem conta, sem marca d'água, e o arquivo já está no disco quando a barra se completa."
+  },
+  "showcase.export.fact": {
+    "message": "H.264 · 24, 30, 60 fps · sem marca d'água"
+  },
+  "showcase.export.link.docs": {
+    "message": "Documentação da exportação de vídeo"
+  },
+  "showcase.export.label": {
+    "message": "Um desenho do painel de exportação: recording-1783066227227.mp4 sendo exportado como MP4 a 1080p e 60 fps, com as linhas de qualidade e taxa de quadros acima de uma barra de progresso em 62 por cento, indicando o quadro 1 488 de 2 400, gravando na pasta Movies.",
+    "description": "Describes a drawing of the app for screen readers. The drawing is in English: keep the quoted words as drawn."
+  },
+  "showcase.captions.kicker": {
+    "message": "legendas"
+  },
+  "showcase.captions.claim": {
+    "message": "A transcrição roda no seu computador."
+  },
+  "showcase.captions.body": {
+    "message": "O whisper.cpp vem com o app, e o modelo é baixado uma vez, no primeiro uso — depois disso, funciona com a rede desligada. O áudio nunca sai do notebook, e o que volta é texto editável: defina a fonte, o tamanho, a cor e a posição, e depois embuta o texto na renderização."
+  },
+  "showcase.captions.fact": {
+    "message": "whisper.cpp · 100 idiomas · offline após a primeira execução"
+  },
+  "showcase.captions.link.docs": {
+    "message": "Documentação de legendas e transcrição"
+  },
+  "showcase.captions.link.feature": {
+    "message": "Como as legendas locais se comparam",
+    "description": "Link label under the panel."
+  },
+  "showcase.agent.kicker": {
+    "message": "agente"
+  },
+  "showcase.agent.claim": {
+    "message": "Descreva a edição. O agente faz."
+  },
+  "showcase.agent.body": {
+    "message": "A varinha mágica mais acima nesta página posiciona zooms observando por onde o seu cursor passou. O agente vai além: ele lê a transcrição real e a linha do tempo real, então responde com timecodes que você pode conferir — quais trechos vai cortar e quanto isso economiza. Cada edição que ele faz é uma edição comum, que pode ser desfeita, e ele precisa de uma chave de provedor fornecida por você. Nada roda até você conectar uma."
+  },
+  "showcase.agent.fact": {
+    "message": "use sua própria chave · desativado por padrão · toda edição pode ser desfeita"
+  },
+  "showcase.agent.link.docs": {
+    "message": "Documentação da edição com IA"
+  },
+  "showcase.agent.link.feature": {
+    "message": "Como funcionam os zooms automáticos",
+    "description": "Link label under the panel."
+  },
+  "showcase.title": {
+    "message": "Gravador, legendas, agente, codificador."
+  },
+  "recreation.style.kicker": {
+    "message": "Estilo"
+  },
+  "recreation.style.title": {
+    "message": "Troque o fundo"
+  },
+  "recreation.style.sub": {
+    "message": "Imagem, cor ou gradiente atrás da sua gravação — sem regravar."
+  },
+  "recreation.effects.kicker": {
+    "message": "Efeitos"
+  },
+  "recreation.effects.title": {
+    "message": "Enquadre do seu jeito"
+  },
+  "recreation.effects.sub": {
+    "message": "Espaçamento, desfoque de movimento, sombra, arredondamento — cada efeito é aplicado em tempo real."
+  },
+  "recreation.cursor.kicker": {
+    "message": "Cursor"
+  },
+  "recreation.cursor.title": {
+    "message": "Um cursor que dá gosto de acompanhar"
+  },
+  "recreation.cursor.sub": {
+    "message": "Tamanho, suavização, desfoque de movimento, rebote ao clicar — cada movimento fica claro na tela."
+  },
+  "recreation.timeline.kicker": {
+    "message": "Linha do tempo"
+  },
+  "recreation.timeline.title": {
+    "message": "Um clique, todos os zooms no lugar"
+  },
+  "recreation.timeline.sub": {
+    "message": "Zooms, rampas de velocidade, recortes, comentários — cada edição vira uma cápsula na linha do tempo."
+  },
+  "recreation.transcript.kicker": {
+    "message": "Transcrição"
+  },
+  "recreation.transcript.title": {
+    "message": "Edite vídeo como texto"
+  },
+  "recreation.transcript.sub": {
+    "message": "Apague uma palavra ou um silêncio; o corte aparece na linha do tempo. Nada é destrutivo."
+  },
+  "footer.brand.description": {
+    "message": "Um gravador de tela e editor gratuito e de código aberto. Continuação mantida pela comunidade, sob licença MIT."
+  },
+  "footer.product.title": {
+    "message": "Produto"
+  },
+  "footer.product.download": {
+    "message": "Baixar"
+  },
+  "footer.product.autoZoom": {
+    "message": "Zoom automático"
+  },
+  "footer.product.captions": {
+    "message": "Legendas locais"
+  },
+  "footer.platforms.title": {
+    "message": "Plataformas",
+    "description": "Footer column title."
+  },
+  "footer.platforms.windows": {
+    "message": "Windows"
+  },
+  "footer.platforms.mac": {
+    "message": "macOS"
+  },
+  "footer.platforms.linux": {
+    "message": "Linux"
+  },
+  "footer.compare.title": {
+    "message": "Comparações",
+    "description": "Footer column title."
+  },
+  "footer.compare.screenStudio": {
+    "message": "Alternativa ao Screen Studio"
+  },
+  "footer.compare.camtasia": {
+    "message": "Alternativa ao Camtasia"
+  },
+  "footer.compare.loom": {
+    "message": "Alternativa ao Loom"
+  },
+  "footer.compare.cap": {
+    "message": "OpenScreen vs Cap"
+  },
+  "footer.compare.obs": {
+    "message": "OpenScreen vs OBS Studio"
+  },
+  "footer.project.title": {
+    "message": "Projeto"
+  },
+  "footer.project.releases": {
+    "message": "Releases"
+  },
+  "footer.project.blog": {
+    "message": "Blog (em inglês)",
+    "description": "Links to an English-only page."
+  },
+  "footer.project.faq": {
+    "message": "Perguntas frequentes"
+  },
+  "footer.community.title": {
+    "message": "Comunidade"
+  },
+  "footer.community.contributing": {
+    "message": "Como contribuir"
+  },
+  "footer.community.license": {
+    "message": "Licença (MIT)"
+  },
+  "footer.bottom.license": {
+    "message": "O OpenScreen é distribuído sob a licença MIT. Feito pela comunidade — gratuito, para sempre."
+  },
+  "footer.bottom.lineage": {
+    "message": "O spin-off oficial do {originalProject} — 39 mil estrelas, agora arquivado."
+  },
+  "footer.bottom.lineage.originalProject": {
+    "message": "projeto OpenScreen original"
+  },
+  "theme.navbar.mobileLanguageDropdown.label": {
+    "message": "Idiomas",
+    "description": "The label for the mobile language switcher dropdown"
+  },
+  "theme.ErrorPageContent.title": {
+    "message": "Ocorreu um erro nesta página.",
+    "description": "The title of the fallback page when the page crashed"
+  },
+  "theme.BackToTopButton.buttonAriaLabel": {
+    "message": "Voltar para o topo",
+    "description": "The ARIA label for the back to top button"
+  },
+  "theme.blog.archive.title": {
+    "message": "Arquivo",
+    "description": "The page & hero title of the blog archive page"
+  },
+  "theme.blog.archive.description": {
+    "message": "Arquivo",
+    "description": "The page & hero description of the blog archive page"
+  },
+  "theme.blog.paginator.navAriaLabel": {
+    "message": "Navegação da página de listagem do blog",
+    "description": "The ARIA label for the blog pagination"
+  },
+  "theme.blog.paginator.newerEntries": {
+    "message": "Publicações mais recentes",
+    "description": "The label used to navigate to the newer blog posts page (previous page)"
+  },
+  "theme.blog.paginator.olderEntries": {
+    "message": "Publicações mais antigas",
+    "description": "The label used to navigate to the older blog posts page (next page)"
+  },
+  "theme.blog.post.paginator.navAriaLabel": {
+    "message": "Navegação da página de publicação do blog",
+    "description": "The ARIA label for the blog posts pagination"
+  },
+  "theme.blog.post.paginator.newerPost": {
+    "message": "Publicação mais recente",
+    "description": "The blog post button label to navigate to the newer/previous post"
+  },
+  "theme.blog.post.paginator.olderPost": {
+    "message": "Publicação mais antiga",
+    "description": "The blog post button label to navigate to the older/next post"
+  },
+  "theme.tags.tagsPageLink": {
+    "message": "Ver todas as etiquetas",
+    "description": "The label of the link targeting the tag list page"
+  },
+  "theme.colorToggle.ariaLabel.mode.system": {
+    "message": "modo do sistema",
+    "description": "The name for the system color mode"
+  },
+  "theme.colorToggle.ariaLabel.mode.light": {
+    "message": "modo claro",
+    "description": "The name for the light color mode"
+  },
+  "theme.colorToggle.ariaLabel.mode.dark": {
+    "message": "modo escuro",
+    "description": "The name for the dark color mode"
+  },
+  "theme.colorToggle.ariaLabel": {
+    "message": "Alternar entre modo escuro e claro (atualmente {mode})",
+    "description": "The ARIA label for the color mode toggle"
+  },
+  "theme.docs.breadcrumbs.navAriaLabel": {
+    "message": "Trilha de navegação",
+    "description": "The ARIA label for the breadcrumbs"
+  },
+  "theme.docs.paginator.navAriaLabel": {
+    "message": "Páginas da documentação",
+    "description": "The ARIA label for the docs pagination"
+  },
+  "theme.docs.paginator.previous": {
+    "message": "Anterior",
+    "description": "The label used to navigate to the previous doc"
+  },
+  "theme.docs.paginator.next": {
+    "message": "Próxima",
+    "description": "The label used to navigate to the next doc"
+  },
+  "theme.docs.tagDocListPageTitle.nDocsTagged": {
+    "message": "{count} documento marcado|{count} documentos marcados",
+    "description": "Pluralized label for \"{count} docs tagged\". Use as much plural forms (separated by \"|\") as your language support (see https://www.unicode.org/cldr/cldr-aux/charts/34/supplemental/language_plural_rules.html)"
+  },
+  "theme.docs.tagDocListPageTitle": {
+    "message": "{nDocsTagged} com \"{tagName}\"",
+    "description": "The title of the page for a docs tag"
+  },
+  "theme.docs.versionBadge.label": {
+    "message": "Versão: {versionLabel}"
+  },
+  "theme.docs.versions.unreleasedVersionLabel": {
+    "message": "Esta é uma documentação não lançada da versão {versionLabel} para {siteTitle}.",
+    "description": "The label used to tell the user that he's browsing an unreleased doc version"
+  },
+  "theme.docs.versions.unmaintainedVersionLabel": {
+    "message": "Esta é a documentação para {siteTitle} {versionLabel}, que não é mais mantida ativamente.",
+    "description": "The label used to tell the user that he's browsing an unmaintained doc version"
+  },
+  "theme.docs.versions.latestVersionSuggestionLabel": {
+    "message": "Para a documentação atualizada, consulte a {latestVersionLink} ({versionLabel}).",
+    "description": "The label used to tell the user to check the latest version"
+  },
+  "theme.docs.versions.latestVersionLinkLabel": {
+    "message": "versão mais recente",
+    "description": "The label used for the latest version suggestion link label"
+  },
+  "theme.common.editThisPage": {
+    "message": "Editar esta página",
+    "description": "The link label to edit the current page"
+  },
+  "theme.common.headingLinkTitle": {
+    "message": "Link direto para {heading}",
+    "description": "Title for link to heading"
+  },
+  "theme.lastUpdated.atDate": {
+    "message": " em {date}",
+    "description": "The words used to describe on which date a page has been last updated"
+  },
+  "theme.lastUpdated.byUser": {
+    "message": " por {user}",
+    "description": "The words used to describe by who the page has been last updated"
+  },
+  "theme.lastUpdated.lastUpdatedAtBy": {
+    "message": "Última atualização{atDate}{byUser}",
+    "description": "The sentence used to display when a page has been last updated, and by who"
+  },
+  "theme.NotFound.title": {
+    "message": "Página não encontrada",
+    "description": "The title of the 404 page"
+  },
+  "theme.navbar.mobileVersionsDropdown.label": {
+    "message": "Versões",
+    "description": "The label for the navbar versions dropdown on mobile view"
+  },
+  "theme.tags.tagsListLabel": {
+    "message": "Etiquetas:",
+    "description": "The label alongside a tag list"
+  },
+  "theme.admonition.caution": {
+    "message": "cuidado",
+    "description": "The default label used for the Caution admonition (:::caution)"
+  },
+  "theme.admonition.danger": {
+    "message": "perigo",
+    "description": "The default label used for the Danger admonition (:::danger)"
+  },
+  "theme.admonition.info": {
+    "message": "informação",
+    "description": "The default label used for the Info admonition (:::info)"
+  },
+  "theme.admonition.note": {
+    "message": "observação",
+    "description": "The default label used for the Note admonition (:::note)"
+  },
+  "theme.admonition.tip": {
+    "message": "dica",
+    "description": "The default label used for the Tip admonition (:::tip)"
+  },
+  "theme.admonition.warning": {
+    "message": "aviso",
+    "description": "The default label used for the Warning admonition (:::warning)"
+  },
+  "theme.AnnouncementBar.closeButtonAriaLabel": {
+    "message": "Fechar",
+    "description": "The ARIA label for close button of announcement bar"
+  },
+  "theme.blog.sidebar.navAriaLabel": {
+    "message": "Navegação das publicações recentes do blog",
+    "description": "The ARIA label for recent posts in the blog sidebar"
+  },
+  "theme.DocSidebarItem.expandCategoryAriaLabel": {
+    "message": "Expandir a categoria '{label}'",
+    "description": "The ARIA label to expand the sidebar category"
+  },
+  "theme.DocSidebarItem.collapseCategoryAriaLabel": {
+    "message": "Recolher a categoria '{label}'",
+    "description": "The ARIA label to collapse the sidebar category"
+  },
+  "theme.IconExternalLink.ariaLabel": {
+    "message": "(abre em uma nova aba)",
+    "description": "The ARIA label for the external link icon"
+  },
+  "theme.NavBar.navAriaLabel": {
+    "message": "Navegação principal",
+    "description": "The ARIA label for the main navigation"
+  },
+  "theme.NotFound.p1": {
+    "message": "Não foi possível encontrar o que você está procurando.",
+    "description": "The first paragraph of the 404 page"
+  },
+  "theme.NotFound.p2": {
+    "message": "Entre em contato com o responsável pelo site que trouxe você até a URL original e avise que o link está quebrado.",
+    "description": "The 2nd paragraph of the 404 page"
+  },
+  "theme.TOCCollapsible.toggleButtonLabel": {
+    "message": "Nesta página",
+    "description": "The label used by the button on the collapsible TOC component"
+  },
+  "theme.blog.post.readMore": {
+    "message": "Ler mais",
+    "description": "The label used in blog post item excerpts to link to full blog posts"
+  },
+  "theme.blog.post.readMoreLabel": {
+    "message": "Ler mais sobre {title}",
+    "description": "The ARIA label for the link to full blog posts from excerpts"
+  },
+  "theme.blog.post.readingTime.plurals": {
+    "message": "Um minuto para ler|{readingTime} min para ler",
+    "description": "Pluralized label for \"{readingTime} min read\". Use as much plural forms (separated by \"|\") as your language support (see https://www.unicode.org/cldr/cldr-aux/charts/34/supplemental/language_plural_rules.html)"
+  },
+  "theme.CodeBlock.wordWrapToggle": {
+    "message": "Alternar quebra de linha",
+    "description": "The title attribute for toggle word wrapping button of code block lines"
+  },
+  "theme.CodeBlock.copy": {
+    "message": "Copiar",
+    "description": "The copy button label on code blocks"
+  },
+  "theme.CodeBlock.copied": {
+    "message": "Copiado",
+    "description": "The copied button label on code blocks"
+  },
+  "theme.CodeBlock.copyButtonAriaLabel": {
+    "message": "Copiar código para a área de transferência",
+    "description": "The ARIA label for copy code blocks button"
+  },
+  "theme.docs.breadcrumbs.home": {
+    "message": "Página inicial",
+    "description": "The ARIA label for the home page in the breadcrumbs"
+  },
+  "theme.docs.sidebar.navAriaLabel": {
+    "message": "Barra lateral da documentação",
+    "description": "The ARIA label for the sidebar navigation"
+  },
+  "theme.docs.sidebar.collapseButtonTitle": {
+    "message": "Recolher barra lateral",
+    "description": "The title attribute for collapse button of doc sidebar"
+  },
+  "theme.docs.sidebar.collapseButtonAriaLabel": {
+    "message": "Recolher barra lateral",
+    "description": "The title attribute for collapse button of doc sidebar"
+  },
+  "theme.docs.sidebar.closeSidebarButtonAriaLabel": {
+    "message": "Fechar painel de navegação",
+    "description": "The ARIA label for close button of mobile sidebar"
+  },
+  "theme.navbar.mobileSidebarSecondaryMenu.backButtonLabel": {
+    "message": "← Voltar para o menu principal",
+    "description": "The label of the back button to return to main menu, inside the mobile navbar sidebar secondary menu (notably used to display the docs sidebar)"
+  },
+  "theme.docs.sidebar.toggleSidebarButtonAriaLabel": {
+    "message": "Alternar painel de navegação",
+    "description": "The ARIA label for hamburger menu button of mobile navigation"
+  },
+  "theme.navbar.mobileDropdown.collapseButton.expandAriaLabel": {
+    "message": "Expandir o menu",
+    "description": "The ARIA label of the button to expand the mobile dropdown navbar item"
+  },
+  "theme.navbar.mobileDropdown.collapseButton.collapseAriaLabel": {
+    "message": "Recolher o menu",
+    "description": "The ARIA label of the button to collapse the mobile dropdown navbar item"
+  },
+  "theme.docs.sidebar.expandButtonTitle": {
+    "message": "Expandir barra lateral",
+    "description": "The ARIA label and title attribute for expand button of doc sidebar"
+  },
+  "theme.docs.sidebar.expandButtonAriaLabel": {
+    "message": "Expandir barra lateral",
+    "description": "The ARIA label and title attribute for expand button of doc sidebar"
+  },
+  "theme.blog.post.plurals": {
+    "message": "Uma publicação|{count} publicações",
+    "description": "Pluralized label for \"{count} posts\". Use as much plural forms (separated by \"|\") as your language support (see https://www.unicode.org/cldr/cldr-aux/charts/34/supplemental/language_plural_rules.html)"
+  },
+  "theme.blog.tagTitle": {
+    "message": "{nPosts} com a etiqueta \"{tagName}\"",
+    "description": "The title of the page for a blog tag"
+  },
+  "theme.blog.author.pageTitle": {
+    "message": "{authorName} - {nPosts}",
+    "description": "The title of the page for a blog author"
+  },
+  "theme.blog.authorsList.pageTitle": {
+    "message": "Autores",
+    "description": "The title of the authors page"
+  },
+  "theme.blog.authorsList.viewAll": {
+    "message": "Ver todos os autores",
+    "description": "The label of the link targeting the blog authors page"
+  },
+  "theme.blog.author.noPosts": {
+    "message": "Este autor ainda não escreveu nenhuma publicação.",
+    "description": "The text for authors with 0 blog post"
+  },
+  "theme.contentVisibility.unlistedBanner.title": {
+    "message": "Página não listada",
+    "description": "The unlisted content banner title"
+  },
+  "theme.contentVisibility.unlistedBanner.message": {
+    "message": "Esta página não está listada. Os mecanismos de busca não vão indexá-la, e só quem tiver o link direto poderá acessá-la.",
+    "description": "The unlisted content banner message"
+  },
+  "theme.contentVisibility.draftBanner.title": {
+    "message": "Página de rascunho",
+    "description": "The draft content banner title"
+  },
+  "theme.contentVisibility.draftBanner.message": {
+    "message": "Esta página é um rascunho. Ela estará visível apenas no desenvolvimento e será excluída do build de produção.",
+    "description": "The draft content banner message"
+  },
+  "theme.docs.DocCard.categoryDescription.plurals": {
+    "message": "{count} item|{count} itens",
+    "description": "The default description for a category card in the generated index about how many items this category includes"
+  },
+  "theme.ErrorPageContent.tryAgain": {
+    "message": "Tentar novamente",
+    "description": "The label of the button to try again rendering when the React error boundary captures an error"
+  },
+  "theme.common.skipToMainContent": {
+    "message": "Pular para o conteúdo principal",
+    "description": "The skip to content label used for accessibility, allowing to rapidly navigate to main content with keyboard tab/enter navigation"
+  },
+  "theme.tags.tagsPageTitle": {
+    "message": "Etiquetas",
+    "description": "The title of the tag list page"
+  },
+  "download.option.size": {
+    "message": "{size} MB",
+    "description": "{size} is a whole number of megabytes. Use your language's unit symbol (Mo in French)."
+  },
+  "download.started.title": {
+    "message": "Download iniciado"
+  },
+  "download.started.blurb": {
+    "message": "O OpenScreen é gratuito e licenciado sob a MIT. Uma estrela no GitHub ajuda outras pessoas a encontrá-lo."
+  },
+  "download.started.cta": {
+    "message": "Dar uma estrela no GitHub"
+  },
+  "demoLoop.pause": {
+    "message": "Pausar o vídeo"
+  },
+  "demoLoop.play": {
+    "message": "Reproduzir o vídeo"
+  },
+  "demoLoop.classic-zoom": {
+    "message": "Um quadro de tarefas gravado no OpenScreen. A visualização dá zoom em um item de checklist e em um botão Ship quando são clicados, e depois se afasta para mostrar o quadro inteiro.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.3d-camera": {
+    "message": "A mesma gravação vista pela câmera 3D, que inclina a tela e gira ao redor dela enquanto segue o cursor.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.3d-cursors": {
+    "message": "Um único ponteiro gravado, redesenhado em cinco estilos de cursor, um após o outro, enquanto a gravação continua.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.automatic-subtitles": {
+    "message": "Uma gravação narrada com legendas embaixo, que passam do inglês para o francês, o espanhol e o coreano.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.caption-styles": {
+    "message": "Uma mesma legenda em cinco estilos: uma simples, uma amarela em negrito, uma manuscrita, uma monoespaçada e uma que mostra uma palavra de cada vez.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.edit-by-transcript": {
+    "message": "Na transcrição do editor, uma frase é selecionada e apagada, e o corte correspondente aparece na linha do tempo.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.tighten-pauses": {
+    "message": "Dois cliques nos marcadores de silêncio da transcrição, e as duas pausas são cortadas da linha do tempo.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.background-picker": {
+    "message": "O seletor de fundo do editor passa por papéis de parede, um degradê e uma cor sólida, e depois ativa o fundo animado Aurora.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.every-format": {
+    "message": "A mesma gravação exportada em 16:9, depois quadrada, depois vertical, com o enquadramento seguindo o cursor.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.sensitive-data-mask": {
+    "message": "Um formulário de login sendo preenchido. Os campos de e-mail e senha continuam desfocados enquanto são digitados.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.every-layout": {
+    "message": "Uma gravação com webcam passando pelos layouts: picture-in-picture, lado a lado, empilhado, câmera em tela cheia e, por fim, só a tela.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.device-frames": {
+    "message": "A mesma gravação, em reprodução, emoldurada por vez como janela de navegador, celular, notebook e monitor de mesa.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.animated-backgrounds": {
+    "message": "Uma gravação sobre um fundo liso e depois sobre uma foto desfocada que se move devagar atrás dela.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.beautiful-by-default": {
+    "message": "Uma captura de tela bruta, depois a mesma tomada como o OpenScreen a abre, já com zoom, enquadrada e com o cursor reestilizado, e depois em vários visuais.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.simpler-editor": {
+    "message": "O editor do OpenScreen. Um clique na miniatura de um fundo muda o visual do vídeo inteiro, e depois o painel lateral passa para a transcrição.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.edit-like-a-doc": {
+    "message": "O texto selecionado na transcrição é apagado como em um documento, e o vídeo é cortado de acordo.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.ask-the-agent": {
+    "message": "Um pedido digitado no painel de chat do editor, e as edições do agente aparecendo na linha do tempo.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "films.default.kicker": {
+    "message": "Pronto de fábrica"
+  },
+  "films.default.title": {
+    "message": "Bonito desde a primeira tomada."
+  },
+  "films.default.lead": {
+    "message": "Cada nova gravação abre {zoomed}, sobre um papel de parede, com margem, sombra e cantos arredondados. Mude o que quiser ou exporte como está."
+  },
+  "films.default.lead.zoomed": {
+    "message": "já com zoom nos seus cliques"
+  },
+  "films.default.note.zooms": {
+    "message": "{t} Cada tomada recebe zoom onde você clicou, por uma regra fixa: sem IA e sem chamada de rede. Desative no modo Gravar."
+  },
+  "films.default.note.zooms.t": {
+    "message": "Zooms a partir dos seus cliques."
+  },
+  "films.default.note.frame": {
+    "message": "{t} Papel de parede, margem, sombra, cantos arredondados e um pouco de desfoque de movimento já estão ativos antes de você mexer em algo."
+  },
+  "films.default.note.frame.t": {
+    "message": "Um enquadramento pronto."
+  },
+  "films.default.note.cursor": {
+    "message": "{t} O ponteiro é gravado separado dos pixels, então o tamanho e o estilo dele podem mudar depois da tomada."
+  },
+  "films.default.note.cursor.t": {
+    "message": "Um cursor que dá para refazer."
+  },
+  "films.depth.kicker": {
+    "message": "3D"
+  },
+  "films.depth.title": {
+    "message": "Profundidade, não só zoom."
+  },
+  "films.depth.lead": {
+    "message": "Incline a tela ou {orbit} durante o zoom, desenhe o ponteiro como {cursor} com sombra e coloque a tomada inteira {device}, sobre um fundo que se move."
+  },
+  "films.depth.lead.orbit": {
+    "message": "gire ao redor dela"
+  },
+  "films.depth.lead.cursor": {
+    "message": "um cursor 3D"
+  },
+  "films.depth.lead.device": {
+    "message": "dentro de um dispositivo"
+  },
+  "films.depth.tab.camera": {
+    "message": "Câmera 3D"
+  },
+  "films.depth.tab.cursors": {
+    "message": "Cursores"
+  },
+  "films.depth.tab.frames": {
+    "message": "Molduras de dispositivo"
+  },
+  "films.depth.tab.backgrounds": {
+    "message": "Fundos animados"
+  },
+  "films.depth.note.camera": {
+    "message": "{t} Cada zoom pode ficar plano, girar a tela para a esquerda ou para a direita, ou orbitar ao redor dela seguindo o foco do zoom. A profundidade de campo suaviza o lado mais distante."
+  },
+  "films.depth.note.camera.t": {
+    "message": "Câmera 3D."
+  },
+  "films.depth.note.cursors": {
+    "message": "{t} Studio Ink, Prism Glow, Pop Coral, Pixel Candy e Star Sprout, e cada um pode ser desenhado como um objeto 3D com sombra."
+  },
+  "films.depth.note.cursors.t": {
+    "message": "Cinco pacotes de cursores."
+  },
+  "films.depth.note.frames": {
+    "message": "{t} Uma janela, um notebook, um celular ou uma tela, clara ou escura, sobre um fundo animado com Deriva, Aurora ou Ondas."
+  },
+  "films.depth.note.frames.t": {
+    "message": "Molduras e movimento."
+  },
+  "films.camera.kicker": {
+    "message": "Câmera"
+  },
+  "films.camera.title": {
+    "message": "Sua câmera, sua tela, ou as duas."
+  },
+  "films.camera.lead": {
+    "message": "Uma tomada com webcam pode ficar {layouts}, e o ambiente atrás de você pode ser {blurred}, recortado ou substituído no seu próprio computador, sem tela verde."
+  },
+  "films.camera.lead.layouts": {
+    "message": "em picture in picture, lado a lado, empilhada ou em tela cheia"
+  },
+  "films.camera.tab.layouts": {
+    "message": "Layouts"
+  },
+  "films.camera.note.layouts": {
+    "message": "{t} Picture in Picture, quadro duplo, empilhamento vertical ou nenhuma webcam."
+  },
+  "films.camera.note.layouts.t": {
+    "message": "Quatro layouts."
+  },
+  "films.camera.note.full": {
+    "message": "{t} Dê um trecho da linha do tempo para a câmera: ela vai para tela cheia e depois volta suavemente."
+  },
+  "films.camera.note.full.t": {
+    "message": "Câmera em tela cheia."
+  },
+  "films.camera.note.background": {
+    "message": "{t} Um modelo de segmentação separa você do ambiente no seu próprio computador. Nada é enviado."
+  },
+  "films.camera.note.background.t": {
+    "message": "Desfocar, recortar ou substituir."
+  },
+  "films.ship.kicker": {
+    "message": "Antes de publicar"
+  },
+  "films.ship.title": {
+    "message": "Adapte a qualquer formato. Desfoque o que não deve aparecer."
+  },
+  "films.ship.lead": {
+    "message": "Uma tomada vira {formats}, e o que não deve aparecer fica {blur}."
+  },
+  "films.ship.lead.formats": {
+    "message": "horizontal, quadrada ou vertical"
+  },
+  "films.ship.lead.blur": {
+    "message": "sob um desfoque"
+  },
+  "films.ship.formats": {
+    "message": "{t} A mesma tomada, enquadrada em 16:9, 9:16, 1:1, 4:3, 4:5, 16:10 ou 10:16."
+  },
+  "films.ship.formats.t": {
+    "message": "Qualquer proporção."
+  },
+  "films.ship.blur": {
+    "message": "{t} Gaussiano ou mosaico, em retângulo, oval ou à mão livre, sobre um e-mail, uma chave ou uma senha."
+  },
+  "films.ship.blur.t": {
+    "message": "Regiões de desfoque."
+  },
+  "films.label": {
+    "message": "Mais do app, em movimento",
+    "description": "Read by screen readers only: names the section of feature videos"
+  },
+  "films.camera.lead.blurred": {
+    "message": "desfocado"
+  },
+  "films.camera.tab.blur": {
+    "message": "Desfoque de fundo"
+  },
+  "demoLoop.camera-blur": {
+    "message": "Uma vinheta quadrada de webcam sobre uma gravação de tela. A visualização se aproxima enquanto o ambiente atrás da pessoa fica desfocado, e depois se afasta.",
+    "description": "Describes a short silent video loop of the app for screen readers."
+  },
+  "demoLoop.title.classic-zoom": {
+    "message": "Zoom automático nos cliques",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.3d-camera": {
+    "message": "Uma câmera 3D que orbita a tela",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.3d-cursors": {
+    "message": "Pacotes de cursores, desenhados em 3D",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.automatic-subtitles": {
+    "message": "Legendas traduzidas para outros idiomas",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.caption-styles": {
+    "message": "Cinco estilos de legenda",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.edit-by-transcript": {
+    "message": "Cortar vídeo apagando texto na transcrição",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.tighten-pauses": {
+    "message": "Cortar silêncios pela transcrição",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.background-picker": {
+    "message": "Trocar o fundo de uma gravação",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.every-format": {
+    "message": "Uma gravação em 16:9, 1:1 e 9:16",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.sensitive-data-mask": {
+    "message": "Desfocar um e-mail e uma senha",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.camera-blur": {
+    "message": "Desfoque de fundo da webcam",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.every-layout": {
+    "message": "Layouts de webcam",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.device-frames": {
+    "message": "Molduras de dispositivo",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.animated-backgrounds": {
+    "message": "Fundos animados",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.beautiful-by-default": {
+    "message": "De uma captura bruta a uma demo pronta",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.simpler-editor": {
+    "message": "O editor do OpenScreen",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.edit-like-a-doc": {
+    "message": "Editar um vídeo como um documento",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "demoLoop.title.ask-the-agent": {
+    "message": "Pedir uma edição ao agente do editor",
+    "description": "The name of a short silent video of the app, given to search engines (schema.org VideoObject)."
+  },
+  "home.hero.title": {
+    "message": "Belas demos logo de primeira."
+  },
+  "home.hero.reassurance": {
+    "message": "Grátis e de código aberto. Sem marca-d’água. Sem conta."
+  },
+  "home.hero.explore": {
+    "message": "Role para explorar o editor"
+  },
+  "recreation.pause": {
+    "message": "Pausar animação"
+  },
+  "recreation.play": {
+    "message": "Reproduzir animação"
+  },
+  "announcement.v2.title": {
+    "message": "OpenScreen v2 chegou"
+  },
+  "announcement.v2.link": {
+    "message": "Veja as novidades (em inglês)",
+    "description": "Links to an English-only blog post. Mention English in translated labels."
+  },
+  "download.cta.mac": {
+    "message": "Baixar para Mac"
+  },
+  "download.cta.windows": {
+    "message": "Baixar para Windows"
+  },
+  "download.cta.linux": {
+    "message": "Baixar para Linux"
+  },
+  "download.cta.chooseMac": {
+    "message": "Escolha seu Mac"
+  },
+  "download.cta.otherVersions": {
+    "message": "Outras versões"
+  }
+}

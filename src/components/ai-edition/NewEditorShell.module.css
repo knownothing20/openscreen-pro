@@ -1,0 +1,2642 @@
+/* Editor shell — 4-row grid: titlebar · workbench · handle · bottombar.
+ * Mirrors design/openscreen-editor.html. Tokens come from
+ * src/styles/design-tokens.css (light + dark via :root[data-theme="dark"]). */
+
+.app {
+	display: grid;
+	grid-template-rows: var(--titlebar-h) 1fr var(--handle-h) var(--bottom-h);
+	height: 100vh;
+	min-width: 1024px;
+	background: var(--bg);
+	color: var(--fg);
+	font-family: var(--font-body);
+	font-size: var(--fs-app);
+	line-height: 1.5;
+	overflow: hidden;
+	user-select: none;
+}
+
+/* ─── titlebar ──────────────────────────────────────────────────── */
+.titlebar {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-3);
+	padding-inline: var(--sp-4);
+	background: var(--bg);
+	border-bottom: 1px solid var(--border-soft);
+	min-width: 0;
+	/* ponytail: make the titlebar the drag region in Electron. The buttons
+	 * opt out via inline -webkit-app-region: no-drag (see Titlebar.tsx). */
+	-webkit-app-region: drag;
+	app-region: drag;
+}
+.titlebar button,
+.titlebar input,
+.titlebar select,
+.titlebar textarea,
+.titlebar .langSel,
+.titlebar .recorderBtn {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+.titlebar .lights {
+	display: inline-flex;
+	gap: 6px;
+	margin-right: var(--sp-3);
+}
+.titlebar .lights span {
+	width: 11px;
+	height: 11px;
+	border-radius: 50%;
+	border: 1px solid var(--overlay-border);
+}
+.titlebar .lights .r { background: var(--light-red); }
+.titlebar .lights .y { background: var(--light-yellow); }
+.titlebar .lights .g { background: var(--light-green); }
+
+.titlebar .brand {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-family: var(--font-display);
+	font-size: var(--fs-title);
+	font-weight: 500;
+	letter-spacing: -0.005em;
+	color: var(--fg);
+}
+.titlebar .brandMark {
+	width: 18px;
+	height: 18px;
+	border-radius: 5px;
+	background: var(--accent);
+	display: grid;
+	place-items: center;
+	color: var(--accent-on);
+	font: 600 11px/1 var(--font-display);
+}
+.titlebar .sep {
+	width: 1px;
+	height: 16px;
+	background: var(--border);
+}
+.titlebar .project {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--sp-2);
+	font-size: var(--fs-app);
+	color: var(--muted);
+	min-width: 0;
+}
+.titlebar .projectName {
+	color: var(--fg-2);
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 280px;
+	background: transparent;
+	border: 0;
+	padding: 2px 6px;
+	border-radius: var(--r-sm);
+	cursor: text;
+	font: inherit;
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+.titlebar .projectName:hover:not(:disabled) {
+	background: var(--surface-3);
+}
+.titlebar .projectInput {
+	background: var(--surface);
+	color: var(--fg);
+	border: 1px solid var(--accent);
+	border-radius: var(--r-sm);
+	padding: 2px 6px;
+	font: 500 13px var(--font-body);
+	outline: none;
+	min-width: 200px;
+	max-width: 360px;
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+.titlebar .saved {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-family: var(--font-mono);
+	font-size: var(--fs-app-sm);
+	color: var(--muted);
+}
+.titlebar .saved .dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--success);
+}
+.titlebar .projActions {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--sp-1);
+	margin-right: var(--sp-1);
+}
+.titlebar .right {
+	margin-left: auto;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--sp-1);
+}
+.titlebar .iconBtn {
+	width: 28px;
+	height: 28px;
+	display: grid;
+	place-items: center;
+	border-radius: var(--r-sm);
+	color: var(--muted);
+	background: transparent;
+	border: 0;
+	cursor: pointer;
+	transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.titlebar .iconBtn:hover {
+	background: var(--surface-3);
+	color: var(--fg);
+}
+.titlebar .iconBtn[aria-pressed="true"] {
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+.titlebar .langSel {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 26px;
+	padding: 0 6px;
+	background: transparent;
+	border: 1px solid var(--border-soft);
+	border-radius: var(--r-md);
+	color: var(--fg-2);
+	font: 500 var(--fs-app)/1 var(--font-display);
+	cursor: pointer;
+	transition: background var(--motion-fast) var(--ease), border-color var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.titlebar .langSel:hover {
+	background: var(--surface-3);
+	border-color: var(--border);
+	color: var(--fg);
+}
+.titlebar .recorderBtn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 26px;
+	padding: 0 10px 0 8px;
+	border-radius: var(--r-md);
+	background: var(--accent-soft);
+	color: var(--accent);
+	border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
+	transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+	font: 500 var(--fs-app-sm)/1 var(--font-display);
+	letter-spacing: 0.01em;
+	cursor: pointer;
+}
+.titlebar .recorderBtn:hover {
+	background: color-mix(in oklch, var(--accent) 18%, var(--surface-3));
+}
+
+/* ─── workbench — 7 columns: rail · panel · handle · preview · handle · stack · rail */
+.workbench {
+	display: grid;
+	grid-template-columns:
+		var(--rail-w)
+		var(--panel-w-left)
+		var(--handle-w)
+		1fr
+		var(--handle-w)
+		var(--panel-w-right)
+		var(--rail-w);
+	min-height: 0;
+	background: var(--bg);
+	overflow: hidden;
+}
+.workbench > * {
+	min-height: 0;
+}
+.workbench > * + * {
+	border-left: 1px solid var(--border-soft);
+}
+
+.panel {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 0;
+	min-width: 0;
+	min-height: 0;
+	background: var(--bg);
+	overflow: hidden;
+}
+
+/* Direct children of .panel: panelHeader (auto), panelBody (1fr), chatInput (auto). */
+.panel > .panelHeader,
+.panel > .chatInput {
+	flex: 0 0 auto;
+}
+.panel > .panelBody {
+	flex: 1 1 0;
+}
+.panelBody {
+	overflow-y: auto;
+	padding: var(--sp-3) var(--sp-4);
+	scrollbar-width: thin;
+	scrollbar-color: var(--border) transparent;
+	min-height: 0;
+}
+.panelBody::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+.panelBody::-webkit-scrollbar-thumb {
+	background: var(--border);
+	border-radius: 4px;
+}
+.panelBody::-webkit-scrollbar-thumb:hover {
+	background: var(--border-hi);
+}
+
+/* ─── resize handles ───────────────────────────────────────────── */
+.handle {
+	background: transparent;
+	position: relative;
+	z-index: 2;
+	transition: background var(--motion-fast) var(--ease);
+	cursor: col-resize;
+}
+.handleRow {
+	cursor: row-resize;
+	grid-column: 1 / -1;
+	border-bottom: 1px solid var(--border);
+}
+.handle:hover,
+.handle.isDragging {
+	background: var(--surface-2);
+}
+.handle::before,
+.handle::after {
+	content: "";
+	position: absolute;
+	background: var(--dim);
+	border-radius: 1px;
+	opacity: 0.45;
+	transition: opacity var(--motion-fast) var(--ease);
+	pointer-events: none;
+}
+.handleCol::before,
+.handleCol::after {
+	left: 50%;
+	width: 1px;
+	height: 14px;
+	transform: translateX(-50%);
+}
+.handleCol::before { top: calc(50% - 16px); }
+.handleCol::after  { top: calc(50% + 2px); }
+.handleRow::before,
+.handleRow::after {
+	top: 50%;
+	height: 1px;
+	width: 14px;
+	transform: translateY(-50%);
+}
+.handleRow::before { left: calc(50% - 16px); }
+.handleRow::after  { left: calc(50% + 2px); }
+.handle:hover::before,
+.handle:hover::after,
+.handle.isDragging::before,
+.handle.isDragging::after {
+	opacity: 1;
+}
+.handle.isDragging {
+	background: var(--accent-soft);
+}
+
+/* ─── preview area ─────────────────────────────────────────────── */
+/* ponytail: the stage wrapper (in NewEditorShell.tsx) already provides the
+   padding that reserves room for the floating inspector, and .stage paints the
+   scene gradient. previewWrap is a single transparent, zero-padding centering
+   layer so the wallpaper card floats on that gradient — matching the design's
+   stage-wrap (one framed card, no surface slab, no double padding). It is also
+   the positioned ancestor for the timecode/badge overlays and the box the
+   frame measures for its contain-fit. */
+.previewWrap {
+	position: relative;
+	display: grid;
+	place-items: center;
+	width: 100%;
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+}
+.previewFrame {
+	position: relative;
+	aspect-ratio: 16 / 9;
+	max-width: 100%;
+	max-height: 100%;
+	width: 100%;
+	min-width: 0;
+	min-height: 0;
+	background:
+		radial-gradient(ellipse at 50% 35%,
+			var(--scene-sky-hi) 0%,
+			var(--scene-sky-mid) 35%,
+			var(--scene-foliage) 70%,
+			var(--scene-foliage-d) 100%);
+	/* ponytail: the wallpaper card is a floating, rounded surface (per the v4
+	   design's preview frame) — rounded corners + a layered drop shadow lift it
+	   off the scene gradient. The custom background (wallpaperStyle) fills this
+	   card; the video sits on top with its own padding so the wallpaper shows
+	   around it. */
+	border-radius: 16px;
+	box-shadow:
+		0 40px 90px -30px rgba(0, 0, 0, 0.75),
+		0 12px 28px -12px rgba(0, 0, 0, 0.5),
+		inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+	overflow: hidden;
+	display: grid;
+	place-items: center;
+	/* Its own stacking context: the layers inside it (gimbals, zoom focus, webcam drag) order
+	   themselves with z-indexes up to 1000 and more, which must not reach past the preview. A
+	   selected annotation's gimbal painted over the export dialog (z-index 100). */
+	isolation: isolate;
+}
+/* Once the native canvas has painted, it covers the whole card, and anything painted UNDER the
+   same rounded clip leaks through its anti-aliased edge: the wallpaper placeholder and the inset
+   hairline showed as a fringe of background around each corner. So the card keeps only what lies
+   outside it, its drop shadow. `!important` because the placeholder wallpaper is an inline style. */
+.previewFrame:has(> canvas[data-painted]) {
+	background: none !important;
+	box-shadow:
+		0 40px 90px -30px rgba(0, 0, 0, 0.75),
+		0 12px 28px -12px rgba(0, 0, 0, 0.5);
+}
+.videoStage {
+	position: relative;
+	display: grid;
+	place-items: center;
+	min-width: 0;
+	min-height: 0;
+	overflow: visible;
+	z-index: 1;
+}
+.screenStage {
+	position: absolute;
+	overflow: hidden;
+	z-index: 1;
+	display: flex;
+}
+.screenStage > .container,
+.screenStage > div > .container {
+	width: 100%;
+	height: 100%;
+}
+.previewEmpty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	color: var(--muted);
+	font-size: var(--fs-app);
+}
+.previewEmpty strong { color: var(--fg-2); }
+
+/* ─── preview empty state (no project / no asset) ───────────────── */
+.previewEmptyDrop {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.previewEmptyDropOverlay {
+	position: absolute;
+	inset: 0;
+	z-index: 10;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--sp-2);
+	border: 2px dashed var(--primary, #34B27B);
+	background: color-mix(in srgb, var(--primary, #34B27B) 10%, transparent);
+	border-radius: var(--r-sm);
+	pointer-events: none;
+}
+.previewEmptyDropIcon {
+	width: 40px;
+	height: 40px;
+	color: var(--primary, #34B27B);
+}
+.previewEmptyDropLabel {
+	font-size: var(--fs-app);
+	font-weight: 600;
+	color: var(--primary, #34B27B);
+}
+.previewEmptyInner {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--sp-4);
+	padding: var(--sp-5);
+	text-align: center;
+	max-width: 28rem;
+}
+.previewEmptyLogo {
+	width: 64px;
+	height: 64px;
+	border-radius: var(--r-md);
+	opacity: 0.9;
+}
+.previewEmptyHeading {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
+}
+.previewEmptyTitle {
+	margin: 0;
+	font-size: 1.25rem;
+	font-weight: 600;
+	color: var(--fg-2);
+}
+.previewEmptyDescription {
+	margin: 0;
+	font-size: 0.875rem;
+	color: var(--muted);
+	line-height: 1.5;
+}
+.previewEmptyActions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-2);
+	width: 100%;
+	max-width: 18rem;
+}
+.previewEmptyPrimaryButton {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--sp-2);
+	min-height: 40px;
+	padding: var(--sp-3) var(--sp-4);
+	border-radius: var(--r-md);
+	background: var(--primary, #34B27B);
+	color: var(--accent-on);
+	border: none;
+	font-weight: 600;
+	font-size: 0.875rem;
+	cursor: pointer;
+	transition: background-color 120ms ease;
+}
+.previewEmptyPrimaryButton:hover {
+	filter: brightness(0.95);
+}
+.previewEmptySecondaryButton {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--sp-2);
+	min-height: 40px;
+	padding: var(--sp-3) var(--sp-4);
+	border-radius: var(--r-md);
+	background: color-mix(in oklab, var(--fg) 7%, transparent);
+	color: var(--fg-2);
+	border: 1px solid transparent;
+	font-weight: 600;
+	font-size: 0.875rem;
+	cursor: pointer;
+	transition: background-color 120ms ease;
+}
+/* Not --accent: design-tokens.css pins it to solid mint, and the label on it fell to 2.3:1.
+   A deeper step of the same fill rather than --surface-2, which in the dark theme is the
+   resting fill's own colour. */
+.previewEmptySecondaryButton:hover {
+	background: color-mix(in oklab, var(--fg) 13%, transparent);
+}
+/* The third way in, once recording leads: text, not a third button. */
+.previewEmptyLinkButton {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--sp-2);
+	padding: var(--sp-2);
+	border: 0;
+	background: transparent;
+	color: var(--muted);
+	font: 500 0.875rem var(--font-body);
+	cursor: pointer;
+	transition: color var(--motion-fast) var(--ease);
+}
+.previewEmptyLinkButton:hover {
+	color: var(--fg);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.previewEmptyButtonIcon {
+	width: 16px;
+	height: 16px;
+}
+.previewEmptyHint {
+	margin: 0;
+	font-size: 0.75rem;
+	color: var(--muted-foreground, rgba(255, 255, 255, 0.5));
+}
+.previewEmptyDragHint {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-1);
+	margin: 0;
+	font-size: 0.75rem;
+	color: var(--muted-foreground, rgba(255, 255, 255, 0.4));
+}
+.previewEmptyDragHintIcon {
+	width: 12px;
+	height: 12px;
+}
+
+/* ─── preview media failure (PreviewErrorCard) ──────────────────── */
+/* Overlays the stage instead of replacing it: the native compositor is still
+   painting the last composed frame underneath, and leaving that frame visible is
+   what tells the user their project is fine (issue #395). Translucent, not
+   opaque, for the same reason. */
+.previewFailure {
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	display: grid;
+	place-items: center;
+	padding: var(--sp-4);
+	background: rgba(9, 9, 11, 0.72);
+	backdrop-filter: blur(2px);
+	/* The scrim is a fixed dark surface in BOTH themes, so the text on it must
+	   not follow the document theme. Light is the default (useTheme.ts), and
+	   there --fg-2 is #334155 — near-black on near-black. Pinned here rather
+	   than as a var() fallback per rule: --muted-foreground is always defined
+	   (design-tokens.css), so a fallback would never have fired. */
+	--fg-2: #f3f5f8;
+	--muted-foreground: rgba(255, 255, 255, 0.78);
+}
+.previewFailureCard {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--sp-3);
+	max-width: min(38ch, 100%);
+	text-align: center;
+}
+.previewFailureIconRing {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.05);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.previewFailureIcon {
+	width: 20px;
+	height: 20px;
+	color: var(--muted-foreground);
+}
+.previewFailureTitle {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 600;
+	color: var(--fg-2);
+}
+.previewFailureDescription {
+	margin: 0;
+	font-size: 0.875rem;
+	line-height: 1.5;
+	color: var(--muted-foreground);
+}
+/* Selectable: it exists to be copied into a bug report, so it stays legible
+   rather than fading to decoration. */
+.previewFailureDetail {
+	margin: 0;
+	font-size: 0.6875rem;
+	font-family: var(--font-mono, ui-monospace, monospace);
+	color: rgba(255, 255, 255, 0.6);
+	user-select: text;
+	word-break: break-word;
+}
+.previewEmptyDialog {
+	max-width: 24rem;
+	padding: var(--sp-5);
+	background: var(--surface);
+	border: 1px solid var(--border);
+}
+.previewEmptyDialogHeader {
+	margin-bottom: var(--sp-3);
+}
+.previewEmptyDialogHeaderInner {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+}
+.previewEmptyDialogLogo {
+	width: 36px;
+	height: 36px;
+	border-radius: var(--r-sm);
+	flex-shrink: 0;
+}
+.previewEmptyDialogTitle {
+	font-size: 1rem;
+	font-weight: 600;
+	color: var(--fg-2);
+	line-height: 1.2;
+}
+.previewEmptyDialogBody {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--sp-2);
+	margin-bottom: var(--sp-4);
+	text-align: center;
+}
+.previewEmptyDialogIcon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	border-radius: 9999px;
+	background: var(--card);
+	border: 1px solid var(--border);
+}
+.previewEmptyDialogAlertIcon {
+	width: 20px;
+	height: 20px;
+	color: var(--muted);
+}
+.previewEmptyDialogMessage {
+	margin: 0;
+	font-size: 0.875rem;
+	color: var(--muted);
+	line-height: 1.5;
+}
+.previewEmptyDialogClose {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--sp-1);
+	width: 100%;
+	min-height: 36px;
+	padding: var(--sp-2) var(--sp-3);
+	border-radius: var(--r-md);
+	background: color-mix(in oklab, var(--fg) 8%, transparent);
+	color: var(--fg-2);
+	border: 1px solid transparent;
+	font-size: 0.875rem;
+	font-weight: 500;
+	cursor: pointer;
+}
+.previewEmptyDialogCloseIcon {
+	width: 14px;
+	height: 14px;
+}
+.previewPip {
+	position: absolute;
+	right: var(--sp-3);
+	bottom: var(--sp-3);
+	width: 120px;
+	aspect-ratio: 16 / 9;
+	border-radius: var(--r-sm);
+	background: linear-gradient(135deg, var(--pip-bg-1) 0%, var(--pip-bg-2) 50%, var(--pip-bg-3) 100%);
+	border: 2px solid var(--bg);
+	box-shadow: var(--elev-card);
+	overflow: hidden;
+	display: grid;
+	place-items: center;
+	color: var(--overlay-text);
+	font-family: var(--font-mono);
+	font-size: 9px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+.previewFrame > .screenStage video {
+	position: relative;
+	z-index: 1;
+	/* Pixels come from the native canvas now; this <video> stays mounted (and
+	   playing) purely as the playback clock and metadata source, its picture
+	   undecoded (`dropVideoTrack` in VirtualPreview.tsx). A plain
+	   descendant selector (not a fixed child-depth chain) is required here:
+	   VirtualPreview nests the actual <video> THREE levels down
+	   (.screenStage > .container > .videoFrame > video), not one or two —
+	   the previous `>` chain silently never matched, leaving this video
+	   fully visible (and on top of the native canvas) the whole time. */
+	visibility: hidden;
+}
+.pipCircle {
+	border-radius: 9999px !important;
+}
+.pipSquare {
+	border-radius: 0 !important;
+}
+.pipRounded {
+	border-radius: 18px !important;
+}
+
+/* Webcam slot: the drag-to-reposition hitbox over the camera the native canvas
+   draws. Transparent, so nothing of it shows. */
+.webcamSlot {
+	background: transparent;
+	overflow: hidden;
+	z-index: 2;
+	display: flex;
+}
+.webcamSlot .webcamVideo {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	/* Native canvas already draws the composited webcam PiP; this <video> is
+	   never played, only read for the camera's size (WebcamOverlay.tsx). The
+	   slot div itself stays visible/clickable for the drag-to-reposition hitbox. */
+	visibility: hidden;
+	display: block;
+}
+/* ─── transport bar (lives inside .timelineHead, next to the tool icons) ─ */
+.transport {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+.transport .tbtn {
+	width: 32px;
+	height: 32px;
+	display: grid;
+	place-items: center;
+	border-radius: var(--r-md);
+	color: var(--fg-2);
+	background: transparent;
+	border: 0;
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.transport .tbtn:hover {
+	background: var(--surface-3);
+	color: var(--fg);
+}
+.transport .tbtn.play {
+	width: 34px;
+	height: 34px;
+	background: var(--fg);
+	color: var(--bg);
+	border-radius: 50%;
+}
+.transport .tbtn.play:hover {
+	background: var(--fg-2);
+}
+.transport .time {
+	font: 500 14px/1 var(--font-body);
+	font-variant-numeric: tabular-nums;
+	color: var(--fg);
+	min-width: 104px;
+	text-align: center;
+	flex-shrink: 0;
+}
+.transport .time .sep { color: var(--meta); margin-inline: 4px; }
+.transport .time .total { color: var(--muted); }
+.transport .spacer { flex: 1; }
+
+/* ─── right panel-stack (one pane visible at a time) ──────────── */
+.pane {
+	display: none;
+	grid-template-rows: auto 1fr;
+	min-height: 0;
+}
+.pane.isActive {
+	display: grid;
+}
+.paneHead {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	padding: 12px var(--sp-4);
+	/* Every pane wearing this header is rendered inside FloatingInspector, which
+	   floats its "Collapse inspector" button (right: 12, 26px wide) over the
+	   header's right edge — landing squarely on whatever sits there and
+	   swallowing its clicks. The Help button was the casualty: visible on every
+	   facet, and unclickable. Reserve the floated button its own lane instead. */
+	padding-right: 46px;
+	border-bottom: 1px solid var(--border-soft);
+	min-height: 44px;
+}
+.paneHead h2 {
+	margin: 0;
+	font-family: var(--font-display);
+	font-size: 14px;
+	font-weight: 500;
+	letter-spacing: -0.005em;
+	color: var(--fg);
+}
+.paneBody {
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: 12px var(--sp-4);
+	scrollbar-width: thin;
+	scrollbar-color: var(--border) transparent;
+	min-height: 0;
+}
+
+/* ─── pane tabs (sub-nav inside a pane) ───────────────────────── */
+.paneTabs {
+	display: flex;
+	gap: 2px;
+	padding: 3px;
+	margin: 12px var(--sp-4);
+	background: color-mix(in oklab, var(--fg) 6%, transparent);
+	border-radius: 12px;
+}
+.paneTabs button {
+	flex: 1;
+	min-height: 30px;
+	padding: 0 10px;
+	border: 0;
+	background: transparent;
+	border-radius: 9px;
+	font: 500 13px/1 var(--font-body);
+	color: var(--muted);
+	cursor: pointer;
+	transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.paneTabs button:hover:not(:disabled) {
+	color: var(--fg);
+}
+/* Raised above its track: --surface was darker than the track in the dark theme. */
+.paneTabs button.isActive {
+	background: var(--surface-hi);
+	color: var(--fg-emphasis);
+	font-weight: 600;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.paneSection { display: none; }
+.paneSection.isActive { display: block; }
+
+/* ─── pane rows (label + control) ─────────────────────────────── */
+/* Free rows, the way Screen Studio sets its settings: label and control on one line, flush with
+   the section labels, grouped by those labels and by space rather than each boxed in a card. */
+.paneRow {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 12px 0;
+	margin: 8px var(--sp-4);
+}
+.paneRow .label { font: 500 var(--fs-app) var(--font-body); color: var(--fg-2); }
+.paneRow .info {
+	display: block;
+	margin-top: 2px;
+	font: 400 12px/1.5 var(--font-body);
+	color: var(--muted);
+}
+/* The one group label: sentence case, normal tracking. */
+.sectionLabel {
+	font: 600 13px/1.3 var(--font-body);
+	color: var(--fg-2);
+	margin: 4px var(--sp-4) 8px;
+}
+/* The current value, after the label, when the control below only shows it as a picture. */
+.sectionLabelValue {
+	margin-left: 6px;
+	font-weight: 400;
+	color: var(--muted);
+}
+/* The same label where there is no pane inset to honour (dialogs). */
+.groupLabel {
+	display: block;
+	margin: 0 0 8px;
+	font: 600 13px/1.3 var(--font-body);
+	color: var(--fg-2);
+}
+/* A sentence that explains the control above it. */
+.hint {
+	margin: 0;
+	font: 400 12px/1.5 var(--font-body);
+	color: var(--muted);
+}
+/* ─── action menu (a button's list of things it could do) ─────── */
+/* Sits where a Toggle would; reads as the current value, not as on/off. */
+/* Raised (--surface-hi) rather than filled like a field: it sits on a row that already
+   carries the soft fill, and the same fill twice would vanish. */
+.rowAction {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 30px;
+	padding: 0 10px;
+	border: 1px solid transparent;
+	border-radius: var(--r-md);
+	background: var(--surface-hi);
+	box-shadow: var(--elev-card-soft);
+	color: var(--fg-2);
+	font: 500 13px/1 var(--font-body);
+	font-variant-numeric: tabular-nums;
+	cursor: pointer;
+	transition: border-color 150ms ease, color 150ms ease;
+}
+.rowAction:hover:not(:disabled) { border-color: var(--brand); color: var(--fg); }
+.rowAction:disabled { cursor: default; opacity: 0.5; }
+.actionMenu {
+	min-width: 216px;
+	padding: 6px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--surface-1);
+	box-shadow: var(--elev-pop);
+	/* Ten presets must cost no more room than two. */
+	max-height: min(var(--radix-popover-content-available-height, 60vh), 320px);
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--border) transparent;
+}
+.actionMenuRow {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	width: 100%;
+	padding: 7px 8px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--fg);
+	cursor: pointer;
+	text-align: left;
+}
+.actionMenuRow:hover:not(:disabled) { background: color-mix(in oklab, var(--fg) 6%, transparent); }
+.actionMenuRow.isActive { background: var(--accent-soft); }
+/* A row the project cannot take (a portrait device frame on a landscape timeline) stays in the
+   list so the option is still discoverable, but has to LOOK unavailable — and the reason rides
+   in its `actionMenuCount` slot on the right. */
+.actionMenuRow:disabled { cursor: default; opacity: 0.5; }
+/* Separates the fixed presets from the shapes this timeline actually holds. */
+.actionMenuGroup {
+	padding: 8px 8px 4px;
+	font: 600 12px/1.3 var(--font-body);
+	color: var(--fg-2);
+}
+.actionMenuMain { font: 600 13px var(--font-display); font-variant-numeric: tabular-nums; }
+.actionMenuCount {
+	margin-left: auto;
+	font: 500 12px var(--font-body);
+	font-variant-numeric: tabular-nums;
+	color: var(--meta);
+}
+/* ─── style presets menu (Composition pane header) ────────────── */
+/* A preset row plus its "⋯" button, which must never be part of the apply target. */
+.presetRow { display: flex; align-items: center; gap: 2px; }
+.presetRow .actionMenuRow { flex: 1; min-width: 0; }
+.presetRow .actionMenuMain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.presetCheck {
+	flex-shrink: 0;
+	align-self: center;
+	display: inline-grid;
+	place-items: center;
+	width: 12px;
+	color: var(--brand);
+}
+.presetActionLabel { font: 500 13px var(--font-body); color: var(--fg-2); }
+.presetActions {
+	margin: 2px 0 4px 20px;
+	padding-left: 4px;
+	border-left: 1px solid var(--border);
+}
+.presetStatus {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 7px 8px;
+	font: 400 12px var(--font-body);
+	color: var(--muted);
+}
+.presetDivider { height: 1px; margin: 4px 2px; background: var(--border); }
+.presetForm { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px; }
+.presetFormButtons { display: flex; justify-content: flex-end; gap: 6px; }
+.presetConfirm { font: 500 13px var(--font-body); color: var(--fg); }
+.presetError { font: 400 12px var(--font-body); color: var(--danger); }
+
+.uploadBtn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 34px;
+	margin: 0 var(--sp-4) 12px;
+	padding: 0 14px;
+	border: 1px dashed var(--border-hi);
+	border-radius: var(--r-md);
+	background: color-mix(in oklab, var(--fg) 5%, transparent);
+	color: var(--fg-2);
+	font: 500 13px var(--font-body);
+	cursor: pointer;
+}
+.uploadBtn:hover { border-color: var(--accent); color: var(--fg); }
+.field {
+	display: grid;
+	grid-template-columns: 112px 1fr;
+	align-items: center;
+	gap: 6px 10px;
+	padding: 4px var(--sp-4);
+}
+/* `.fieldLabel` names a control that is not one labelable element (a ChoiceRow's group). */
+.field label,
+.fieldLabel {
+	font: 500 13px/1.3 var(--font-body);
+	color: var(--fg-2);
+}
+/* Under the control, across both columns: a sentence does not fit a label column. */
+.field .hint { grid-column: 1 / -1; }
+
+/* ─── the one field look ─────────────────────────────────────────── */
+/* Filled, with no outline until focus. `.control` is for fields that live outside a `.field`
+   row (inspector, dialogs, menus).
+   Solid, not the rows' translucent fill: a native <select> paints its option list with this
+   background, and a translucent one comes out as white-on-white in the dark theme. Mixed from
+   --surface-1 rather than taken as --surface-2, which in the dark theme is 1.03:1 against the
+   inspector's --surface-1 — a field you cannot see. */
+.control,
+.field select,
+.field input:not([type="checkbox"]),
+.presetForm input {
+	height: 34px;
+	padding: 0 10px;
+	font: 400 13px var(--font-body);
+	color: var(--fg);
+	background: color-mix(in oklab, var(--fg) 7%, var(--surface-1));
+	border: 1px solid transparent;
+	border-radius: var(--r-md);
+	outline: none;
+	transition: border-color var(--motion-fast) var(--ease);
+}
+.field select,
+.field input:not([type="checkbox"]),
+.presetForm input { width: 100%; }
+textarea.control {
+	height: auto;
+	padding: 8px 10px;
+	line-height: 1.4;
+	resize: vertical;
+}
+.control:focus,
+.field select:focus,
+.field input:focus,
+.presetForm input:focus { border-color: var(--accent); }
+/* After :focus, so a rejected name stays red while it is being corrected. */
+.presetForm input[aria-invalid="true"] { border-color: var(--danger); }
+.control:disabled,
+.field select:disabled,
+.field input:disabled { opacity: 0.5; cursor: not-allowed; }
+/* A `.field` whose control needs the row's full width (a ChoiceRow): label on top. */
+.field.fieldStack { grid-template-columns: minmax(0, 1fr); }
+
+/* ─── choice row (ChoiceRow: a few fixed values, one button each) ─── */
+/* The picked value carries the app's one selected look: accent border on the accent tint. */
+.choiceRow {
+	display: grid;
+	gap: 4px;
+}
+.choiceBtn {
+	min-width: 0;
+	min-height: 32px;
+	padding: 0 6px;
+	display: inline-flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 3px;
+	border: 1px solid transparent;
+	border-radius: var(--r-md);
+	background: color-mix(in oklab, var(--fg) 6%, transparent);
+	color: var(--fg-2);
+	font: 500 12.5px/1.2 var(--font-body);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+	transition: background var(--motion-fast) var(--ease), border-color var(--motion-fast) var(--ease);
+}
+.choiceBtn:hover:not(:disabled) { background: color-mix(in oklab, var(--fg) 11%, transparent); }
+.choiceBtn.isActive {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	color: var(--fg);
+}
+.choiceBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.choiceRowTiles .choiceBtn { min-height: 44px; }
+
+/* ─── webcam framing (LayoutPane) ─────────────────────────────── */
+/* A picture of the camera with the kept frame on it: outside the frame is dimmed, the frame is
+   what the webcam will show, and it is dragged to choose that. */
+.framing {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0 var(--sp-4) 4px;
+}
+.framingBox {
+	position: relative;
+	width: 100%;
+	max-width: 100%;
+	overflow: hidden;
+	border-radius: var(--r-md);
+	background: linear-gradient(135deg, color-mix(in oklab, var(--fg) 10%, transparent), color-mix(in oklab, var(--fg) 4%, transparent));
+}
+.framingVideo {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	pointer-events: none;
+}
+.framingCrop {
+	position: absolute;
+	box-sizing: border-box;
+	border: 1.5px solid rgb(255 255 255 / 0.9);
+	border-radius: 4px;
+	/* Dims everything outside the frame without a second element. */
+	box-shadow: 0 0 0 999px rgb(0 0 0 / 0.45);
+	touch-action: none;
+}
+/* A corner bracket, the shape every photo cropper uses: thick, white and shadowed so it reads on
+   a bright wall as on a dark one, and sitting in a 28px square that a pointer finds without aiming. */
+.framingHandle {
+	position: absolute;
+	width: 28px;
+	height: 28px;
+	touch-action: none;
+}
+/* `--bracket` and `--bracket-w` size the bracket to its picture: a large preview sets them bigger. */
+.framingHandle::before {
+	content: "";
+	position: absolute;
+	width: var(--bracket, 14px);
+	height: var(--bracket, 14px);
+	border: 0 solid #fff;
+	filter: drop-shadow(0 0 1.5px rgb(0 0 0 / 0.7));
+	transition: width var(--motion-fast) var(--ease), height var(--motion-fast) var(--ease);
+}
+.framingHandle:hover::before {
+	width: calc(var(--bracket, 14px) + 3px);
+	height: calc(var(--bracket, 14px) + 3px);
+}
+.framingHandle[data-corner="nw"] { top: -8px; left: -8px; cursor: nwse-resize; }
+.framingHandle[data-corner="ne"] { top: -8px; right: -8px; cursor: nesw-resize; }
+.framingHandle[data-corner="sw"] { bottom: -8px; left: -8px; cursor: nesw-resize; }
+.framingHandle[data-corner="se"] { bottom: -8px; right: -8px; cursor: nwse-resize; }
+.framingHandle[data-corner="nw"]::before { top: 8px; left: 8px; border-width: var(--bracket-w, 3.5px) 0 0 var(--bracket-w, 3.5px); border-top-left-radius: 5px; }
+.framingHandle[data-corner="ne"]::before { top: 8px; right: 8px; border-width: var(--bracket-w, 3.5px) var(--bracket-w, 3.5px) 0 0; border-top-right-radius: 5px; }
+.framingHandle[data-corner="sw"]::before { bottom: 8px; left: 8px; border-width: 0 0 var(--bracket-w, 3.5px) var(--bracket-w, 3.5px); border-bottom-left-radius: 5px; }
+.framingHandle[data-corner="se"]::before { bottom: 8px; right: 8px; border-width: 0 var(--bracket-w, 3.5px) var(--bracket-w, 3.5px) 0; border-bottom-right-radius: 5px; }
+/* Edit clip's crop region: focusable, since the arrows move it and Shift + the arrows resize it. */
+.cropRegion:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* A crop's sides: a short thick bar on the edge, in the brackets' white, and a grab area around it. */
+.cropEdge {
+	position: absolute;
+	touch-action: none;
+}
+.cropEdge::before {
+	content: "";
+	position: absolute;
+	border-radius: 2px;
+	background: #fff;
+	filter: drop-shadow(0 0 1.5px rgb(0 0 0 / 0.7));
+}
+.cropEdge[data-edge="n"],
+.cropEdge[data-edge="s"] { left: 50%; width: 56px; height: 28px; margin-left: -28px; cursor: ns-resize; }
+.cropEdge[data-edge="n"] { top: -12px; }
+.cropEdge[data-edge="s"] { bottom: -12px; }
+.cropEdge[data-edge="w"],
+.cropEdge[data-edge="e"] { top: 50%; width: 28px; height: 56px; margin-top: -28px; cursor: ew-resize; }
+.cropEdge[data-edge="w"] { left: -12px; }
+.cropEdge[data-edge="e"] { right: -12px; }
+.cropEdge[data-edge="n"]::before { top: 12px; left: 12px; right: 12px; height: var(--bracket-w, 3.5px); }
+.cropEdge[data-edge="s"]::before { bottom: 12px; left: 12px; right: 12px; height: var(--bracket-w, 3.5px); }
+.cropEdge[data-edge="w"]::before { left: 12px; top: 12px; bottom: 12px; width: var(--bracket-w, 3.5px); }
+.cropEdge[data-edge="e"]::before { right: 12px; top: 12px; bottom: 12px; width: var(--bracket-w, 3.5px); }
+/* The zoom, on the picture it zooms. Its own dark ground, like any label over a photo. */
+.framingZoom {
+	position: absolute;
+	right: 8px;
+	bottom: 8px;
+	padding: 3px 8px;
+	border-radius: 999px;
+	background: rgb(0 0 0 / 0.55);
+	color: #fff;
+	font: 600 11px/1.2 var(--font-body);
+	font-variant-numeric: tabular-nums;
+	pointer-events: none;
+}
+.framingCrop[data-movable="true"] { cursor: grab; }
+.framingCrop[data-movable="true"]:active { cursor: grabbing; }
+.framingCrop:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.framingHint {
+	margin: 0;
+	font: 400 12px/1.5 var(--font-body);
+	color: var(--muted);
+}
+/* Under an icon, the name shrinks to one line and ellipsises rather than widening the column. */
+.choiceBtnLabel {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-size: 12px;
+}
+
+/* ─── bg thumb grid ────────────────────────────────────────────── */
+/* Eight to a row, as small as Screen Studio's: the whole bundled set fits in three rows, and
+   the colours and gradients in two. */
+.bgGrid {
+	display: grid;
+	grid-template-columns: repeat(8, minmax(0, 1fr));
+	gap: 5px;
+	padding: 0 var(--sp-4) 12px;
+}
+.bgThumb {
+	aspect-ratio: 1/1;
+	min-width: 0;
+	padding: 0;
+	border-radius: 8px;
+	border: 1px solid transparent;
+	cursor: pointer;
+	transition: transform 150ms ease, border-color 150ms ease;
+	background: var(--surface-2);
+}
+.bgAdd {
+	display: grid;
+	place-items: center;
+	border: 1px dashed var(--border-hi);
+	background: transparent;
+	color: var(--muted);
+}
+.bgAdd:hover:not(:disabled) {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+.bgThumb:hover { transform: translateY(-1px); }
+.bgThumb.isActive {
+	border-color: var(--brand);
+	box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand), transparent 70%);
+}
+
+/* ─── toggle (switch) ──────────────────────────────────────────── */
+.toggle {
+	width: 40px;
+	height: 24px;
+	border: 0;
+	padding: 0;
+	background: var(--border-hi);
+	border-radius: 9999px;
+	position: relative;
+	cursor: pointer;
+	transition: background 150ms ease;
+	flex-shrink: 0;
+}
+/* A white knob in both themes: the old --accent-on one was near-black on the dark track. */
+.toggle::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 20px;
+	height: 20px;
+	background: #fff;
+	border-radius: 50%;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+	transition: transform 150ms ease;
+}
+.toggle.isOn { background: var(--brand); }
+.toggle.isOn::after { transform: translateX(16px); }
+.toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── slider cell (effect) ─────────────────────────────────────── */
+.sliderGrid {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 8px;
+	padding: 0 var(--sp-4) var(--sp-4);
+}
+/* A free row too, like .paneRow: no card around the label, value and track. */
+.sliderCell {
+	padding: 12px 0;
+	display: grid;
+	grid-template-rows: auto auto;
+	gap: 10px;
+}
+/* min-height = the reset button's 20px, so the row keeps its height whether it shows or not. */
+.sliderCell .head { display: flex; align-items: center; gap: 6px; min-height: 20px; }
+/* The label takes the free room, so the value and the reset button sit right, with or without
+   each other. */
+.sliderCell .label { font: 500 13px/1.3 var(--font-body); color: var(--fg-2); margin-right: auto; }
+/* --muted, not mint: mint text is 2.3:1 on the light theme's row. */
+.sliderCell .val {
+	font: 500 12px/1.3 var(--font-body);
+	font-variant-numeric: tabular-nums;
+	color: var(--muted);
+}
+.sliderCell .sliderReset {
+	display: inline-grid;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--muted);
+	cursor: pointer;
+}
+.sliderCell .sliderReset:hover { color: var(--fg); background: var(--border-hi); }
+.sliderCell .sliderReset:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.sliderCell .sliderReset:disabled { cursor: default; opacity: 0.5; }
+.sliderCell input[type=range] {
+	width: 100%;
+	height: 6px;
+	background: linear-gradient(
+		to right,
+		var(--brand) 0%,
+		var(--brand) var(--slider-pct, 0%),
+		var(--border-hi) var(--slider-pct, 0%),
+		var(--border-hi) 100%
+	);
+	border-radius: 999px;
+	outline: none;
+	-webkit-appearance: none;
+	cursor: pointer;
+}
+.sliderCell input[type=range]::-moz-range-progress {
+	background-color: var(--brand);
+	height: 6px;
+	border-radius: 999px;
+}
+.sliderCell input[type=range]::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+	cursor: pointer;
+}
+.sliderCell input[type=range]::-moz-range-thumb {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #fff;
+	border: 0;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+	cursor: pointer;
+}
+/* `outline: none` above takes the native ring, so keyboard focus lands on the knob. */
+.sliderCell input[type=range]:focus-visible::-webkit-slider-thumb {
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.35), 0 0 0 4px var(--accent-ring);
+}
+.sliderCell input[type=range]:focus-visible::-moz-range-thumb {
+	box-shadow: 0 1px 3px rgb(0 0 0 / 0.35), 0 0 0 4px var(--accent-ring);
+}
+.sliderCell.full { grid-column: 1 / -1; }
+.sliderCell input[type=range]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── cursor style grid ────────────────────────────────────────── */
+.cursorGrid {
+	display: grid;
+	grid-template-columns: repeat(5, 1fr);
+	gap: 6px;
+	padding: 0 var(--sp-4) var(--sp-4);
+}
+.cursorCell {
+	aspect-ratio: 1/1;
+	border: 1px solid transparent;
+	border-radius: var(--r-md);
+	background: color-mix(in oklab, var(--fg) 5%, transparent);
+	display: grid;
+	place-items: center;
+	cursor: pointer;
+	transition: border-color 150ms ease, box-shadow 150ms ease;
+	color: var(--muted);
+}
+.cursorCell:hover { border-color: var(--border-hi); color: var(--fg-2); }
+.cursorCell:disabled { opacity: 0.5; cursor: not-allowed; }
+.cursorCell:disabled:hover { border-color: transparent; color: var(--muted); }
+.cursorCell.isActive {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	color: var(--fg);
+}
+/* A cursor pictured in its cell (style and type pickers), sized by the cell rather than in
+   pixels: the art keeps the same share of it at any pane width. */
+.cursorSprite {
+	width: 60%;
+	height: auto;
+	aspect-ratio: 1;
+	object-fit: contain;
+	pointer-events: none;
+}
+/* The cursor types (CursorPane): a dimmed type is drawn as the arrow. The arrow's own cell is not
+   a control, it is what the others become. */
+.cursorCellOff img { opacity: 0.35; transition: opacity 150ms ease; }
+.cursorCellOff:hover:not(:disabled) img { opacity: 0.7; }
+.cursorCellFixed { cursor: default; }
+/* A row that belongs to the grid right above it: the 3D switch under the cursor style. */
+.paneRowTight { margin-top: calc(-1 * var(--sp-2)); }
+/* Same cell, reused for the icon+label rows (camera shape, camera background).
+   `minmax(0, 1fr)` stopped a long label from pushing the grid, but the text still
+   spilled over the button's own border and crowded its neighbour -- « Personnalisé »,
+   « Пользовательский », "Personalizzato" in a 61 px track. Clip it here, once, for
+   every labelled cell instead of hoping each locale stays short. */
+.cursorCell > span {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ─── chat strip + input ───────────────────────────────────────── */
+.chatStrip {
+	padding: var(--sp-3) var(--sp-4) var(--sp-2);
+	border-bottom: 1px solid var(--border-soft);
+	background: var(--bg);
+}
+.chatStripRow {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	margin-bottom: 6px;
+}
+.ctxPill {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 9px 3px 7px;
+	border-radius: var(--r-pill);
+	background: var(--success-soft);
+	color: var(--success);
+	font: 500 12px/1.3 var(--font-body);
+	font-variant-numeric: tabular-nums;
+}
+.ctxPill .d {
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: var(--success);
+}
+.stripActions {
+	margin-left: auto;
+	display: inline-flex;
+	gap: 2px;
+}
+.stripActions button {
+	width: 30px;
+	height: 30px;
+	display: grid;
+	place-items: center;
+	border-radius: var(--r-sm);
+	color: var(--muted);
+	background: transparent;
+	border: 0;
+	cursor: pointer;
+	transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.stripActions button:hover {
+	background: var(--surface-3);
+	color: var(--fg-2);
+}
+.stripActions button:disabled,
+.stripActions button[aria-disabled="true"] {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+.chatHint {
+	font-size: var(--fs-app-sm);
+	color: var(--muted);
+	letter-spacing: 0.005em;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.msg { margin-bottom: var(--sp-3); }
+.msgHead {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	padding: 0 var(--sp-1);
+	margin-bottom: var(--sp-1);
+}
+.msgAuthor {
+	font: 600 12px/1.3 var(--font-body);
+	color: var(--fg-2);
+}
+.msgHead .right {
+	margin-left: auto;
+	display: inline-flex;
+	gap: 2px;
+}
+.msgHead .right button {
+	width: 22px;
+	height: 22px;
+	display: grid;
+	place-items: center;
+	border-radius: var(--r-xs);
+	color: var(--meta);
+	background: transparent;
+	border: 0;
+	cursor: pointer;
+	transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.msgHead .right button:hover {
+	background: var(--surface-3);
+	color: var(--fg-2);
+}
+.msgBubble {
+	padding: var(--sp-3) var(--sp-4);
+	border-radius: 12px;
+	background: color-mix(in oklab, var(--fg) 5%, transparent);
+	border: 1px solid transparent;
+	font-size: var(--fs-app);
+	color: var(--fg-2);
+	line-height: 1.5;
+	/* Selectable: the message body exists to be read and copied, and without
+	 * this it inherits the shell's user-select: none — drag selection and
+	 * Ctrl+C silently do nothing (issue #739). Scoped to the bubble so
+	 * buttons, the timeline, and the inspector keep their non-selectable
+	 * behavior. */
+	user-select: text;
+}
+/* The user's own turns carry the accent, so the conversation reads at a glance. */
+.msgBubble.msgBubbleUser { background: var(--accent-soft); }
+.msgBubble .msgAuthor { color: var(--accent); }
+
+.chatInput {
+	padding: var(--sp-2) var(--sp-4) var(--sp-3);
+	border-top: 1px solid var(--border-soft);
+	background: var(--bg);
+}
+.chatInput textarea {
+	width: 100%;
+	min-height: 40px;
+	max-height: 120px;
+	resize: none;
+	padding: 10px var(--sp-3);
+	border-radius: 12px;
+	border: 1px solid transparent;
+	background: color-mix(in oklab, var(--fg) 7%, var(--surface-1));
+	font-family: var(--font-body);
+	font-size: var(--fs-app);
+	line-height: 1.4;
+	color: var(--fg);
+	outline: none;
+	transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
+}
+.chatInput textarea::placeholder { color: var(--meta); }
+.chatInput textarea:focus {
+	border-color: var(--accent);
+	box-shadow: var(--focus-ring);
+}
+.chatInput .actions {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	margin-top: 6px;
+}
+.modelPicker {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 4px 5px 10px;
+	border-radius: var(--r-pill);
+	background: var(--surface-2);
+	/* Mono stays: this is a model ID, not a word. */
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--fg-2);
+	cursor: pointer;
+	transition: background var(--motion-fast) var(--ease);
+	border: 0;
+}
+.modelPicker:hover { background: var(--surface-3); }
+.reasoningBtn {
+	display: inline-flex;
+	align-items: center;
+	background: transparent;
+	border: 0;
+	padding: 0;
+	cursor: pointer;
+}
+.chip {
+	padding: 5px 10px;
+	border-radius: var(--r-pill);
+	background: var(--success-soft);
+	color: var(--success);
+	font-size: 12px;
+	font-weight: 500;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	transition: background var(--motion-fast) var(--ease);
+}
+.reasoningBtn:hover .chip { background: var(--success-soft); filter: brightness(1.1); }
+.chip .d {
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: var(--success);
+}
+/* The composer's one action, so it carries the accent — a bare glyph read as decoration. */
+.sendBtn {
+	margin-left: auto;
+	width: 32px;
+	height: 32px;
+	display: grid;
+	place-items: center;
+	border-radius: 50%;
+	background: var(--accent);
+	color: var(--accent-on);
+	border: 0;
+	cursor: pointer;
+	transition: background var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease);
+}
+.sendBtn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--brand-lo); transform: scale(1.05); }
+.sendBtn:disabled,
+.sendBtn[aria-disabled="true"] {
+	background: color-mix(in oklab, var(--fg) 8%, transparent);
+	color: var(--muted);
+	cursor: not-allowed;
+}
+
+/* ─── transcript pane content ─────────────────────────────────── */
+.transcriptClipHead {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 0 4px 4px;
+	border-bottom: 1px solid var(--border-soft);
+	margin-bottom: 8px;
+}
+.transcriptClipHead .badge {
+	width: 22px;
+	height: 22px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--brand-soft);
+	color: var(--brand);
+	border-radius: var(--r-sm);
+	font: 700 12px/1 var(--font-mono);
+	flex-shrink: 0;
+}
+.transcriptClipHead .title {
+	font: 600 var(--fs-app)/1.2 var(--font-body);
+	color: var(--fg);
+	margin: 0;
+	padding: 0;
+}
+.transcriptClipHead .sub {
+	font: 400 11px/1.3 var(--font-mono);
+	color: var(--muted);
+	margin-top: 2px;
+}
+.transcriptFlow {
+	margin: 0;
+	padding: 0 4px;
+	font: 400 var(--fs-app-lg)/1.65 var(--font-body);
+	color: var(--fg);
+	text-wrap: pretty;
+}
+.transcriptFlow .tc {
+	display: inline-block;
+	margin: 0 4px;
+	padding: 1px 6px;
+	background: transparent;
+	color: var(--brand);
+	border-radius: var(--r-sm);
+	font: 500 11px/1.4 var(--font-mono);
+	vertical-align: middle;
+	white-space: nowrap;
+}
+
+
+/* ─── bottombar / timeline ─────────────────────────────────────── */
+/* Region lanes (annotations / speed / zoom) inside the timeline body. */
+/* Lanes: fixed-width label column + one shared dnd-timeline surface column.
+   Both columns lay out 3 rows independently but with identical height (22px)
+   + gap (2px), so they line up without needing CSS grid row-spanning. */
+.lanes {
+	display: flex;
+	gap: 8px;
+	padding: 4px var(--sp-4) 2px;
+	flex-shrink: 0;
+	border-bottom: 1px solid var(--border-soft);
+}
+.laneLabelCol {
+	width: 64px;
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.laneLabelCell {
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 4px;
+}
+.laneLabel {
+	font: 600 10px/1 var(--font-mono);
+	color: var(--meta);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+.laneMeta {
+	font: 500 10.5px/1 var(--font-mono);
+	color: var(--muted);
+	min-width: 12px;
+	text-align: right;
+}
+.laneDelete {
+	width: 18px;
+	height: 18px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 0;
+	border-radius: var(--r-xs);
+	background: var(--danger-soft);
+	color: var(--danger);
+	font-size: 13px;
+	line-height: 1;
+	cursor: pointer;
+}
+.laneDelete:hover {
+	filter: brightness(0.95);
+}
+.laneSurface {
+	flex: 1;
+	min-width: 0;
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+/* F2.6 — vertical snap-guide lines at both edges of the region being
+   dragged/resized. Spans the full lane stack (parity with T24 on the
+   clip timeline). */
+.laneSnapGuide {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	background: var(--danger);
+	box-shadow: 0 0 6px color-mix(in oklch, var(--danger) 60%, transparent);
+	pointer-events: none;
+	z-index: 14;
+}
+/* F2.6 — floating tooltip with the live start – end range (parity with
+   T25 on the clip timeline). */
+.laneDragTooltip {
+	position: absolute;
+	top: -20px;
+	height: 18px;
+	padding: 0 8px;
+	background: var(--surface);
+	border: 1px solid var(--border-soft);
+	border-radius: 9px;
+	color: var(--fg-2);
+	font: 500 10.5px/18px var(--font-mono);
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	pointer-events: none;
+	z-index: 15;
+	box-shadow: var(--elev-card-soft);
+}
+.laneTrackRow {
+	position: relative;
+	height: 24px;
+	background: var(--surface-1);
+	border: 1px solid var(--border-soft);
+	border-radius: var(--r-sm);
+	overflow: hidden;
+}
+.laneEmpty {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font: 500 11px/1 var(--font-body);
+	color: var(--muted);
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+/* Lane pills: zoom / speed / annotation / skip. Flat wash fill + 1.5px frame
+ * per the v4 design (design/OpenScreen Editor v4.dc.html pillStyle) — no
+ * gradient, no tab caps. Selected pills gain an accent ring. */
+.zoomPill,
+.speedPill,
+.annotationPill,
+.skipPill {
+	--_pill: var(--accent);
+	--_wash: var(--accent-soft);
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	height: 22px;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 0 8px 0 7px;
+	background: var(--_wash);
+	border: 1.5px solid var(--_pill);
+	border-radius: var(--r-sm);
+	color: var(--fg);
+	font: 600 11px/1 var(--font-display);
+	letter-spacing: 0.01em;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	overflow: hidden;
+	box-sizing: border-box;
+	pointer-events: auto;
+	cursor: pointer;
+	z-index: 2;
+}
+.zoomPill {
+	--_pill: var(--accent);
+	--_wash: var(--accent-soft);
+}
+.speedPill {
+	--_pill: var(--speed);
+	--_wash: var(--speed-wash);
+}
+.annotationPill {
+	--_pill: var(--annotation);
+	--_wash: var(--annotation-wash);
+}
+.skipPill {
+	--_pill: var(--danger);
+	--_wash: var(--danger-soft);
+}
+.lanePillSelected {
+	box-shadow: 0 0 0 3px color-mix(in oklch, var(--_pill) 35%, transparent);
+}
+.pillIcon {
+	width: 11px;
+	height: 11px;
+	flex-shrink: 0;
+	color: color-mix(in oklch, var(--_pill) 70%, var(--fg));
+}
+.pillValue {
+	color: var(--fg);
+	font-variant-numeric: tabular-nums;
+}
+
+.timelineHead {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-2);
+	padding: var(--sp-2) var(--sp-4);
+	border-bottom: 1px solid var(--border-soft);
+	min-height: 40px;
+}
+.timelineHead .viewTools {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px;
+	background: var(--surface-2);
+	border: 1px solid var(--border-soft);
+	border-radius: var(--r-sm);
+}
+.timelineHead .vtBtn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--muted);
+	border-radius: var(--r-xs);
+	cursor: pointer;
+	transition: color 0.12s ease, background 0.12s ease;
+}
+.timelineHead .vtBtn:hover { color: var(--fg); background: var(--surface); }
+.timelineHead .vtBtn.isOn { color: var(--accent); background: var(--accent-wash); }
+.timelineHead .ratio {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	height: 30px;
+	padding: 0 10px;
+	font-family: var(--font-mono);
+	font-size: var(--fs-app-sm);
+	color: var(--muted);
+	letter-spacing: 0.02em;
+	background: transparent;
+	border: 0;
+	border-left: 1px solid var(--border-soft);
+	margin-left: 4px;
+	cursor: pointer;
+	border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+.timelineHead .ratio:hover { color: var(--fg); }
+.timelineHead .hintRow {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: var(--sp-4);
+}
+.timelineHead .hint {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-family: var(--font-display);
+	font-size: 11.5px;
+	color: var(--muted);
+	letter-spacing: 0.005em;
+}
+.timelineHead .hint .kbd {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 20px;
+	padding: 0 7px;
+	font-family: var(--font-mono);
+	font-size: 10.5px;
+	font-weight: 500;
+	color: var(--accent);
+	background: var(--accent-soft);
+	border: 1px solid color-mix(in oklch, var(--accent) 24%, transparent);
+	border-radius: var(--r-xs);
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+}
+.timelineBody {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	flex: 1;
+	overflow: hidden;
+}
+.timelineBody :global(.timelinePaneWrap) {
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+}
+.zoombar {
+	padding: 4px var(--sp-4) 8px;
+	background: var(--bg);
+	flex-shrink: 0;
+	border-top: 1px solid var(--border-soft);
+}
+
+/* T11 — Navigator strip. Moved to TimelinePane.module.css so the
+   className (applied via TimelinePane's own styles import) actually
+   matches the CSS. CSS modules' class hashes don't match across
+   files. The shape and the elements are unchanged from axcut's
+   .timeline-navigator / .timeline-navigator-window. */
+.zoombar .zoomTrack {
+	position: relative;
+	height: 18px;
+	width: 100%;
+}
+.zoombar .zoomFill {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	left: 0;
+	width: 100%;
+	height: 6px;
+	background: var(--accent);
+	border-radius: 3px;
+	pointer-events: none;
+}
+
+/* Radix Slider — visible two-handle range, design-aligned. */
+.sliderRoot {
+	position: relative;
+	display: flex;
+	align-items: center;
+	height: 18px;
+	width: 100%;
+	touch-action: none;
+	user-select: none;
+}
+.sliderTrack {
+	position: relative;
+	height: 6px;
+	width: 100%;
+	background: var(--surface-2);
+	border-radius: 3px;
+	overflow: hidden;
+}
+.sliderRange {
+	position: absolute;
+	height: 100%;
+	background: var(--accent);
+	border-radius: 3px;
+}
+.sliderThumb {
+	display: block;
+	width: 14px;
+	height: 14px;
+	background: var(--accent);
+	border: 1px solid var(--bg);
+	border-radius: 3px;
+	cursor: ew-resize;
+	transition: box-shadow var(--motion-fast) var(--ease);
+}
+.sliderThumb:hover,
+.sliderThumb:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 22%, transparent);
+}
+
+/* ─── modals ───────────────────────────────────────────────────── */
+.modal {
+	position: fixed;
+	inset: 0;
+	display: none;
+	z-index: 100;
+}
+.modal.isOpen { display: block; }
+.modalBackdrop {
+	position: absolute;
+	inset: 0;
+	background: var(--overlay-dark);
+	backdrop-filter: blur(4px);
+	-webkit-backdrop-filter: blur(4px);
+}
+/* --surface, not --bg: on --bg the card was the colour of the dimmed editor behind it. */
+.modalCard {
+	position: relative;
+	width: min(960px, 92vw);
+	max-height: 88vh;
+	margin: 6vh auto 0;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 16px;
+	box-shadow: 0 24px 60px rgba(22, 23, 29, 0.5);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	color: var(--fg);
+}
+.modalCard.wide { width: min(720px, 92vw); }
+.modalHead {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	padding: 20px 24px 12px;
+	gap: 16px;
+}
+.modalHead h2 {
+	margin: 0;
+	font: 600 20px/1.3 var(--font-display);
+	color: var(--fg);
+}
+.modalHead p {
+	margin: 4px 0 0;
+	font: 400 var(--fs-app)/1.5 var(--font-body);
+	color: var(--muted);
+}
+.modalHead .closeBtn {
+	width: 32px;
+	height: 32px;
+	display: grid;
+	place-items: center;
+	border-radius: var(--r-sm);
+	color: var(--muted);
+	background: transparent;
+	border: 0;
+	cursor: pointer;
+}
+.modalHead .closeBtn:hover { background: var(--surface-3); color: var(--fg); }
+.modalBody {
+	padding: 8px 24px 24px;
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	overflow: auto;
+}
+
+.btn {
+	height: 34px;
+	padding: 0 14px;
+	border-radius: var(--r-md);
+	font: 500 var(--fs-app)/1 var(--font-body);
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	/* Centred for when a column stretches it full width (the inspector's actions), and never
+	   squeezed there: a fixed height with no vertical padding lets a scrolling flex column
+	   shrink it to its text. */
+	justify-content: center;
+	flex-shrink: 0;
+	gap: 6px;
+	transition: background var(--motion-fast) var(--ease), border-color var(--motion-fast) var(--ease);
+}
+/* Filled, not outlined: on the card's own --surface the old one was a hairline and nothing. */
+.btnSecondary {
+	background: color-mix(in oklab, var(--fg) 8%, transparent);
+	color: var(--fg);
+	border: 1px solid transparent;
+}
+.btnSecondary:hover:not(:disabled) { background: color-mix(in oklab, var(--fg) 13%, transparent); }
+.btnSecondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btnPrimary {
+	background: var(--accent);
+	color: var(--accent-on);
+	border: 1px solid var(--accent);
+}
+.btnPrimary:hover { background: var(--brand-lo); }
+.btnPrimary:disabled {
+	background: var(--surface-2);
+	border-color: var(--border);
+	color: var(--muted);
+	cursor: not-allowed;
+}
+
+/* The one-time star ask, inside the export-done panel. Separated from the panel's own actions
+   by a rule rather than a second box: it is an aside to a successful export, not a second
+   result. Shown at most once per installation — see electron/star-prompt.ts. */
+.starPrompt {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	width: 100%;
+	margin-top: 4px;
+	padding-top: 12px;
+	border-top: 1px solid var(--border);
+}
+
+.starPromptText {
+	color: var(--muted);
+	font: 400 var(--fs-app)/1.5 var(--font-body);
+}
+
+.starPromptActions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+/* Declining must be as reachable as accepting, so it is a real button with the same hit area —
+   but quiet, because nothing is lost by taking it. */
+.starPromptDecline {
+	height: 32px;
+	padding: 0 10px;
+	border: 1px solid transparent;
+	border-radius: var(--r-md);
+	background: none;
+	color: var(--muted);
+	font: 500 var(--fs-app)/1 var(--font-body);
+	cursor: pointer;
+}
+
+.starPromptDecline:hover { color: var(--fg); background: var(--surface-warm); }
+
+/* ─── Edit Clip modal — draggable source-range track ────────────── */
+/* The pan/zoom bar's shape in the clip's colour: a faint groove for the whole source and,
+   on it, the timeline's clip card (.tlClip's candy recipe) for the range the trim keeps. */
+.editClipTrack {
+	position: relative;
+	height: 32px;
+	flex-shrink: 0;
+	border-radius: var(--r-sm);
+	background: color-mix(in oklab, var(--fg) 8%, transparent);
+}
+.editClipRange {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	box-sizing: border-box;
+	border-radius: var(--r-sm);
+	border: 1px solid transparent;
+	background: linear-gradient(180deg, color-mix(in oklab, var(--clip) 78%, white), var(--clip)) border-box;
+	box-shadow: 0 3px 10px color-mix(in oklab, var(--clip) var(--candy-glow), transparent);
+}
+/* The selected clip's halo ring, its gap in the card's colour. */
+.editClipRangeDragging {
+	box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--clip);
+}
+/* A 12px grab area centred on each end, overhanging the range by 6px: a range dragged down
+   to its 0.05s minimum still leaves each grip a side of its own to grab. The notch in it sits
+   inside the card, like the pan/zoom bar's grips, in the card's dark ink. */
+.editClipGrip {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 12px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: ew-resize;
+}
+.editClipGrip[data-edge="start"] { left: -6px; }
+.editClipGrip[data-edge="end"] { right: -6px; }
+.editClipGrip::before {
+	content: "";
+	position: absolute;
+	top: 50%;
+	width: 3px;
+	height: 14px;
+	margin-top: -7px;
+	border-radius: 2px;
+	background: rgb(11 18 32 / 0.55);
+	transition: transform var(--motion-fast) var(--ease);
+}
+.editClipGrip[data-edge="start"]::before { left: 9px; }
+.editClipGrip[data-edge="end"]::before { right: 9px; }
+.editClipGrip:hover::before { transform: scaleY(1.25); }
+
+/* ─── AI provider settings (axcut parity) ────────────────────────── */
+
+.providerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.providerCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--fg) 5%, transparent);
+  color: var(--fg-2);
+  cursor: pointer;
+  font: 500 13px/1.2 var(--font-body);
+  text-align: left;
+  transition: border-color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease);
+}
+.providerCard:hover { border-color: var(--border-hi); }
+.providerCard.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.providerCard .head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.providerCard .label {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--fg);
+}
+/* Mono stays: a model ID. */
+.providerCard .model {
+  font: 500 12px var(--font-mono);
+  color: var(--muted);
+  text-transform: lowercase;
+}
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font: 600 11px/1 var(--font-body);
+  border: 1px solid transparent;
+}
+.statusPill.ready {
+  background: var(--success-soft, rgba(68, 175, 105, 0.18));
+  color: var(--success, #44af69);
+  border-color: color-mix(in srgb, var(--success, #44af69) 30%, transparent);
+}
+.statusPill.idle {
+  background: var(--surface-2);
+  color: var(--muted);
+  border-color: var(--border);
+}
+.statusPill.auth {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.statusPill.pat {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+}
+
+.providerForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.providerForm .title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.providerForm .title h3 {
+  margin: 0;
+  font: 600 16px var(--font-display);
+  color: var(--fg);
+}
+.providerForm .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 4px;
+}
+.providerForm .actionsLeft {
+  display: flex;
+  gap: 8px;
+}
+.dangerBtn {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+.dangerBtn:hover {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--danger);
+}
+
+.secondaryBtn {
+  margin: 4px var(--sp-4) 12px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--fg) 8%, transparent);
+  color: var(--fg-2);
+  font: 500 13px/1 var(--font-body);
+  cursor: pointer;
+}
+.secondaryBtn:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--fg) 13%, transparent);
+  color: var(--fg);
+}
+.secondaryBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.authPanel {
+  padding: 14px 16px;
+  border: 1px solid var(--brand);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.authPanel strong {
+  display: block;
+  font: 600 13px var(--font-body);
+  color: var(--fg);
+}
+.authPanel p {
+  margin: 4px 0 0;
+  font: 400 12px/1.45 var(--font-body);
+  color: var(--muted);
+}
+.authCodeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.authCodeRow code {
+  flex: 1;
+  font: 600 18px/1 var(--font-mono);
+  letter-spacing: 0.18em;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--fg);
+  user-select: all;
+}
+.linkBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 32px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font: 500 var(--fs-app) var(--font-body);
+  cursor: pointer;
+  text-decoration: none;
+}
+.linkBtn:hover { background: var(--surface-warm); border-color: var(--border-hi); }
+
+.errorRow {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  color: var(--danger);
+  font: 500 12px var(--font-body);
+}
+
+.iconBtn {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.iconBtn:hover { background: var(--surface-3); color: var(--fg); }
+.iconBtn:disabled,
+.iconBtn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+
+/* A labelled sibling of .iconBtn. Captions lost their own tab (issue #560), so the
+   control that replaces it cannot be an icon you must hover to identify: the whole
+   point of folding it in here was that people find it. */
+.paneHeadBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--fg) 7%, transparent);
+  border: 1px solid transparent;
+  color: var(--fg-2);
+  font: 500 13px/1 var(--font-body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.paneHeadBtn:hover { background: color-mix(in oklab, var(--fg) 12%, transparent); color: var(--fg); }
+
+/* Two mutually exclusive readings of the same tab, so: one track, one lit half.
+   Not tabs — tabs would say the two transcripts sit side by side, and only one of
+   them exists as far as everything downstream is concerned (issue #560). */
+.laneSwitch {
+  display: flex;
+  gap: 2px;
+  margin: 0 var(--sp-4) 6px;
+  padding: 3px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--fg) 6%, transparent);
+}
+.laneSwitchBtn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 13px/1 var(--font-body);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.laneSwitchBtn:hover { color: var(--fg-2); }
+/* Raised above its track, like .paneTabs: --surface was darker than the track in the dark theme. */
+.laneSwitchBtn.isActive {
+  background: var(--surface-hi);
+  color: var(--fg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+}
+/* The choice reaches past this tab — it decides the text burnt into the export. */
+.laneSwitchNote {
+  margin: 0 var(--sp-4) 12px;
+  font: 400 12px/1.5 var(--font-body);
+  color: var(--muted);
+}
+
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--fg) 8%, transparent);
+  color: var(--fg);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: 500 13px var(--font-body);
+}
+.backBtn:hover { background: color-mix(in oklab, var(--fg) 13%, transparent); }
+.backBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── chat welcome (no provider connected) ──────────────────────── */
+/* .panelBody supplies the horizontal inset (var(--sp-3) var(--sp-4)); only the
+   top breathing room is ours, or the card sits twice as far in as the messages. */
+.chatWelcome {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0 0;
+  text-align: left;
+}
+
+.chatWelcomeHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 4px 0 0;
+}
+
+.chatWelcomeIcon {
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.chatWelcomeTitle {
+  margin: 0;
+  font: 600 14px/1.3 var(--font-body);
+  color: var(--fg);
+  letter-spacing: -0.01em;
+}
+
+.chatWelcomeSubtitle {
+  margin: 0;
+  font: 400 12px/1.5 var(--font-body);
+  color: var(--muted);
+  max-width: 32ch;
+}
+
+/* Native list markers — no flex on the ul/li, or the items stop being
+   list-items and the markers vanish. padding-inline-start keeps them inside
+   the card in both writing directions. */
+.chatWelcomeFeatures {
+  /* explicit: the global reset sets list-style: none on every ul */
+  list-style: disc;
+  margin: 0;
+  padding: 12px 14px;
+  padding-inline-start: 28px;
+  background: color-mix(in oklab, var(--fg) 5%, transparent);
+  border-radius: 12px;
+  font: 400 13px/1.45 var(--font-body);
+  color: var(--fg-2);
+}
+.chatWelcomeFeatures li + li { margin-top: 6px; }
+.chatWelcomeFeatures li::marker { color: var(--accent); }
+
+.chatWelcomeCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  color: var(--accent-on);
+  border: 1px solid var(--accent);
+  font: 600 13px var(--font-body);
+  cursor: pointer;
+  transition: filter 120ms ease;
+}
+.chatWelcomeCta:hover { filter: brightness(0.95); }
+.chatWelcomeCta:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.chatWelcomeDisclaimer {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font: 400 12px/1.45 var(--font-body);
+  color: var(--muted);
+}
+
+.chatWelcomeDisclaimerIcon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  opacity: 0.8;
+}

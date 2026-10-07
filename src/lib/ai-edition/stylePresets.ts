@@ -1,0 +1,495 @@
+// Style presets — reusable editor appearance, one JSON file per preset.
+//
+// Imported by the main process (electron/ai-edition/style-preset-service.ts), so this
+// module stays main-process safe: relative imports only, and only TYPE imports from
+// renderer modules (they are erased before anything runs). The renderer half — reading a
+// preset out of the editor settings and patching it back in — is stylePresetsEditor.ts.
+//
+// A preset is the project's LOOK, never its content: nothing here depends on the footage
+// (crop, webcam framing or position, audio gain, captions, timeline). Such a preset can be
+// applied to any project, and shared as a file, without dragging one recording's framing
+// into another.
+
+import type {
+	CursorVisualSettings,
+	WallpaperMotion,
+	WebcamBackgroundMode,
+	WebcamLayoutPreset,
+	WebcamMaskShape,
+	WebcamSizePreset,
+} from "../../components/video-editor/types";
+import { type AspectRatio, isAspectRatio } from "../../utils/aspectRatioUtils";
+import {
+	CURSOR_THEME_IDS,
+	type CursorKind,
+	DEFAULT_CURSOR_THEME_ID,
+	readCursorAsArrow,
+} from "../cursor/cursorThemes";
+import {
+	clampToBound,
+	DEFAULT_PROJECT_APPEARANCE,
+	type FrameTheme,
+	isFrameTheme,
+	LEGACY_BACKGROUND_BLUR_ON,
+	type RecordingFrame,
+	readRecordingFrame,
+	readWebcamMask,
+	type SettingBound,
+	type WebcamMask,
+} from "../projectDefaults";
+
+export const STYLE_PRESET_FILE_EXTENSION = ".openscreenpreset";
+export const STYLE_PRESET_FORMAT = "openscreen-style-preset";
+export const STYLE_PRESET_FORMAT_VERSION = 1;
+export const STYLE_PRESET_NAME_MAX_LENGTH = 80;
+/** Reserved for the built-in row; a user preset must never resolve to this file id. */
+export const FACTORY_STYLE_PRESET_ID = "openscreen-factory";
+/** Characters, not bytes: a 15 MB base64 image is ~11 MB decoded, far past any wallpaper. */
+export const STYLE_PRESET_DATA_URL_MAX_LENGTH = 15 * 1024 * 1024;
+/** Colours and gradients are CSS text; anything this long is not one a user typed. */
+const CSS_WALLPAPER_MAX_LENGTH = 10_000;
+
+/** The appearance fields of `EditorSettingsSnapshot`, in the snapshot's own shape. */
+export interface StylePresetAppearance {
+	wallpaper: string;
+	wallpaperMotion: WallpaperMotion;
+	frame: RecordingFrame;
+	frameTheme: FrameTheme;
+	aspectRatio: AspectRatio;
+	shadowIntensity: number;
+	backgroundBlur: number;
+	motionBlurAmount: number;
+	depthOfField: boolean;
+	borderRadius: number;
+	padding: number;
+	webcamLayoutPreset: WebcamLayoutPreset;
+	webcamMaskShape: WebcamMask;
+	webcamRoundness: number;
+	webcamMirrored: boolean;
+	webcamReactiveZoom: boolean;
+	webcamSizePreset: WebcamSizePreset;
+	webcamBackgroundMode: WebcamBackgroundMode;
+	webcamWallpaper: string;
+	webcamBlurIntensity: number;
+	/** `autoHide` is left out: the snapshot's source of truth for it is `cursorAutoHide`. */
+	cursor: Omit<CursorVisualSettings, "autoHide">;
+	cursorShow: boolean;
+	cursorAutoHide: boolean;
+	cursorTheme: string;
+}
+
+export interface StylePreset {
+	/** The file's base name, without the extension. */
+	id: string;
+	name: string;
+	/** ISO timestamp of the file's last modification. */
+	updatedAt: string;
+	appearance: StylePresetAppearance;
+	/** Set by `list` on the preset a new project starts from. */
+	forNewProjects?: boolean;
+}
+
+export interface StylePresetFile {
+	format: typeof STYLE_PRESET_FORMAT;
+	version: typeof STYLE_PRESET_FORMAT_VERSION;
+	name: string;
+	appearance: StylePresetAppearance;
+}
+
+// Local copies of renderer enums: the modules that own them import through `@/`, which
+// the main process cannot load. `satisfies` keeps each list from naming a value the type
+// does not have; a value ADDED to the type still has to be added here.
+const WEBCAM_LAYOUT_PRESETS = [
+	"picture-in-picture",
+	"vertical-stack",
+	"dual-frame",
+	"no-webcam",
+] as const satisfies readonly WebcamLayoutPreset[];
+const WEBCAM_MASK_SHAPES = [
+	"rectangle",
+	"circle",
+	"square",
+	"rounded",
+] as const satisfies readonly WebcamMaskShape[];
+const WEBCAM_BACKGROUND_MODES = [
+	"none",
+	"transparent",
+	"blur",
+	"custom",
+] as const satisfies readonly WebcamBackgroundMode[];
+const WALLPAPER_MOTIONS = [
+	"none",
+	"drift",
+	"aurora",
+	"waves",
+] as const satisfies readonly WallpaperMotion[];
+
+// The preset's cursor numbers, by the name `SETTING_BOUNDS` gives them.
+const CURSOR_BOUNDS = {
+	size: "cursorSize",
+	smoothing: "cursorSmoothing",
+	motionBlur: "cursorMotionBlur",
+	clickBounce: "cursorClickBounce",
+} as const satisfies Record<string, SettingBound>;
+
+type Fields = Record<string, unknown>;
+
+function isRecord(value: unknown): value is Fields {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A number, read into the bound the editor reads it into (`SETTING_BOUNDS`). Clamped rather than
+ * refused: the bounds have narrowed since presets were first saved (the cursor stopped at 10, the
+ * click bounce at 5 and was 2.5 by default), and a preset that applied yesterday must still apply,
+ * with the value the editor would show for it. Anything that is not a finite number is refused.
+ */
+function readNumber(source: Fields, key: string, bound: SettingBound, at = ""): number {
+	const value = source[key];
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		throw new TypeError(`Style preset ${at}${key} must be a number.`);
+	}
+	return clampToBound(value, bound);
+}
+
+function readBoolean(source: Fields, key: string, at = ""): boolean {
+	const value = source[key];
+	if (typeof value !== "boolean") {
+		throw new TypeError(`Style preset ${at}${key} must be true or false.`);
+	}
+	return value;
+}
+
+function readEnum<T extends string>(source: Fields, key: string, allowed: readonly T[]): T {
+	const value = source[key];
+	if (typeof value !== "string" || !(allowed as readonly string[]).includes(value)) {
+		throw new TypeError(`Style preset ${key} must be one of: ${allowed.join(", ")}.`);
+	}
+	return value as T;
+}
+
+/**
+ * The camera's proportions and roundness. A preset saved before the roundness existed carries
+ * `circle` or `rounded`, a proportion and a rounding in one value: `readWebcamMask` splits it
+ * the way the editor reads an old project.
+ */
+function readWebcamShape(source: Fields): { webcamMaskShape: WebcamMask; webcamRoundness: number } {
+	const shape = readEnum(source, "webcamMaskShape", WEBCAM_MASK_SHAPES);
+	const roundness =
+		source.webcamRoundness === undefined
+			? undefined
+			: readNumber(source, "webcamRoundness", "webcamRoundness");
+	const mask = readWebcamMask(shape, roundness);
+	return { webcamMaskShape: mask.shape, webcamRoundness: mask.roundness };
+}
+
+/**
+ * The frame and its theme. A version-1 preset may omit both: every preset written before the
+ * frame existed lacks them, and "no frame, light" is exactly what those presets looked like.
+ *
+ * `window-light` / `window-dark` are still read: they were the frame AND its theme, and
+ * `readRecordingFrame` splits them, so a preset saved before the theme existed still applies
+ * the look it captured. A value neither this build nor that pair knows is refused.
+ */
+function readFrame(source: Fields): { frame: RecordingFrame; frameTheme: FrameTheme } {
+	const stored =
+		source.frame === undefined ? { frame: "none" as const } : readRecordingFrame(source.frame);
+	if (stored === null) {
+		throw new TypeError("Style preset frame must be one of: none, window, laptop, phone, monitor.");
+	}
+	const theme = source.frameTheme;
+	if (theme !== undefined && !isFrameTheme(theme)) {
+		throw new TypeError('Style preset frameTheme must be "light" or "dark".');
+	}
+	return { frame: stored.frame, frameTheme: theme ?? stored.theme ?? "light" };
+}
+
+/**
+ * The cursor kinds drawn as the arrow. A kind this build does not know (a newer build's) is
+ * dropped, the way an unknown theme falls back to the default. A preset written before the kinds
+ * could be picked carries the one switch there was, or nothing: the project default then.
+ */
+function readAsArrow(cursor: Fields): CursorKind[] {
+	const value = cursor.asArrow;
+	const fallback = DEFAULT_PROJECT_APPEARANCE.cursor.asArrow;
+	if (value === undefined) {
+		const always =
+			cursor.alwaysArrow === undefined ? false : readBoolean(cursor, "alwaysArrow", "cursor.");
+		return readCursorAsArrow(undefined, always, fallback);
+	}
+	if (!Array.isArray(value) || value.some((kind) => typeof kind !== "string")) {
+		throw new TypeError("Style preset cursor.asArrow must be a list of cursor kinds.");
+	}
+	return readCursorAsArrow(value, undefined, fallback);
+}
+
+const HEX_COLOR_RE = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const COLOR_FUNCTION_RE = /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(.*\)$/i;
+const GRADIENT_RE = /^(?:repeating-)?(?:linear|radial|conic)-gradient\(.*\)$/i;
+const BUNDLED_WALLPAPER_RE = /^\/wallpapers\/wallpaper\d+\.jpg$/;
+const DATA_URL_RE = /^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/;
+// Same pattern as projectPersistence.ts: only the known install layouts (packaged
+// resources/[assets/]wallpapers, dev public/wallpapers), so a user's own file under some
+// "wallpapers" folder is not mistaken for a bundled one.
+const LEGACY_FILE_WALLPAPER_RE =
+	/^file:\/\/.*?\/(?:resources\/(?:assets\/)?|public\/)wallpapers\/(wallpaper\d+\.jpg)$/i;
+
+/**
+ * Validates one wallpaper value and returns it in canonical form.
+ *
+ * A preset is a file people pass around, so the wallpaper is the field that could reach
+ * outside it: a `file://` or absolute path names something on the author's disk (or probes
+ * the reader's), and an `http(s)` URL makes applying a preset a network request. Only
+ * self-contained values pass — CSS colours and gradients, the bundled images, and inline
+ * PNG/JPEG data. A CSS value that smuggles a `url(` is refused for the same reason.
+ */
+export function parseStylePresetWallpaper(value: unknown, key = "wallpaper"): string {
+	if (typeof value !== "string") {
+		throw new TypeError(`Style preset ${key} must be a string.`);
+	}
+	if (value.startsWith("data:")) {
+		if (value.length > STYLE_PRESET_DATA_URL_MAX_LENGTH) {
+			throw new TypeError(
+				`Style preset ${key} image is too large (${value.length} characters; the limit is ${STYLE_PRESET_DATA_URL_MAX_LENGTH}).`,
+			);
+		}
+		if (!DATA_URL_RE.test(value)) {
+			throw new TypeError(`Style preset ${key} image must be a base64 PNG or JPEG data URL.`);
+		}
+		return value;
+	}
+	const legacy = LEGACY_FILE_WALLPAPER_RE.exec(value);
+	if (legacy) return `/wallpapers/${legacy[1].toLowerCase()}`;
+	if (BUNDLED_WALLPAPER_RE.test(value)) return value;
+	const trimmed = value.trim();
+	const isCss =
+		HEX_COLOR_RE.test(trimmed) || COLOR_FUNCTION_RE.test(trimmed) || GRADIENT_RE.test(trimmed);
+	if (isCss && trimmed.length <= CSS_WALLPAPER_MAX_LENGTH && !/url\(/i.test(trimmed)) {
+		return trimmed;
+	}
+	throw new TypeError(
+		`Style preset ${key} must be a colour, a gradient, a bundled wallpaper or an embedded PNG/JPEG image.`,
+	);
+}
+
+/**
+ * Strict validation of a preset's appearance.
+ *
+ * Every field is required — format version 1 is only ever written whole by
+ * `serializeStylePresetFile`, so a missing field is a damaged or hand-made file, and
+ * guessing a factory value for it would apply something the author never chose. The one
+ * lenient field is `cursorTheme`: themes come and go between builds, so an id this build
+ * does not ship falls back to the default cursor instead of rejecting a preset that is
+ * otherwise sound (the editor does the same when it renders one). The others postdate the
+ * first version-1 files, so a preset saved before one of them existed carries no choice about
+ * it and gets the value that means "unchanged": `cursor.model3d` may be absent (the flat
+ * cursor), `cursor.asArrow` too (the project default, see `readAsArrow`),
+ * `wallpaperMotion` too (a still wallpaper, which is exactly what "none" means),
+ * `frame` as well (no frame, see `readFrame`), and `depthOfField` keeps the factory
+ * value (on). A present but ill-typed value is still refused. Unknown extra keys are dropped.
+ */
+export function parseStylePresetAppearance(value: unknown): StylePresetAppearance {
+	if (!isRecord(value)) {
+		throw new TypeError("Style preset appearance must be an object.");
+	}
+	if (!isAspectRatio(value.aspectRatio)) {
+		throw new TypeError('Style preset aspectRatio must be "W:H", "auto" or "native".');
+	}
+	const cursor = value.cursor;
+	if (!isRecord(cursor)) {
+		throw new TypeError("Style preset cursor must be an object.");
+	}
+	if (typeof value.cursorTheme !== "string") {
+		throw new TypeError("Style preset cursorTheme must be a string.");
+	}
+	return {
+		wallpaper: parseStylePresetWallpaper(value.wallpaper),
+		wallpaperMotion:
+			value.wallpaperMotion === undefined
+				? "none"
+				: readEnum(value, "wallpaperMotion", WALLPAPER_MOTIONS),
+		...readFrame(value),
+		aspectRatio: value.aspectRatio,
+		shadowIntensity: readNumber(value, "shadowIntensity", "shadowIntensity"),
+		// Presets saved before the amount carry the old `showBlur` switch instead.
+		backgroundBlur:
+			value.backgroundBlur === undefined && value.showBlur !== undefined
+				? readBoolean(value, "showBlur")
+					? LEGACY_BACKGROUND_BLUR_ON
+					: 0
+				: readNumber(value, "backgroundBlur", "backgroundBlur"),
+		motionBlurAmount: readNumber(value, "motionBlurAmount", "motionBlurAmount"),
+		depthOfField: value.depthOfField === undefined ? true : readBoolean(value, "depthOfField"),
+		borderRadius: readNumber(value, "borderRadius", "borderRadius"),
+		padding: readNumber(value, "padding", "padding"),
+		webcamLayoutPreset: readEnum(value, "webcamLayoutPreset", WEBCAM_LAYOUT_PRESETS),
+		...readWebcamShape(value),
+		webcamMirrored: readBoolean(value, "webcamMirrored"),
+		webcamReactiveZoom: readBoolean(value, "webcamReactiveZoom"),
+		webcamSizePreset: readNumber(value, "webcamSizePreset", "webcamSizePreset"),
+		webcamBackgroundMode: readEnum(value, "webcamBackgroundMode", WEBCAM_BACKGROUND_MODES),
+		webcamWallpaper: parseStylePresetWallpaper(value.webcamWallpaper, "webcamWallpaper"),
+		webcamBlurIntensity: readNumber(value, "webcamBlurIntensity", "webcamBlurIntensity"),
+		cursor: {
+			size: readNumber(cursor, "size", CURSOR_BOUNDS.size, "cursor."),
+			smoothing: readNumber(cursor, "smoothing", CURSOR_BOUNDS.smoothing, "cursor."),
+			motionBlur: readNumber(cursor, "motionBlur", CURSOR_BOUNDS.motionBlur, "cursor."),
+			clickBounce: readNumber(cursor, "clickBounce", CURSOR_BOUNDS.clickBounce, "cursor."),
+			// Presets written before the 3D cursor existed meant the flat one.
+			model3d: cursor.model3d === undefined ? false : readBoolean(cursor, "model3d", "cursor."),
+			asArrow: readAsArrow(cursor),
+			// Presets written before the option existed gave clicks no impact.
+			clickImpact:
+				cursor.clickImpact === undefined ? false : readBoolean(cursor, "clickImpact", "cursor."),
+		},
+		cursorShow: readBoolean(value, "cursorShow"),
+		cursorAutoHide: readBoolean(value, "cursorAutoHide"),
+		cursorTheme: CURSOR_THEME_IDS.has(value.cursorTheme)
+			? value.cursorTheme
+			: DEFAULT_CURSOR_THEME_ID,
+	};
+}
+
+/** Trims, collapses inner whitespace and caps the length. Throws on an empty result. */
+export function sanitizeStylePresetName(name: string): string {
+	const collapsed = (typeof name === "string" ? name : "").replace(/\s+/g, " ").trim();
+	if (!collapsed) {
+		throw new TypeError("Style preset name must not be empty.");
+	}
+	// By code point, so the cap never splits a surrogate pair in half.
+	return Array.from(collapsed).slice(0, STYLE_PRESET_NAME_MAX_LENGTH).join("").trim();
+}
+
+const WINDOWS_RESERVED_NAME_RE = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+/**
+ * A file base name that is valid on Windows, macOS and Linux alike.
+ *
+ * Unicode stays — a preset called "Démo 日本" is called that on disk too. What goes is
+ * what Windows refuses (`<>:"/\|?*`, control characters, trailing dots and spaces), and a
+ * reserved device name gets a suffix so it no longer is one. The same rules apply on every
+ * platform because the file is meant to travel: a name accepted on macOS must not become
+ * uncopyable on a colleague's PC.
+ */
+export function stylePresetFileBaseName(name: string): string {
+	const stripped = sanitizeStylePresetName(name)
+		.replace(/[<>:"/\\|?*\p{Cc}]/gu, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.replace(/[. ]+$/, "");
+	const base = stripped || "Preset";
+	return WINDOWS_RESERVED_NAME_RE.test(base) ? `${base}_` : base;
+}
+
+/** List order: by name, ignoring case and accents, then by id so ties are stable. */
+export function compareStylePresets(a: StylePreset, b: StylePreset): number {
+	return (
+		a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id)
+	);
+}
+
+export function serializeStylePresetFile(input: {
+	name: string;
+	appearance: StylePresetAppearance;
+}): string {
+	const file: StylePresetFile = {
+		format: STYLE_PRESET_FORMAT,
+		version: STYLE_PRESET_FORMAT_VERSION,
+		name: sanitizeStylePresetName(input.name),
+		appearance: parseStylePresetAppearance(input.appearance),
+	};
+	return `${JSON.stringify(file, null, 2)}\n`;
+}
+
+// ---- The look a new project starts from ---------------------------------------------
+// Written by the main process straight into `document.legacyEditor`, so these use the
+// legacy key names `nextLegacy` (store/editorSettings.ts) writes. `aspectRatio` is never
+// one of them: the format belongs to the project, and a new project keeps Auto.
+
+/** The `legacyEditor` keys that make up a project's look: the preset fields, renamed. */
+export const LOOK_LEGACY_EDITOR_KEYS = [
+	"wallpaper",
+	"wallpaperMotion",
+	"frame",
+	"frameTheme",
+	"shadowIntensity",
+	"backgroundBlur",
+	"motionBlurAmount",
+	"depthOfField",
+	"borderRadius",
+	"padding",
+	"webcamLayoutPreset",
+	"webcamMaskShape",
+	"webcamRoundness",
+	"webcamMirrored",
+	"webcamReactiveZoom",
+	"webcamSizePreset",
+	"webcamBackgroundMode",
+	"webcamWallpaper",
+	"webcamBlurIntensity",
+	"cursorSize",
+	"cursorSmoothing",
+	"cursorMotionBlur",
+	"cursorClickBounce",
+	"cursorModel3d",
+	"cursorAsArrow",
+	// A project saved before the kinds could be picked holds its look here instead.
+	"cursorAlwaysArrow",
+	"cursorClickImpact",
+	"cursorShow",
+	"cursorAutoHide",
+	"cursorTheme",
+] as const;
+
+/** A preset's appearance as `legacyEditor` fields, format left out. */
+export function stylePresetLegacyEditor(appearance: StylePresetAppearance): Fields {
+	const { aspectRatio: _format, cursor, ...rest } = appearance;
+	return {
+		...rest,
+		cursorSize: cursor.size,
+		cursorSmoothing: cursor.smoothing,
+		cursorMotionBlur: cursor.motionBlur,
+		cursorClickBounce: cursor.clickBounce,
+		cursorModel3d: cursor.model3d,
+		cursorAsArrow: cursor.asArrow,
+		cursorClickImpact: cursor.clickImpact,
+	};
+}
+
+/** The look out of another project's `legacyEditor`: crop, camera framing and position,
+ *  audio, format and everything else that belongs to that footage stay behind. */
+export function lookFromLegacyEditor(legacyEditor: unknown): Fields {
+	if (!isRecord(legacyEditor)) return {};
+	const look: Fields = Object.fromEntries(
+		LOOK_LEGACY_EDITOR_KEYS.filter((key) => legacyEditor[key] !== undefined).map((key) => [
+			key,
+			legacyEditor[key],
+		]),
+	);
+	// A project from before the amount holds only the old switch, under a key the list drops.
+	if (look.backgroundBlur === undefined && typeof legacyEditor.showBlur === "boolean") {
+		look.backgroundBlur = legacyEditor.showBlur ? LEGACY_BACKGROUND_BLUR_ON : 0;
+	}
+	return look;
+}
+
+/** Validates a parsed preset file (the JSON value, not the text). */
+export function parseStylePresetFile(json: unknown): StylePresetFile {
+	if (!isRecord(json) || json.format !== STYLE_PRESET_FORMAT) {
+		throw new TypeError("Not an OpenScreen style preset file.");
+	}
+	if (json.version !== STYLE_PRESET_FORMAT_VERSION) {
+		throw new TypeError(
+			`Unsupported style preset version ${String(json.version)} (this build reads version ${STYLE_PRESET_FORMAT_VERSION}).`,
+		);
+	}
+	if (typeof json.name !== "string") {
+		throw new TypeError("Style preset name must be a string.");
+	}
+	return {
+		format: STYLE_PRESET_FORMAT,
+		version: STYLE_PRESET_FORMAT_VERSION,
+		name: sanitizeStylePresetName(json.name),
+		appearance: parseStylePresetAppearance(json.appearance),
+	};
+}

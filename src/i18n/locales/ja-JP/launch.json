@@ -1,0 +1,157 @@
+{
+	"tooltips": {
+		"hideHUD": "HUDを隠す",
+		"hideHUDTip": "録画バーを隠します。通知領域のアイコンから再表示できます。",
+		"closeApp": "アプリを閉じる",
+		"restartRecording": "この録画を削除して、新しく録画を開始",
+		"cancelRecording": "停止してこの録画を削除",
+		"pauseRecording": "録画を一時停止",
+		"resumeRecording": "録画を再開",
+		"useVerticalTray": "縦型トレイを使用",
+		"useHorizontalTray": "横型トレイを使用",
+		"changeSource": "別の画面またはウィンドウを選択",
+		"systemAudio": "システム音声：コンピューターが再生する音を録音します",
+		"microphone": "マイク：声を録音します",
+		"camera": "カメラ：自分の映像を別レイヤーとして録画し、エディターで動かせます",
+		"openStudio": "スタジオを開く：録画を編集するエディター",
+		"openNotes": "ノートを開く：録画中に読むテキスト",
+		"openNotesPlaceholder": "ここにメモを入力...",
+		"notesToolbar": {
+			"bold": "太字",
+			"italic": "斜体",
+			"strikethrough": "取り消し線",
+			"bulletList": "箇条書きリスト",
+			"numberedList": "番号付きリスト",
+			"blockquote": "引用",
+			"codeBlock": "コードブロック",
+			"play": "自動スクロールを開始",
+			"pause": "自動スクロールを一時停止",
+			"speed": "スクロール速度",
+			"decreaseSpeed": "スクロール速度を下げる",
+			"increaseSpeed": "スクロール速度を上げる",
+			"fontSize": "フォントサイズ",
+			"decreaseFontSize": "フォントサイズを小さくする",
+			"increaseFontSize": "フォントサイズを大きくする",
+			"mirror": "左右反転",
+			"mirrorTip": "テキストを左右反転し、鏡越しに読めるようにします"
+		}
+	},
+	"audio": {
+		"systemAudio": "システム音声",
+		"microphone": "マイク",
+		"inputDevice": "入力デバイス"
+	},
+	"webcam": {
+		"searching": "検索中...",
+		"noneFound": "カメラが見つかりません",
+		"unavailable": "カメラが利用できません",
+		"camera": "カメラ",
+		"cameraDevice": "カメラデバイス",
+		"quality": "カメラの画質",
+		"quality1080p": "1080p",
+		"quality1440p": "1440p",
+		"quality2160p": "4K"
+	},
+	"cursor": {
+		"name": "編集可能なカーソル",
+		"editableTip": "編集可能なカーソル：別途記録されるため、エディターでスタイルを変更でき、自動ズームも使えます",
+		"systemTip": "システムカーソル：実際のカーソルが動画に録画されます。スタイル変更や自動ズームは使えません。"
+	},
+	"sourceSelector": {
+		"loading": "ソースを読み込み中...",
+		"screens": "画面 ({{count}})",
+		"windows": "ウィンドウ ({{count}})",
+		"emptyTitle": "画面またはウィンドウが見つかりません",
+		"emptyDescription": "画面収録の権限を許可したばかりの場合は、このピッカーを再読み込みしてください。macOSではOpenScreenの再起動が必要な場合があります。",
+		"loadFailedDescription": "OpenScreenはキャプチャソースを読み込めませんでした。このピッカーを再読み込みしてもう一度お試しください。",
+		"defaultSourceName": "画面"
+	},
+	"recording": {
+		"selectSource": "録画するソースを選択してください",
+		"systemPicker": "共有する対象はシステムが確認します",
+		"start": "録画を開始",
+		"stop": "録画を停止して保存",
+		"saving": "保存中..."
+	},
+	"language": "言語",
+	"languageWithName": "言語：{{language}}",
+	"systemLanguagePrompt": {
+		"title": "システム言語を使用しますか？",
+		"description": "システム言語として{{language}}が検出されました。OpenScreenを{{language}}に切り替えますか？",
+		"switch": "{{language}}に切り替え",
+		"keepDefault": "現在の言語を保持"
+	},
+	"softwareEncoderFallback": {
+		"title": "ソフトウェアエンコードに切り替えました",
+		"description": "既定のGPUエンコーダーを開始できなかったため、OpenScreenはソフトウェアH.264エンコードに切り替えました。録画はそのまま続行されますが、CPU使用率が高くなる場合があります。",
+		"dismiss": "OK",
+		"dontShowAgain": "今後表示しない"
+	},
+	"deviceSettings": {
+		"title": "デバイス設定",
+		"close": "閉じる",
+		"micLevel": "入力レベル",
+		"micHint": "マイクをテストするには話してください",
+		"noMicrophones": "マイクが見つかりません",
+		"preview": "プレビュー",
+		"previewUnavailable": "プレビューを利用できません",
+		"about": "情報",
+		"version": "バージョン {{version}}",
+		"checkingForUpdates": "確認中…"
+	},
+	"permissions": {
+		"title": "OpenScreen にはいくつかの許可が必要です",
+		"subtitle": "macOS ではそれぞれ一度だけ許可します。システム設定でいつでも変更できます。",
+		"level": {
+			"required": "必須",
+			"recommended": "推奨",
+			"optional": "任意"
+		},
+		"rows": {
+			"screen": {
+				"name": "画面とシステムオーディオ",
+				"description": "画面と Mac のサウンドを録画するため。"
+			},
+			"systemAudio": {
+				"name": "システムオーディオ",
+				"description": "Mac のサウンドを録音するため。画面やウインドウの選択には許可は不要です。"
+			},
+			"accessibility": {
+				"name": "アクセシビリティ",
+				"description": "録画に正しいカーソル（矢印、テキスト）を表示するため。"
+			},
+			"microphone": {
+				"name": "マイク",
+				"description": "声を録音するため。"
+			},
+			"camera": {
+				"name": "カメラ",
+				"description": "録画に Web カメラを追加するため。"
+			}
+		},
+		"status": {
+			"granted": "許可済み",
+			"restricted": "組織によって管理されています"
+		},
+		"actions": {
+			"continue": "続ける",
+			"allow": "許可",
+			"openSettings": "設定を開く",
+			"restart": "OpenScreen を再起動",
+			"start": "はじめる"
+		},
+		"help": {
+			"screenPrompt": "このあと macOS から、システム設定で OpenScreen をオンにするよう求められます。",
+			"screenSettings": "システム設定で OpenScreen をオンにしてください。macOS が終了して再度開くよう提案した場合は、そのまま進めてください。このウインドウが再び表示されます。",
+			"screenNotListed": "リストに OpenScreen がない場合は、＋をクリックして「アプリケーション」から OpenScreen を選んでください。",
+			"screenRestart": "許可済みです。使用するには OpenScreen の再起動が必要です。",
+			"screenRecurring": "最初の録画時に、macOS から OpenScreen がシステムのピッカーを使わずに画面へ直接アクセスしてよいか確認されます。「許可」をクリックしてください。macOS はときどき再確認します。これは正常な動作です。",
+			"systemAudioPrompt": "macOS から、OpenScreen に Mac のサウンドの録音を許可するか確認されます。",
+			"systemAudioRequested": "拒否した場合は、システム設定の「システムオーディオ録音のみ」で OpenScreen をオンにしてください。"
+		},
+		"footer": {
+			"screenRequired": "録画には画面収録が必要です。",
+			"ready": "準備が整いました。"
+		}
+	}
+}

@@ -1,0 +1,17 @@
+# https://getopenscreen.com
+# Docusaurus does not emit a robots.txt, so without this file the sitemap is
+# only discoverable by submitting it in Search Console by hand.
+
+User-agent: *
+Allow: /
+
+# One sitemap per locale: each Docusaurus locale build writes its own. Keep
+# this list in step with LOCALE_CONFIGS in docusaurus.config.ts.
+Sitemap: https://getopenscreen.com/sitemap.xml
+Sitemap: https://getopenscreen.com/fr/sitemap.xml
+Sitemap: https://getopenscreen.com/es/sitemap.xml
+Sitemap: https://getopenscreen.com/pt-br/sitemap.xml
+Sitemap: https://getopenscreen.com/ja/sitemap.xml
+Sitemap: https://getopenscreen.com/zh-cn/sitemap.xml
+Sitemap: https://getopenscreen.com/zh-tw/sitemap.xml
+Sitemap: https://getopenscreen.com/de/sitemap.xml

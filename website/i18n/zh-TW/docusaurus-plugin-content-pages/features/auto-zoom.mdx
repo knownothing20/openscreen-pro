@@ -1,0 +1,123 @@
+---
+title: 免費螢幕錄影軟體，內建自動縮放
+description: OpenScreen 是一款免費、開源的螢幕錄影軟體，支援 Windows、macOS 與 Linux，內建自動縮放功能：在它錄下的點擊處放大。
+keywords:
+  - 自動縮放螢幕錄影軟體
+  - 免費自動縮放開源螢幕錄影
+  - 游標跟隨縮放螢幕錄影
+  - Windows 自動縮放螢幕錄影
+---
+
+import DemoLoop from "@site/src/components/DemoLoop";
+
+# 免費、內建自動縮放的螢幕錄影軟體
+
+OpenScreen 是一款免費、MIT 授權、支援 Windows、macOS 與 Linux 的螢幕錄影軟體，內建自動縮放。每次錄完之後，OpenScreen 會讀取它錄下的點擊，並在這些點擊處放大，不需要連線，也不需要 AI 模型。Screen Studio、Cap 與 Camtasia 也都有自動縮放；OpenScreen 在三個平台上都免費提供這項功能。
+
+本頁由 OpenScreen 專案發布。Screen Studio、Cap 與 Camtasia 的資訊來自 screen.studio、cap.so 與 techsmith.com，於 2026 年 9 月確認。資料來源列於文末。
+
+<DemoLoop name="classic-zoom" />
+
+## 概覽 {#at-a-glance}
+
+| | |
+| --- | --- |
+| 位置 | 編輯器時間軸工具列中的「自動加強 → 自動縮放」 |
+| 讀取的資料 | OpenScreen 隨錄影一併儲存的點擊 |
+| 縮放放置位置 | 在你的點擊處。彼此相近的點擊會共用一個縮放 |
+| 每個自動縮放 | 1.25×、1.5× 或 1.8×，取能讓其點擊留在畫面中的最高倍率，對焦跟隨游標 |
+| 開頭與結尾 | 影片的前 2.5 秒與最後一秒保持全景 |
+| AI、網路或金鑰 | 皆不需要 |
+| 手動縮放倍率 | 1.25×、1.5×、1.8×、2.2×、3.5× 或 5× |
+| 對焦 | 你自行放置的一個點，或錄下的游標 |
+| 3D 鏡頭 | 關閉、畫面向左或向右轉，或 3D 環繞 |
+| 命令列 | `export` 指令的 `--auto-zoom` 旗標 |
+| 平台 | Windows 10（1903 或更新版本）與 11，x64。macOS 13 或更新版本，Apple Silicon 與 Intel。Linux，x64 |
+| 價格 | 免費，包含商業使用。MIT 授權 |
+
+## 自動縮放的運作方式 {#how-automatic-zooms-work}
+
+在預設的可編輯游標模式下，OpenScreen 會將指標與畫面像素分開錄製。它會讓系統游標不出現在影片畫面中，並把指標的移動與點擊存成旁邊的一個 `.cursor.json` 檔案。自動縮放就是從這個檔案中的點擊建立出來的。
+
+1. **將點擊分組。** 相隔不到 3 秒的點擊會共用一個縮放，只要它們能一起容納在其中。
+2. **安排每個縮放的時間。** 縮放會在第一次點擊前半秒就完全放大，並在最後一次點擊後維持 1.5 秒，讓點擊帶來的結果留在畫面中。縮放一律至少維持 1.8 秒。在片段的開頭或結尾附近，縮放的時間會移動以配合片段，已無法配合時就會被捨棄。
+3. **選擇倍率。** 在 1.25×、1.5× 與 1.8× 之中，取能讓它所有的點擊都留在畫面中、且周圍保有邊距的最高倍率。
+4. **讓影片保持平穩。** 兩個縮放之間，整個畫面至少會顯示 1.5 秒。間隔比這更近的兩個縮放，如果它們的點擊能容納在一起，就會合併為一個；否則會移除點擊較少的那一個。影片的前 2.5 秒與最後一秒保持全景，停止錄影的那次點擊也會被忽略。
+
+這個處理是套用在錄下的點擊上的確定性規則，而不是 AI 功能。它不會連線，也不會載入任何模型，而且在 Windows、macOS 與 Linux 上運作方式完全相同。
+
+實際使用時有幾個細節值得留意：
+
+- **你自己放的縮放會保留。** 你手動放置的縮放會被保留，新的縮放會與它們保持距離，兩者之間會顯示整個畫面。
+- **每個片段都有自己的縮放。** 在多片段時間軸上，即使兩個片段來自同一次錄影，每個片段也會對應到錄影中屬於自己的那一段。縮放絕不會跨越剪接點。
+- **一次復原就能移除整批。** 整個處理是單一次編輯。
+- **結果就是一般的縮放。** 點一下可以更改倍率、3D 鏡頭或對焦，拖曳邊緣可以調整起訖時間，也可以直接刪除。
+- **每次錄完都會執行。** 每段新錄下的影片在編輯器中開啟時，就會加上縮放。若要關閉，請在編輯器的**錄製**模式中關閉**錄製後自動縮放**。也可以隨時手動執行：在編輯器中選擇**自動縮放**，或在命令列上加入 `--auto-zoom`。
+- **找不到時會告訴你。** 編輯器會回報找不到可自動縮放的時刻。
+- **依據錄下的點擊運作。** 在 Windows 上會記錄點擊。在 macOS 上，記錄點擊需要「輔助使用」權限，在 Linux 上則需要你的使用者屬於 `input` 群組。
+- **指向不等於點擊。** 在你講解某個內容時保持靜止的指標，不會得到縮放。可以按 `Z` 手動加上縮放。
+
+同一個選單中還有第二個項目**智慧剪輯**，標示為*使用 AI*。這是另一項不同的功能：它會請選用的聊天代理剪掉沒有動作的空白片段。它需要等錄影的逐字稿產生完成，而且只有在你自行以自己的金鑰連接 AI 提供者之後才能使用。詳見 [AI 剪輯](/docs/ai-editing/)。
+
+## 手動縮放與跟隨游標的對焦 {#manual-zooms-and-cursor-following-focus}
+
+自動縮放只是起點。同樣的縮放區域也可以手動放置與調整。
+
+- **按 `Z` 加入縮放。** 會放在播放頭位置，倍率 1.8 倍，對焦點在畫面正中央。拖曳邊緣可設定起訖時間。
+- **六種倍率。** 1.25×、1.5×、1.8×、2.2×、3.5× 與 5×。
+- **兩種對焦模式。** 手動模式固定在一個點：在預覽畫面中拖曳對焦標記，或重設回中央。自動模式則跟隨錄下的游標。
+- **一個總開關控制所有縮放。** 工具列中的自動對焦（十字準星圖示）開關，可以讓所有縮放都跟隨游標。關閉之後，每個縮放會回到自己原本的設定。
+- **3D 鏡頭。** 每個縮放都可以保持平面，讓畫面向左或向右轉，或使用跟隨縮放焦點移動的 3D 環繞鏡頭。
+- **縮放時的攝影機畫面。** 在子母畫面版面中，**縮放時縮小**會在畫面放大時讓攝影機變小。這項設定預設開啟。
+
+手動對焦的手動縮放不需要游標資料，所以也能用在從其他工具匯入的影片上。縮放檢查器詳見[縮放區域](/docs/editing-timeline/#zoom-regions)。
+
+<DemoLoop name="3d-camera" />
+
+## 錄影結束後的游標 {#the-cursor-after-the-take}
+
+同樣錄下的移動資料也會驅動匯出檔案中的游標。「游標」面板可以顯示或隱藏游標，並設定大小、平滑度、動態模糊、點擊彈跳與點擊按壓效果。游標路徑在預覽與匯出時使用相同的平滑方式，所以預覽畫面就是最終匯出的結果。
+
+點擊彈跳需要錄下點擊資料。在 macOS 上這需要「輔助使用」權限，在 Linux 上則需要你的使用者屬於 `input` 群組。各平台會擷取哪些內容，列於[錄影](/docs/recording/)頁面。
+
+<DemoLoop name="3d-cursors" />
+
+## 從命令列使用 {#from-the-command-line}
+
+[CLI](/docs/cli/) 的 `export` 指令接受 `--auto-zoom` 參數。在算繪之前，它會以與編輯器相同的方式，根據錄影的點擊規劃縮放，並讓它們與專案既有的縮放保持距離。沒有 OpenScreen 游標資料的影片，則沒有任何資料可供它運作。
+
+## 其他也有自動縮放的工具 {#other-tools-that-zoom-automatically}
+
+自動縮放在這個類別中相當常見，OpenScreen 只是其中之一。
+
+- **Screen Studio。** 它的自動縮放會鎖定錄影期間發生點擊的位置。
+- **Cap。** 它的 Studio Mode 會根據 Cap 錄下的游標與點擊資料，在點擊位置周圍產生縮放區段。其文件指出，匯入的 MP4 檔在匯入過程中不會取得點擊資料。
+- **Camtasia。** SmartFocus 會辨識捲動、點擊等動作，再加上平移與縮放動畫。它需要來自 Camtasia Recorder 的 `.trec` 檔案。
+
+和 OpenScreen 一樣，Cap 與 Camtasia 都需要自家錄影軟體所擷取的資料。OpenScreen、Screen Studio 與 Cap 都在點擊處縮放，而 Camtasia 的 AI 會挑選捲動、點擊等動作。想看逐項比較，請見[取代 Screen Studio](/alternatives/screen-studio/)、[OpenScreen 與 Cap 比較](/compare/openscreen-vs-cap/)與[取代 Camtasia](/alternatives/camtasia/)。
+
+## 不適合使用 OpenScreen 的情況 {#when-openscreen-is-not-the-right-tool}
+
+- **你想在其他錄影軟體拍攝的畫面上套用自動縮放。** 自動縮放需要 OpenScreen 寫出的游標檔案。其他應用程式的影片沒有這個檔案，以系統游標模式錄下的 OpenScreen 影片也一樣沒有。這兩種情況下手動縮放仍然可以使用。
+- **你要錄製 iPhone 或 iPad。** OpenScreen 錄製的是 Windows、macOS 或 Linux 電腦上的畫面或視窗，而不是手機或平板。
+
+## 開始使用 {#getting-started}
+
+1. 從[下載頁面](/download/)下載 OpenScreen。在 Windows 上，建議使用 Microsoft Store。
+2. 依照[安裝](/docs/installation/)步驟進行。在 macOS 上，請在首次啟動時開啟的視窗中授予權限。
+3. 依照[快速入門](/docs/quick-start/)錄下第一段影片，並將游標模式保持在「可編輯游標」。
+4. 錄下的影片在編輯器中開啟時，自動縮放已經放好。再依照[剪輯與時間軸](/docs/editing-timeline/)所述調整縮放。
+
+正在製作完整示範影片嗎？[產品示範影片指南](/docs/guides/product-demo-video/)說明如何為這類縮放安排節奏，而[字幕頁面](/features/captions/)則說明裝置端轉錄的做法。OpenScreen 可在 [Windows](/screen-recorder-windows/)、[macOS](/screen-recorder-mac/) 與 [Linux](/screen-recorder-linux/) 上使用。或回到 [OpenScreen 首頁](/)。
+
+## 資料來源 {#sources}
+
+Screen Studio、Cap 與 Camtasia 的資訊，於 2026 年 9 月確認：
+
+- Screen Studio 依點擊位置自動縮放：[screen.studio/guide/auto-zoom](https://screen.studio/guide/auto-zoom)
+- Cap 的自動與手動縮放，以及匯入的 MP4 檔：[cap.so/docs/recording/studio-mode](https://cap.so/docs/recording/studio-mode)
+- Camtasia 的 SmartFocus 與其 `.trec` 需求：[techsmith.com/camtasia/features/ai-auto-zoom-and-pan](https://www.techsmith.com/camtasia/features/ai-auto-zoom-and-pan/)
+
+OpenScreen 的資訊描述的是 1.11.0 版，並連結至上方的說明文件。
+
+Screen Studio、Cap 與 Camtasia 為其各自所有者的商標。OpenScreen 是獨立專案，與上述任一產品皆無關聯，亦未獲其認可或贊助。

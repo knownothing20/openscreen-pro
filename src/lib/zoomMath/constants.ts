@@ -1,0 +1,29 @@
+import type { ZoomFocus } from "@/components/video-editor/types";
+
+export const DEFAULT_FOCUS: ZoomFocus = { cx: 0.5, cy: 0.5 };
+export const TRANSITION_WINDOW_MS = 1015.05;
+// A zoom transition lasts BASE + PER_LN · ln(scale) on screen: ~0.7 s at 1.25×, ~0.9 s at the
+// default 1.8×, ~1.5 s at 5×. Mirror of `zoom_transition_s` (crates/compositor/src/regions.rs).
+export const ZOOM_TRANSITION_BASE_MS = 600;
+export const ZOOM_TRANSITION_PER_LN_MS = 550;
+
+export function zoomTransitionMs(scale: number): number {
+	return ZOOM_TRANSITION_BASE_MS + ZOOM_TRANSITION_PER_LN_MS * Math.log(Math.max(1, scale));
+}
+export const SMOOTHING_FACTOR = 0.12;
+export const ZOOM_TRANSLATION_DEADZONE_PX = 1.25;
+export const ZOOM_SCALE_DEADZONE = 0.002;
+export const AUTO_FOLLOW_SMOOTHING_FACTOR = 0.1;
+export const AUTO_FOLLOW_SMOOTHING_FACTOR_MAX = 0.25;
+export const AUTO_FOLLOW_RAMP_DISTANCE = 0.15;
+// Reference frame interval so preview and export normalize their per-frame
+// smoothing identically regardless of render fps. Lower fps = floatier follow
+// (tuned to the live-preview feel).
+export const AUTO_FOLLOW_REFERENCE_MS = 1000 / 40;
+// Shared by preview and export so the camera follows the cursor identically.
+export const AUTO_FOLLOW_PARAMS = {
+	minFactor: AUTO_FOLLOW_SMOOTHING_FACTOR,
+	maxFactor: AUTO_FOLLOW_SMOOTHING_FACTOR_MAX,
+	rampDistance: AUTO_FOLLOW_RAMP_DISTANCE,
+	referenceMs: AUTO_FOLLOW_REFERENCE_MS,
+} as const;

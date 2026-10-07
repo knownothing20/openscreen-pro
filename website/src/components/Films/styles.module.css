@@ -1,0 +1,299 @@
+/* The films under the editor: one centred head per block, a wide stage, and
+   the notes under it — the shape the category's own pages use, in this site's
+   type, accent and panel chrome. */
+
+.section {
+	background: var(--os-bg);
+	color: var(--os-fg);
+	padding: 120px 28px 0;
+	overflow-x: clip;
+}
+
+.inner {
+	max-width: 1080px;
+	margin: 0 auto;
+}
+
+.block {
+	scroll-margin-top: 76px;
+}
+
+.block + .block {
+	margin-top: 150px;
+}
+
+/* ---- head ---- */
+
+.head {
+	max-width: 720px;
+	margin: 0 auto;
+	text-align: center;
+}
+
+.kicker {
+	margin: 0;
+	font-family: var(--ifm-font-family-monospace);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--os-accent);
+}
+
+.title {
+	margin: 14px 0 0;
+	font-size: clamp(30px, 3.6vw, 44px);
+	font-weight: 750;
+	letter-spacing: -0.03em;
+	line-height: 1.1;
+	color: var(--os-fg-emphasis);
+	text-wrap: balance;
+}
+
+.lead {
+	margin: 18px auto 0;
+	max-width: 58ch;
+	font-size: 16px;
+	line-height: 1.7;
+	color: var(--os-muted);
+	text-wrap: pretty;
+}
+
+.lead strong {
+	font-weight: 600;
+	color: var(--os-fg-emphasis);
+}
+
+/* ---- stage ---- */
+
+.stage {
+	position: relative;
+	margin-top: 44px;
+}
+
+/* The same wash the Showcase panels sit on, so the two sections read as one
+   page rather than two templates. */
+.glow {
+	position: absolute;
+	inset: -60px -80px;
+	background: radial-gradient(ellipse 60% 55% at 50% 45%, var(--os-accent-wash), transparent 70%);
+	pointer-events: none;
+}
+
+.frame {
+	position: relative;
+	border-radius: 18px;
+	border: 1px solid var(--os-border);
+	background: var(--os-surface);
+	box-shadow:
+		0 30px 80px rgba(0, 0, 0, 0.5),
+		inset 0 1px 0 rgba(255, 255, 255, 0.04);
+	overflow: hidden;
+}
+
+:global([data-theme="light"]) .frame {
+	box-shadow: var(--os-elev-pop);
+}
+
+/* The loop fills the frame: no second border, no second radius. */
+.frame figure {
+	margin: 0;
+}
+
+.frame figure > div {
+	border: 0;
+	border-radius: 0;
+}
+
+/* Loops on a stage are stacked: the one being left stays on top, holding its
+   last frame, until the next has a frame of its own, then dissolves. */
+.layers {
+	display: grid;
+}
+
+.layer {
+	grid-area: 1 / 1;
+	min-width: 0;
+}
+
+.outgoing {
+	z-index: 1;
+	opacity: 1;
+	transition: opacity 0.6s ease;
+}
+
+.gone {
+	opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.outgoing {
+		transition-duration: 0.01s;
+	}
+}
+
+/* ---- tabs ---- */
+
+.tabs {
+	position: absolute;
+	z-index: 2;
+	top: 14px;
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	gap: 2px;
+	max-width: calc(100% - 28px);
+	padding: 4px;
+	overflow-x: auto;
+	scrollbar-width: none;
+	border-radius: 999px;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: rgba(8, 10, 13, 0.66);
+	backdrop-filter: blur(14px);
+	-webkit-backdrop-filter: blur(14px);
+}
+
+.tab {
+	position: relative;
+	flex: none;
+	overflow: hidden;
+	padding: 7px 14px;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	font: inherit;
+	font-size: 13px;
+	font-weight: 550;
+	white-space: nowrap;
+	color: rgba(255, 255, 255, 0.66);
+	cursor: pointer;
+	transition:
+		color 0.15s,
+		background 0.15s;
+}
+
+.tab:hover {
+	color: #fff;
+}
+
+.tab[aria-selected="true"] {
+	background: rgba(255, 255, 255, 0.12);
+	color: #fff;
+}
+
+/* How far the current loop has played: the tab is also the progress bar,
+   so a reader can see when the stage will move on by itself. */
+.tabProgress {
+	position: absolute;
+	left: 10px;
+	right: 10px;
+	bottom: 3px;
+	height: 2px;
+	border-radius: 2px;
+	background: var(--os-accent);
+	transform-origin: left center;
+	transform: scaleX(var(--p, 0));
+}
+
+/* ---- notes ---- */
+
+.notes {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 28px;
+	margin: 40px 0 0;
+	padding: 28px 0 0;
+	border-top: 1px solid var(--os-border-soft);
+	list-style: none;
+}
+
+.note {
+	margin: 0;
+	font-size: 14px;
+	line-height: 1.65;
+	color: var(--os-muted);
+	text-wrap: pretty;
+}
+
+.note strong {
+	font-weight: 600;
+	color: var(--os-fg-emphasis);
+}
+
+/* ---- the pair ---- */
+
+.pair {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 24px;
+	margin-top: 44px;
+}
+
+.pairItem .frame {
+	border-radius: 16px;
+}
+
+.pairCaption {
+	margin: 18px 4px 0;
+	font-size: 14px;
+	line-height: 1.65;
+	color: var(--os-muted);
+}
+
+.pairCaption strong {
+	font-weight: 600;
+	color: var(--os-fg-emphasis);
+}
+
+@media (max-width: 900px) {
+	.section {
+		padding-top: 90px;
+	}
+
+	.block + .block {
+		margin-top: 110px;
+	}
+
+	.notes {
+		grid-template-columns: 1fr;
+		gap: 14px;
+	}
+
+	.pair {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 600px) {
+	.section {
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	.frame {
+		border-radius: 12px;
+	}
+
+	/* Over a 340px-wide loop the bar would cover the picture it labels. */
+	.tabs {
+		position: static;
+		transform: none;
+		margin: 0 auto 12px;
+		width: fit-content;
+		background: var(--os-surface-1);
+		border-color: var(--os-border);
+	}
+
+	.tab {
+		color: var(--os-muted);
+	}
+
+	.tab[aria-selected="true"] {
+		background: var(--os-surface-3);
+		color: var(--os-fg-emphasis);
+	}
+
+	.glow {
+		inset: -30px -16px;
+	}
+}

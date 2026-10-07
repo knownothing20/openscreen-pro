@@ -1,0 +1,1425 @@
+//! The video half of Stage 2: PipeWire frames in, MP4 on disk out.
+//!
+//! CONSTANT FRAME RATE, DRIVEN BY A CLOCK, NOT BY ARRIVALS.
+//!
+//! A compositor delivers frames on damage. Nothing moves on screen, no frames
+//! arrive — mutter will happily go seconds without one while the user reads a
+//! page. Writing one output frame per delivered frame would therefore produce a
+//! file whose playback speed depends on how busy the screen was, which is not a
+//! recording of anything.
+//!
+//! So the output rate comes from a monotonic clock instead. [`Capture::advance`]
+//! asks what frame index the wall clock is on and stamps the staged picture with
+//! THAT index as its PTS, holding the last picture across a gap. That is why
+//! [`crate::encoder`] splits conversion from encoding: a held frame costs an
+//! upload and an encode (1.4 ms here) but not the colour conversion (3.6 ms),
+//! which is the expensive part.
+//!
+//! WALL-CLOCK PTS, NOT A FRAME COUNTER. The PTS is the clock's frame index, not
+//! a running count of frames written — and the two stop agreeing the moment a
+//! tick is missed. If the loop is starved under load, an encode runs long, or the
+//! screen sits static between wakeups, the next write JUMPS its PTS to the real
+//! index and the container stores the skipped slots as that frame's duration. So
+//! the file's length always equals real elapsed time: a dropped frame becomes one
+//! longer-held frame, never a deleted slice of the timeline. Encoding a running
+//! counter instead silently time-compressed recordings under load and desynced
+//! the screen from audio, webcam and the cursor overlay (issue #511). Playback is
+//! variable-rate, which the editor and compositor already seek/play by decoded
+//! PTS (the same path the webcam, itself VFR, has always taken).
+//!
+//! The clock is ours, not the compositor's. `SPA_META_Header.pts` is more precise
+//! per frame, but pause/resume and the audio epoch all live on this process's
+//! monotonic clock, and quantising to 1/fps makes the difference immaterial.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use crate::encoder::{
+    AudioEncoder, Backend, EncodeStats, Muxer, TrackId, VideoEncoder, VideoParams,
+    AUDIO_CHANNELS, AUDIO_SAMPLE_RATE,
+};
+use crate::ffmpeg as ff;
+use crate::shim::{self, AudioRing};
+
+/// An audio capture to mux alongside the video.
+pub struct AudioSource {
+    /// "system" or "microphone" — the label a warning names.
+    pub label: &'static str,
+    pub ring: Arc<AudioRing>,
+    /// Linear multiplier applied before encoding. 1.0 for the system mix; the
+    /// microphone carries the UI's boost.
+    pub gain: f32,
+    pub bitrate: i64,
+}
+
+/// One capture feeding the mix.
+struct AudioInput {
+    label: &'static str,
+    ring: Arc<AudioRing>,
+    gain: f32,
+    /// Samples drained but not yet mixed, because the other inputs had fewer.
+    pending: Vec<f32>,
+}
+
+/// The single AAC track, and everything mixed into it.
+///
+/// ONE TRACK, NOT ONE PER SOURCE. The first shape of this code followed macOS
+/// and wrote system audio and the microphone as two separate AAC tracks, on the
+/// grounds that the export mixes every track it finds
+/// (`crates/compositor/src/audio.rs`). What that missed is that THE PREVIEW DOES
+/// NOT: it plays an HTML5 `<video>` element, which plays only the default audio
+/// track and cannot be told to switch, because Chromium does not implement the
+/// `audioTracks` API. With system audio first and nothing playing, the preview
+/// was silent while the microphone sat in a track nothing would ever select.
+///
+/// The Windows helper has always written one mixed track
+/// (`mf_encoder.cpp` has a single `audioStreamIndex_`, fed by `AudioMixer`), and
+/// macOS has since done the same (`AudioTrackMixer` feeding the helper's single
+/// `AVAssetWriterInput(mediaType: .audio)`). All three now agree.
+struct AudioMix {
+    inputs: Vec<AudioInput>,
+    encoder: AudioEncoder,
+    track: TrackId,
+    /// Reused across drains so the steady state allocates nothing.
+    scratch: Vec<f32>,
+}
+
+/// How far one input may lag behind another before it is treated as silent
+/// rather than allowed to stall the track.
+///
+/// Mixing consumes `min(available)` across inputs so that neither runs ahead of
+/// the other. Taken literally that means one dead input — a microphone
+/// unplugged mid-recording — freezes the whole track, because its `min` stays
+/// zero forever. A quarter of a second of slack is far more than the jitter
+/// between two streams of the same 48 kHz graph, and far less than anyone can
+/// hear as a gap.
+const AUDIO_STARVE_SAMPLES: usize = AUDIO_SAMPLE_RATE as usize / 4 * AUDIO_CHANNELS;
+
+impl AudioMix {
+    /// Drains every input, mixes what they have in common, and encodes it.
+    ///
+    /// `flush` is set once at stop: it mixes whatever remains even when the
+    /// inputs are unevenly filled, because there will be no more samples to even
+    /// them out.
+    fn pump(&mut self, muxer: &mut Muxer, flush: bool) -> Result<(), String> {
+        for input in &mut self.inputs {
+            input.ring.drain_into(&mut input.pending);
+        }
+
+        let shortest = self.inputs.iter().map(|i| i.pending.len()).min().unwrap_or(0);
+        let longest = self.inputs.iter().map(|i| i.pending.len()).max().unwrap_or(0);
+        // Normally consume only what every input can supply, so none runs ahead.
+        // When one has fallen far behind — or at flush, when nothing more is
+        // coming — take the longest and let the short ones contribute silence,
+        // rather than letting a dead input freeze the track. See
+        // AUDIO_STARVE_SAMPLES.
+        let take = if flush || longest.saturating_sub(shortest) > AUDIO_STARVE_SAMPLES {
+            longest
+        } else {
+            shortest
+        };
+        if take == 0 {
+            return Ok(());
+        }
+
+        self.scratch.clear();
+        self.scratch.resize(take, 0.0);
+        for input in &mut self.inputs {
+            let n = input.pending.len().min(take);
+            for (out, sample) in self.scratch.iter_mut().zip(input.pending.drain(..n)) {
+                // Summed, then clamped ONCE at the end rather than per input:
+                // clamping each contribution would quietly attenuate the mix
+                // whenever one source alone is already near full scale.
+                *out += sample * input.gain;
+            }
+        }
+        for sample in &mut self.scratch {
+            // A boosted microphone over loud system audio must clip flat. An
+            // out-of-range float survives until AAC quantises it and then wraps
+            // to the opposite polarity, which sounds like a burst of noise.
+            *sample = sample.clamp(-1.0, 1.0);
+        }
+
+        let id = self.track;
+        let scratch = std::mem::take(&mut self.scratch);
+        let result = self.encoder.push(&scratch, |packet| muxer.write(id, packet));
+        self.scratch = scratch;
+        result
+    }
+
+    /// Samples the rings had to discard, per input. Audible, unlike a dropped
+    /// video frame.
+    fn dropped(&self) -> Vec<(&'static str, u64)> {
+        self.inputs
+            .iter()
+            .map(|input| (input.label, input.ring.dropped_samples()))
+            .filter(|(_, dropped)| *dropped > 0)
+            .collect()
+    }
+}
+
+pub struct Selection {
+    pub backend: Backend,
+    /// One line per backend the ladder tried and refused, in order.
+    pub rejected: Vec<String>,
+}
+
+/// Bits per pixel per frame for H.264 screen content.
+///
+/// Screen recordings are mostly static and compress far better than camera
+/// footage, so this sits well below the ~0.2 a live-action encode would want.
+/// At 1920×1080/60 it comes to about 12 Mbit/s.
+const BITS_PER_PIXEL: f64 = 0.1;
+
+/// Picks a video bitrate from the size the compositor actually negotiated.
+///
+/// THE CALLER CANNOT DO THIS. On Wayland the app does not know the capture
+/// resolution until the portal has negotiated it — the user picks the source in
+/// the compositor's own dialog, and it may be a window rather than a display.
+/// The renderer therefore sends no bitrate at all. It used to send
+/// `computeBitrate(TARGET_WIDTH, TARGET_HEIGHT)`, whose constants are 4K, so a
+/// 1080p capture asked for 76.5 Mbit/s and produced 44 MB for 18 seconds.
+fn default_bitrate(width: i32, height: i32, fps: i32) -> i64 {
+    let pixels_per_second = f64::from(width.max(1)) * f64::from(height.max(1)) * f64::from(fps.max(1));
+    // Floor so that a tiny window capture still gets enough bits to look sharp,
+    // ceiling so that a 4K/120 stream cannot ask for something no disk wants.
+    ((pixels_per_second * BITS_PER_PIXEL) as i64).clamp(2_000_000, 60_000_000)
+}
+
+pub struct Summary {
+    pub path: PathBuf,
+    /// The video timeline's length: the last PTS + 1 frame, in ms. With
+    /// wall-clock PTS this tracks real elapsed time even when frames were
+    /// dropped, so it — not the encoded frame count — is what the file lasts.
+    pub duration_ms: u64,
+    /// Frames actually encoded. Under variable-rate output this can be FEWER than
+    /// `duration_ms * fps`: a stall is one held frame spanning many slots.
+    pub frames: u64,
+    /// Real wall-clock time the recording ran, excluding paused spans. Compared
+    /// against `duration_ms` to flag a regression to time-compression (#511).
+    pub wall_clock_ms: u64,
+    pub stats: EncodeStats,
+}
+
+pub struct Capture {
+    encoder: VideoEncoder,
+    /// The dmabuf → VAAPI importer, present only on the zero-copy path (issue
+    /// #507). When set, [`Self::stage`] imports the frame's descriptor into an
+    /// NV12 surface instead of running swscale, and the encoder was opened
+    /// against this importer's pool.
+    importer: Option<crate::dmabuf_import::DmabufImporter>,
+    video_track: TrackId,
+    audio: Option<AudioMix>,
+    /// `None` only between [`Self::finish`] taking it and the struct dropping.
+    muxer: Option<Muxer>,
+    path: PathBuf,
+    fps: i32,
+    /// Monotonic instant of output frame 0. Set when the FIRST frame is staged,
+    /// not at construction: the gap between opening the encoder and the
+    /// compositor's first frame is portal and negotiation latency, and starting
+    /// the timeline before it would put that latency at the head of every
+    /// recording.
+    epoch: Option<Instant>,
+    /// Time spent paused, subtracted from the elapsed clock so a resumed
+    /// recording continues where it left off instead of leaving a gap.
+    paused_total: Duration,
+    paused_at: Option<Instant>,
+    /// The next output frame index to write.
+    next_index: i64,
+    frames_written: u64,
+    /// The size the encoder was opened at, latched for the whole file.
+    ///
+    /// An MP4 track cannot change resolution mid-file, but a window's crop rect
+    /// can change on ANY buffer — mutter never renegotiates the format for a
+    /// window stream, so a resize travels down the crop and nothing else. The
+    /// committed size is therefore the contract, and a later crop is read
+    /// through it rather than replacing it.
+    committed_width: i32,
+    committed_height: i32,
+    /// The rectangle of the SOURCE STREAM the encoder last read, in stream
+    /// pixels: the live crop origin (clamped by [`Self::read_origin`]) at the
+    /// committed size.
+    ///
+    /// Exists for the cursor, not for the video. The portal reports pointer
+    /// positions in stream pixels, and for a window stream the stream is the
+    /// whole monitor — mutter pins it there and carves the window out through
+    /// SPA_META_VideoCrop. Normalising the pointer against the stream would
+    /// then place it in a rectangle the file does not show. This is the one the
+    /// file DOES show.
+    content: shim::CropRect,
+}
+
+/// The outcome of staging one captured frame.
+#[derive(Debug, PartialEq, Eq)]
+pub enum StageOutcome {
+    /// A new frame was staged; `advance` will encode it.
+    Staged,
+    /// The recording is paused, so the incoming frame was deliberately ignored and
+    /// the held picture kept frozen at the pause instant (pause is app-side, but the
+    /// compositor keeps streaming). A distinct outcome on purpose: it is NOT
+    /// `Staged` — nothing new was staged, so a caller counting encoded frames must
+    /// not tally it — and NOT `Dropped` — nothing failed, so it must not count
+    /// toward the import-failure budget that ends a recording.
+    Frozen,
+    /// A recoverable per-frame failure — one dmabuf the GPU could not map, or a
+    /// transient EAGAIN. The frame is skipped and `advance` holds the previously
+    /// staged one forward, so a single bad frame costs one frame, not the whole
+    /// recording. Carries the reason for a log warning.
+    Dropped(String),
+}
+
+impl Capture {
+    pub fn start(
+        path: &Path,
+        width: i32,
+        height: i32,
+        fps: i32,
+        // `None` derives one from the negotiated size, which is almost always
+        // what the caller wants — see `default_bitrate`.
+        bitrate: Option<i64>,
+        forced: Option<Backend>,
+        audio_sources: Vec<AudioSource>,
+        // Present when the first frame is a tiled dmabuf: the encoder is then
+        // opened to consume the importer's NV12 pool directly (issue #507).
+        dmabuf: Option<&shim::DmabufDesc>,
+    ) -> Result<(Self, Selection), String> {
+        let bitrate = bitrate.unwrap_or_else(|| default_bitrate(width, height, fps));
+        let mut rejected = Vec::new();
+        // Shared with the negotiation offer (`prefer_dmabuf` in main) so the two
+        // never disagree: offering dmabuf that this then refuses to import is what
+        // makes a forced-software recording fail on its first frame.
+        let use_dmabuf = crate::encoder::forced_allows_dmabuf(forced);
+        let (encoder, importer) = match dmabuf.filter(|_| use_dmabuf) {
+            Some(desc) => {
+                // The importer maps the full stream (`desc`) and its VPP crops to
+                // the committed record size (`width`/`height`): equal to the source
+                // for a monitor, or the window's crop rectangle for a window. The
+                // encoder is FORCED to VAAPI — the only backend that can consume the
+                // mapped surface; a non-VAAPI machine never negotiates dmabuf.
+                //
+                // This branch never goes through `VideoEncoder::open`, so it skips the
+                // ladder's `vaMapBuffer2` guard, as `dmabuf_import::available` does.
+                // That is safe only while nothing here uploads a CPU frame: the import
+                // maps and never transfers, and `open_importing` re-applies the guard
+                // to the one upload left, in `VideoEncoder::stage`. On a libva without
+                // the symbol this branch is also the ONLY route to hardware H.264, so
+                // anything that disables it there downgrades to software (issue #534).
+                let importer = crate::dmabuf_import::DmabufImporter::new(
+                    desc.width,
+                    desc.height,
+                    width,
+                    height,
+                    desc.drm_fourcc,
+                )?;
+                // SAFETY: the importer's device and NV12 frames context are live
+                // for as long as the returned encoder, which the Capture owns
+                // alongside it below.
+                let encoder = unsafe {
+                    VideoEncoder::open_importing(
+                        VideoParams { width, height, fps, bitrate },
+                        importer.device(),
+                        importer.output_frames_ctx(),
+                    )?
+                };
+                (encoder, Some(importer))
+            }
+            None => {
+                let encoder = VideoEncoder::open(
+                    VideoParams { width, height, fps, bitrate },
+                    forced,
+                    |backend, error| rejected.push(format!("{}: {error}", backend.as_str())),
+                )?;
+                (encoder, None)
+            }
+        };
+        let selection = Selection { backend: encoder.backend(), rejected };
+
+        // Every track must exist before the header: MP4 fixes its track list
+        // there, so an audio stream opened later could not be added at all.
+        let mut muxer = Muxer::create(path)?;
+        let video_track = muxer.add_stream(encoder.codec_context())?;
+        // ONE encoder and ONE track for however many captures there are.
+        let audio = if audio_sources.is_empty() {
+            None
+        } else {
+            let bitrate = audio_sources.iter().map(|s| s.bitrate).max().unwrap_or(128_000);
+            let encoder = AudioEncoder::open(bitrate)?;
+            let track = muxer.add_stream(encoder.codec_context())?;
+            Some(AudioMix {
+                inputs: audio_sources
+                    .into_iter()
+                    .map(|source| AudioInput {
+                        label: source.label,
+                        ring: source.ring,
+                        gain: source.gain,
+                        pending: Vec::new(),
+                    })
+                    .collect(),
+                encoder,
+                track,
+                scratch: Vec::new(),
+            })
+        };
+        muxer.write_header()?;
+
+        Ok((
+            Self {
+                encoder,
+                importer,
+                video_track,
+                audio,
+                muxer: Some(muxer),
+                path: path.to_path_buf(),
+                fps,
+                epoch: None,
+                paused_total: Duration::ZERO,
+                paused_at: None,
+                next_index: 0,
+                frames_written: 0,
+                committed_width: width,
+                committed_height: height,
+                content: shim::CropRect { x: 0, y: 0, width, height },
+            },
+            selection,
+        ))
+    }
+
+    /// Whether this frame's crop still matches what the encoder was opened at.
+    ///
+    /// A divergence means the recorded window was resized. The recording keeps
+    /// its original dimensions — see [`Self::committed_width`] — so the caller
+    /// reports it once rather than silently reframing.
+    pub fn crop_diverged(&self, frame: &shim::Frame) -> bool {
+        // Compared at ENCODED parity, not raw. The committed size was rounded
+        // down to even for H.264 chroma, so a window sitting stably at 321x241
+        // commits 320x240 and would otherwise be reported as resized on every
+        // single frame — a warning about a window that never moved.
+        (frame.crop.width & !1) != self.committed_width
+            || (frame.crop.height & !1) != self.committed_height
+    }
+
+    /// Where to start reading this frame, in source pixels.
+    ///
+    /// Follows the LIVE crop origin, so moving the recorded window tracks it,
+    /// but clamps so a committed-size read always stays inside the buffer. That
+    /// clamp is the only thing standing between a shrunken window and an
+    /// out-of-bounds read inside swscale.
+    fn read_origin(&self, frame: &shim::Frame) -> (i32, i32) {
+        let max_x = (frame.width - self.committed_width).max(0);
+        let max_y = (frame.height - self.committed_height).max(0);
+        (
+            frame.crop.x.clamp(0, max_x),
+            frame.crop.y.clamp(0, max_y),
+        )
+    }
+
+    /// Converts a captured frame into the encoder's staging buffer. Nothing is
+    /// written until [`Self::advance`] runs. A recoverable per-frame failure (a
+    /// dmabuf the GPU cannot map) returns `Ok(Dropped)` rather than `Err`, so it
+    /// costs one frame, not the recording; a genuine encoder error still errors.
+    pub fn stage(&mut self, frame: &shim::Frame) -> Result<StageOutcome, String> {
+        // A paused recording must not ingest new pixels. The compositor keeps
+        // streaming while the app is paused — pause is app-side — so frames still
+        // arrive here; staging one would move the held picture to POST-pause
+        // content, which the tail write in `finish` would then encode into the
+        // file if a stop follows a pause with no resume. The user expects pause
+        // to hold that privacy boundary, so the staged picture is frozen at the
+        // pause instant instead.
+        //
+        // Its own `Frozen`, not `Dropped` and not `Staged`. Not `Dropped`: that is
+        // the GPU-import failure signal, which warns per frame and ends the
+        // recording past MAX_CONSECUTIVE_IMPORT_FAILURES, so a pause longer than
+        // that many frames would abort the file — nothing failed here. Not `Staged`
+        // either: nothing was staged, so anything downstream that counts encoded
+        // frames or reasons about import health must be able to tell a freeze from
+        // a real frame rather than have it hidden behind `Staged`.
+        //
+        // Ahead of the dmabuf path so the freeze covers the zero-copy route as
+        // well, and so `mark_started` stays untouched: a pause that arrives
+        // before the first frame must leave the capture unstarted.
+        if self.paused_at.is_some() {
+            return Ok(StageOutcome::Frozen);
+        }
+        // The rectangle this frame is read from, recorded BEFORE the paths diverge.
+        // Both of them read from the same origin, so computing it once is what
+        // makes `content_rect` the single answer to "what does the file show" —
+        // the whole point of measuring the cursor against it. Assigning it inside
+        // the CPU branch alone left `content` at its opening value on the
+        // zero-copy path, so a window recorded through dmabuf reported the pointer
+        // without the crop origin taken off: the scale was right and the position
+        // was not, which is half of issue #513 surviving on the default GPU route.
+        let (x, y) = self.read_origin(frame);
+        self.content = shim::CropRect {
+            x,
+            y,
+            width: self.committed_width,
+            height: self.committed_height,
+        };
+
+        // Zero-copy dmabuf path: import the tiled GPU buffer into an NV12 VAAPI
+        // surface (the VPP crops a window to its committed rectangle) and hand it
+        // to the encoder as-is — no swscale. See issue #507.
+        if frame.dmabuf.is_some() {
+            // Same origin the content rect above carries. For a monitor it is (0, 0).
+            let (crop_x, crop_y) = (x, y);
+            let desc = frame.dmabuf.as_ref().expect("checked is_some above");
+            let importer = self
+                .importer
+                .as_mut()
+                .ok_or_else(|| "dmabuf frame arrived but no importer was built".to_owned())?;
+            // Borrow the descriptor's planes directly — they are already
+            // `shim::DmabufPlane`, the exact type `import` takes — instead of
+            // reallocating a plane vector on every frame.
+            let nv12 = match importer.import(
+                &crate::dmabuf_import::DmabufFrame {
+                    width: desc.width,
+                    height: desc.height,
+                    drm_fourcc: desc.drm_fourcc,
+                    modifier: desc.modifier,
+                    planes: &desc.planes,
+                },
+                crop_x,
+                crop_y,
+            ) {
+                Ok(nv12) => nv12,
+                // A single un-mappable buffer must not end the recording. Skip it;
+                // `advance` holds the previous frame, and the shm path is still in
+                // the offer for a full downgrade later (a planned follow-up).
+                Err(reason) => return Ok(StageOutcome::Dropped(reason)),
+            };
+            // SAFETY: `nv12` is a VAAPI NV12 frame from the pool the encoder was
+            // opened against; the encoder takes ownership.
+            unsafe { self.encoder.stage_hw(nv12) };
+            self.mark_started();
+            return Ok(StageOutcome::Staged);
+        }
+
+        let format = pixel_format(frame.video_format)?;
+
+        // Address the crop by moving the START of the slice, and hand swscale the
+        // frame's OWN stride unchanged. The stride is the distance between rows
+        // in the source buffer, which cropping does not alter — WebRTC's memfd
+        // path subtracts the x offset from it, which is wrong for any non-zero x
+        // and is latent there only because no shipping compositor sets one.
+        let offset = (y as usize)
+            .checked_mul(frame.stride)
+            .and_then(|rows| rows.checked_add((x as usize) * BYTES_PER_SOURCE_PIXEL))
+            .ok_or_else(|| "crop offset overflows".to_owned())?;
+        let pixels = frame
+            .pixels
+            .get(offset..)
+            .ok_or_else(|| format!("crop offset {offset} is past the end of the frame"))?;
+
+        self.encoder.stage(pixels, frame.stride, format)?;
+        self.mark_started();
+        Ok(StageOutcome::Staged)
+    }
+
+    /// Starts the timeline on the first staged frame and drops the audio backlog.
+    ///
+    /// Audio has been accumulating since the process started, while the portal
+    /// picker was up and the format was being negotiated. None of it belongs to
+    /// the recording: video frame 0 is now, so audio sample 0 is now too. Keeping
+    /// the backlog would shift the whole track earlier by however long the user
+    /// took to click.
+    fn mark_started(&mut self) {
+        if self.epoch.is_some() {
+            return;
+        }
+        self.epoch = Some(Instant::now());
+        if let Some(mix) = &mut self.audio {
+            for input in &mut mix.inputs {
+                input.ring.clear();
+                input.pending.clear();
+            }
+        }
+    }
+
+    /// Whether a picture has been staged, which is also whether the timeline has
+    /// started.
+    pub fn started(&self) -> bool {
+        self.epoch.is_some()
+    }
+
+    /// The source rectangle the file is showing. See [`Self::content`].
+    pub fn content_rect(&self) -> shim::CropRect {
+        self.content
+    }
+
+    /// Stamps the staged picture at the wall clock's current frame index and
+    /// encodes it. Returns 1 if a frame was written this call, 0 otherwise.
+    ///
+    /// ONE ENCODE PER CALL, STAMPED FROM THE CLOCK. The PTS is `current_index()`
+    /// — the frame index real time is on — not a running counter. When the loop
+    /// is serviced every tick the indices come out consecutive and the file
+    /// looks constant-rate; when ticks were missed (loop starved, slow encode,
+    /// static screen) `next_index` JUMPS past the skipped slots and the container
+    /// records them as this frame's duration. That jump is what keeps the file's
+    /// length equal to real elapsed time under drops, with no unbounded catch-up
+    /// burst to block `stop` (issue #511). Several arrivals inside one 1/fps slot
+    /// collapse to one write, which is the correct quantisation.
+    pub fn advance(&mut self) -> Result<u32, String> {
+        if self.paused_at.is_some() || !self.encoder.has_staged_frame() {
+            return Ok(0);
+        }
+        let target = self.current_index();
+        let Some(muxer) = self.muxer.as_mut() else {
+            return Ok(0);
+        };
+        let mut written = 0;
+        if target >= self.next_index {
+            let track = self.video_track;
+            self.encoder
+                .encode_staged(target, |packet| muxer.write(track, packet))?;
+            self.next_index = target + 1;
+            self.frames_written += 1;
+            written = 1;
+        }
+
+        // Audio is NOT quantised the way video is. A held video frame can be
+        // recreated at any time; a missed audio sample cannot, and the ring
+        // drops the oldest once it fills. Draining every wakeup keeps it far
+        // from that cap — at 48 kHz a 16 ms tick carries about 768 samples.
+        if let Some(mix) = self.audio.as_mut() {
+            mix.pump(muxer, false)?;
+        }
+        Ok(written)
+    }
+
+    pub fn pause(&mut self) {
+        if self.paused_at.is_none() {
+            self.paused_at = Some(Instant::now());
+            // The rings stop taking samples for the duration. What they already
+            // hold is audio from before the pause: it is part of the take and
+            // stays, and the first drain after resume places it. See
+            // AudioRing::pause for what discarding it used to cost.
+            //
+            // THE CLOCK IS STOPPED FIRST, AND THAT ORDER IS THE RIGHT WAY ROUND.
+            // It leaves a window of a microsecond or so in which a capture
+            // thread can still be admitted — but a PipeWire buffer is delivered
+            // AFTER the audio in it was captured, so a buffer arriving in that
+            // window carries sound from before the pause instant, which the
+            // video timeline does cover. Keeping it is correct. Closing the
+            // gates first would reject that same buffer instead, and a
+            // rejection owes no silence, so it would drop a quantum of audio
+            // the video still accounts for — the same error, in the direction
+            // that actually loses something.
+            if let Some(mix) = &mut self.audio {
+                for input in &mut mix.inputs {
+                    input.ring.pause();
+                }
+            }
+        }
+    }
+
+    pub fn resume(&mut self) {
+        if let Some(since) = self.paused_at.take() {
+            self.paused_total += since.elapsed();
+            // Nothing was captured while paused, so there is nothing here to
+            // throw away — the rings only have to start taking samples again.
+            // `pending` is left alone for the same reason the rings are: it
+            // holds samples drained before the pause, which are take audio.
+            if let Some(mix) = &mut self.audio {
+                for input in &mut mix.inputs {
+                    input.ring.resume();
+                }
+            }
+        }
+    }
+
+    /// Samples the rings had to discard because the encoder fell behind, per
+    /// track. Audible if non-zero, unlike a dropped video frame.
+    pub fn dropped_audio(&self) -> Vec<(&'static str, u64)> {
+        self.audio.as_ref().map(AudioMix::dropped).unwrap_or_default()
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused_at.is_some()
+    }
+
+    /// Flushes the encoder, writes the trailer, and closes the file.
+    pub fn finish(mut self) -> Result<Summary, String> {
+        let mut muxer = self
+            .muxer
+            .take()
+            .ok_or_else(|| "capture was already finished".to_owned())?;
+
+        // Close the tail. Stamp one final held frame at the current wall-clock
+        // index so the file's last PTS reflects real elapsed time even when the
+        // loop's final heartbeat landed a few ticks before stop — otherwise a
+        // recording that ended during a quiet spell would be short by that gap.
+        // Runs even when stopped while PAUSED: `current_index()` freezes at the
+        // pause boundary, so the active time up to the pause still reaches the
+        // timeline (a stop can follow a pause with no resume in between). The
+        // staged picture is the last PRE-pause frame — `stage` is gated on pause —
+        // so this cannot leak post-pause content into the file.
+        if self.encoder.has_staged_frame() {
+            let target = self.current_index();
+            if target >= self.next_index {
+                let track = self.video_track;
+                self.encoder
+                    .encode_staged(target, |packet| muxer.write(track, packet))?;
+                self.next_index = target + 1;
+                self.frames_written += 1;
+            }
+        }
+
+        // Snapshot the active wall-clock time HERE, before the flush below.
+        // Draining audio, the encoder and the mp4 trailer can take tens of ms on
+        // a long recording, and `elapsed_active` keeps ticking through it; reading
+        // it afterwards would make a slow flush look like a timeline divergence
+        // (issue #512). The video timeline (`next_index`) is already frozen at the
+        // tail write above, so this is the moment the two are meant to agree.
+        let wall_clock_ms = self
+            .elapsed_active()
+            .map(|elapsed| elapsed.as_millis() as u64)
+            .unwrap_or(0);
+
+        // Audio first: whatever is still in the rings is real recorded sound,
+        // and draining it before the video flush keeps both ending at roughly
+        // the same timestamp. `flush` lets the mix take unevenly-filled inputs,
+        // since no more samples are coming to even them out.
+        if let Some(mix) = self.audio.as_mut() {
+            mix.pump(&mut muxer, true)?;
+            let id = mix.track;
+            mix.encoder.finish(|packet| muxer.write(id, packet))?;
+        }
+
+        let video_track = self.video_track;
+        self.encoder
+            .finish(|packet| muxer.write(video_track, packet))?;
+        muxer.finish()?;
+
+        Ok(Summary {
+            path: self.path.clone(),
+            // From the timeline, not the frame count: the last PTS is
+            // `next_index - 1`, so the presentation spans `next_index` frames.
+            // With wall-clock PTS this equals real elapsed time even when frames
+            // were dropped — which the old `frames_written / fps` did not, and is
+            // the bug being fixed (#511).
+            duration_ms: (self.next_index as u64 * 1000) / self.fps.max(1) as u64,
+            frames: self.frames_written,
+            wall_clock_ms,
+            stats: self.encoder.stats(),
+        })
+    }
+
+    /// Output frame index the wall clock is currently on, excluding paused time.
+    /// `-1` before the first frame is staged, so `advance` writes nothing.
+    fn current_index(&self) -> i64 {
+        match self.elapsed_active() {
+            Some(elapsed) => (elapsed.as_nanos() as i64 * self.fps as i64) / 1_000_000_000,
+            None => -1,
+        }
+    }
+
+    /// Wall-clock time since the first staged frame, with paused spans removed.
+    /// `None` until the timeline has started. The single source of both the PTS
+    /// clock (`current_index`) and the divergence telemetry (`wall_clock_ms`), so
+    /// the two cannot drift apart by construction.
+    fn elapsed_active(&self) -> Option<Duration> {
+        let epoch = self.epoch?;
+        let mut elapsed = epoch.elapsed().saturating_sub(self.paused_total);
+        if let Some(since) = self.paused_at {
+            elapsed = elapsed.saturating_sub(since.elapsed());
+        }
+        Some(elapsed)
+    }
+}
+
+/// SPA video format id → ffmpeg pixel format.
+///
+/// The ids come from the compiled shim rather than from hardcoded numbers (see
+/// [`shim::constants`]), so this cannot silently mis-map the day upstream
+/// inserts an enum value. Only the four formats
+/// `osc_build_enum_format` advertises can appear here; anything else means the
+/// two lists drifted apart, which is worth an error rather than a guess at the
+/// channel order.
+/// Bytes per pixel in every format [`pixel_format`] accepts.
+///
+/// All four that `osc_build_enum_format` advertises are 32-bit, so this is a
+/// constant rather than a lookup. It lives HERE, next to the table it describes,
+/// because the two must change together: adding a 24-bit format below without
+/// revisiting this would silently mis-address every cropped row.
+pub const BYTES_PER_SOURCE_PIXEL: usize = 4;
+
+fn pixel_format(spa_format: u32) -> Result<ff::AVPixelFormat, String> {
+    let constants = shim::constants();
+    // `*0` rather than `*A`: the padding byte carries no alpha, and telling
+    // swscale it does would make it blend against uninitialised data.
+    let table = [
+        (constants.video_format_bgrx, ff::AV_PIX_FMT_BGR0),
+        (constants.video_format_rgbx, ff::AV_PIX_FMT_RGB0),
+        (constants.video_format_bgra, ff::AV_PIX_FMT_BGRA),
+        (constants.video_format_rgba, ff::AV_PIX_FMT_RGBA),
+    ];
+    table
+        .iter()
+        .find(|(id, _)| *id == spa_format)
+        .map(|(_, format)| *format)
+        .ok_or_else(|| {
+            format!(
+                "the compositor negotiated SPA video format {spa_format}, which this helper \
+                 does not know how to convert. It should only ever pick one of the four \
+                 formats osc_build_enum_format advertises."
+            )
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(width: i32, height: i32, format: u32) -> shim::Frame {
+        let stride = width as usize * 4;
+        shim::Frame {
+            pixels: vec![0x30; stride * height as usize],
+            stride,
+            width,
+            height,
+            video_format: format,
+            pts_ns: -1,
+            crop: shim::CropRect { x: 0, y: 0, width, height },
+            has_crop: false,
+            dmabuf: None,
+        }
+    }
+
+    /// A window's frame: a monitor-sized buffer whose content is the rectangle
+    /// at (x, y). This is what mutter actually delivers for a window stream.
+    fn cropped_frame(
+        width: i32,
+        height: i32,
+        crop: shim::CropRect,
+        format: u32,
+    ) -> shim::Frame {
+        let mut frame = frame(width, height, format);
+        frame.crop = crop;
+        frame.has_crop = true;
+        frame
+    }
+
+    #[test]
+    fn advertised_formats_all_map_to_a_pixel_format() {
+        // The two lists — what osc_build_enum_format offers and what
+        // pixel_format accepts — must not drift. A compositor picking a format
+        // we advertised but cannot convert kills the recording at the first
+        // frame, on that user's machine only.
+        let c = shim::constants();
+        for id in [
+            c.video_format_bgrx,
+            c.video_format_rgbx,
+            c.video_format_bgra,
+            c.video_format_rgba,
+        ] {
+            assert!(pixel_format(id).is_ok(), "SPA format {id} is offered but not convertible");
+        }
+    }
+
+    #[test]
+    fn an_unadvertised_format_is_reported_not_guessed() {
+        let error = pixel_format(u32::MAX).expect_err("must reject");
+        assert!(error.contains("does not know how to convert"), "{error}");
+    }
+
+    #[test]
+    fn the_timeline_does_not_start_until_the_first_frame_is_staged() {
+        let output = std::env::temp_dir().join("openscreen-capture-epoch.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+        assert!(!capture.started());
+        // Nothing staged: advance must not write a frame of uninitialised memory.
+        assert_eq!(capture.advance().expect("advance"), 0);
+
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+        assert!(capture.started());
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn a_static_screen_still_produces_frames_and_tracks_wall_clock() {
+        // The whole reason the clock drives the output: one staged frame, no
+        // further arrivals, and the file's DURATION must still track real time.
+        // Under variable-rate output a long static gap is one held frame, so the
+        // event loop's heartbeat is simulated — a tick every ~30 ms.
+        let output = std::env::temp_dir().join("openscreen-capture-static.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+
+        for _ in 0..5 {
+            std::thread::sleep(Duration::from_millis(30));
+            capture.advance().expect("advance");
+        }
+
+        let summary = capture.finish().expect("finish");
+        assert!(summary.frames >= 1, "a static screen must still produce frames, got {}", summary.frames);
+        assert!(
+            summary.duration_ms >= 130,
+            "the timeline must track the ~150 ms elapsed, got {} ms",
+            summary.duration_ms
+        );
+        let _ = std::fs::remove_file(&output);
+    }
+
+    /// The window-capture bug, at the layer where it produced wrong pixels.
+    ///
+    /// mutter hands a window stream MONITOR-sized buffers and reports the
+    /// window's rectangle as SPA_META_VideoCrop. Encoding the buffer without
+    /// applying that rectangle is what padded window recordings out to screen
+    /// size with black.
+    #[test]
+    fn a_window_is_staged_from_its_crop_inside_a_larger_frame() {
+        let output = std::env::temp_dir().join("openscreen-capture-crop.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+
+        // A 1920x1080 stream carrying a 320x240 window at (100, 50).
+        let staged = capture.stage(&cropped_frame(
+            1920,
+            1080,
+            shim::CropRect { x: 100, y: 50, width: 320, height: 240 },
+            shim::constants().video_format_bgrx,
+        ));
+
+        assert!(staged.is_ok(), "a crop inside the frame must stage: {staged:?}");
+
+        // Frames are clock-driven, so let the timeline advance far enough for the
+        // staged picture to actually reach the encoder at the cropped geometry.
+        std::thread::sleep(Duration::from_millis(120));
+        let written = capture.advance().expect("advance");
+        assert!(written >= 1, "the cropped picture should have been encoded, wrote {written}");
+
+        let summary = capture.finish().expect("finish");
+        assert!(summary.frames >= 1, "the cropped picture must reach the file, got {}", summary.frames);
+        let _ = std::fs::remove_file(&output);
+    }
+
+    /// The rectangle the cursor is measured against has to be the one the FILE
+    /// shows, which for a window is the crop and not the stream. Getting this
+    /// wrong put the pointer in monitor coordinates over window-sized footage —
+    /// a fixed offset and a wrong scale, in every window recording.
+    #[test]
+    fn the_content_rect_is_the_window_the_file_shows() {
+        let output = std::env::temp_dir().join("openscreen-capture-content.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+
+        // Before a frame is staged there is nothing cropped yet, so the whole
+        // committed size sits at the origin.
+        assert_eq!(
+            capture.content_rect(),
+            shim::CropRect { x: 0, y: 0, width: 320, height: 240 }
+        );
+
+        capture
+            .stage(&cropped_frame(
+                1920,
+                1080,
+                shim::CropRect { x: 100, y: 50, width: 320, height: 240 },
+                shim::constants().video_format_bgrx,
+            ))
+            .expect("stage");
+        assert_eq!(
+            capture.content_rect(),
+            shim::CropRect { x: 100, y: 50, width: 320, height: 240 }
+        );
+
+        // The window moved. The file follows its origin at the committed size,
+        // and so must the cursor.
+        capture
+            .stage(&cropped_frame(
+                1920,
+                1080,
+                shim::CropRect { x: 700, y: 400, width: 320, height: 240 },
+                shim::constants().video_format_bgrx,
+            ))
+            .expect("stage");
+        assert_eq!(
+            capture.content_rect(),
+            shim::CropRect { x: 700, y: 400, width: 320, height: 240 }
+        );
+
+        // An origin that would read past the buffer is clamped for the pixels,
+        // so the cursor has to be clamped with it or the two disagree about
+        // which rectangle was recorded.
+        capture
+            .stage(&cropped_frame(
+                1920,
+                1080,
+                shim::CropRect { x: 1800, y: 1000, width: 320, height: 240 },
+                shim::constants().video_format_bgrx,
+            ))
+            .expect("stage");
+        assert_eq!(
+            capture.content_rect(),
+            shim::CropRect { x: 1600, y: 840, width: 320, height: 240 }
+        );
+
+        let _ = capture.finish();
+        let _ = std::fs::remove_file(&output);
+    }
+
+    /// A crop flush against the right edge leaves the last row short of a full
+    /// stride. The old `stride * height` bounds check rejected exactly those —
+    /// i.e. every window not touching the left edge.
+    #[test]
+    fn a_crop_against_the_right_edge_is_not_rejected_as_truncated() {
+        let output = std::env::temp_dir().join("openscreen-capture-edge.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+
+        let staged = capture.stage(&cropped_frame(
+            1920,
+            1080,
+            shim::CropRect { x: 1600, y: 840, width: 320, height: 240 },
+            shim::constants().video_format_bgrx,
+        ));
+
+        assert!(staged.is_ok(), "a crop at the far corner must stage: {staged:?}");
+        let _ = capture.finish();
+        let _ = std::fs::remove_file(&output);
+    }
+
+    /// The safety property. A window that SHRANK after the encoder was opened
+    /// still reports its own smaller rect, and reading a committed-sized picture
+    /// from its origin must stay inside the buffer rather than running off the
+    /// end into whatever follows it in the mapping.
+    #[test]
+    fn a_shrunken_window_is_read_from_inside_the_frame() {
+        let output = std::env::temp_dir().join("openscreen-capture-shrunk.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+
+        // Origin so close to the edge that a 320x240 read from it would overrun.
+        let frame = cropped_frame(
+            400,
+            300,
+            shim::CropRect { x: 380, y: 290, width: 20, height: 10 },
+            shim::constants().video_format_bgrx,
+        );
+        assert!(capture.crop_diverged(&frame), "20x10 must not look like the committed 320x240");
+
+        let staged = capture.stage(&frame);
+        assert!(staged.is_ok(), "the read must be clamped back inside the frame: {staged:?}");
+        let _ = capture.finish();
+        let _ = std::fs::remove_file(&output);
+    }
+
+    /// A window whose size is odd is rounded down once, at encoder open. Judging
+    /// later frames against the raw rect would then report a resize on every
+    /// frame of a window that never moved.
+    #[test]
+    fn a_stable_odd_sized_window_is_not_reported_as_resized() {
+        let output = std::env::temp_dir().join("openscreen-capture-odd.mp4");
+        // 321x241 rounds to the 320x240 the encoder is opened at.
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+
+        let frame = cropped_frame(
+            1920,
+            1080,
+            shim::CropRect { x: 0, y: 0, width: 321, height: 241 },
+            shim::constants().video_format_bgrx,
+        );
+
+        assert!(!capture.crop_diverged(&frame), "an unchanged odd crop is not a resize");
+        let _ = capture.finish();
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn an_uncropped_frame_reports_no_divergence() {
+        let output = std::env::temp_dir().join("openscreen-capture-nocrop.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+
+        assert!(!capture.crop_diverged(&frame(320, 240, shim::constants().video_format_bgrx)));
+        let _ = capture.finish();
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn paused_time_does_not_advance_the_timeline() {
+        let output = std::env::temp_dir().join("openscreen-capture-pause.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+
+        capture.pause();
+        assert!(capture.is_paused());
+        std::thread::sleep(Duration::from_millis(150));
+        // A paused capture writes nothing, however long it is paused for.
+        assert_eq!(capture.advance().expect("advance"), 0);
+        capture.resume();
+        // And the paused interval is not owed back as a burst of held frames.
+        assert_eq!(capture.advance().expect("advance"), 1, "only frame 0 is due");
+
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn audio_captured_before_the_first_frame_is_discarded_without_being_called_a_drop() {
+        // Regression: the audio stream opens before the portal picker is
+        // raised, so it records for as long as the user takes to click — easily
+        // past the ring's cap. Those samples are deliberately thrown away when
+        // the video epoch is set. Counting them as overflow made every single
+        // recording report "the encoder could not keep up", which was measured
+        // on a real 29-second capture: 78336 samples, all of them pre-roll.
+        let ring = Arc::new(AudioRing::new(1, 8, AUDIO_CHANNELS));
+        let capacity = 1 * 8 * AUDIO_CHANNELS;
+        ring.push_for_test(&vec![0.5; capacity * 3]);
+        assert!(ring.dropped_samples() > 0, "the ring must have overflowed for this test to mean anything");
+
+        let output = std::env::temp_dir().join("openscreen-capture-audio-preroll.mp4");
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            30,
+            Some(1_000_000),
+            Some(Backend::Software),
+            vec![AudioSource { label: "system", ring: ring.clone(), gain: 1.0, bitrate: 128_000 }],
+            None,
+        )
+        .expect("start");
+
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+
+        assert_eq!(
+            ring.dropped_samples(),
+            0,
+            "pre-roll overflow must not be reported as the encoder falling behind"
+        );
+        assert!(capture.dropped_audio().is_empty());
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn a_real_drop_before_a_pause_still_reaches_the_warning_after_it() {
+        // Regression: resume() threw away what arrived during the pause by
+        // clearing the ring, and the clear reset `dropped` — so an overflow that
+        // happened for real earlier in the take was forgotten, and the
+        // `audio-dropped` warning (main.rs) never fired for it. Pausing is the
+        // only thing between the user and the only report that a recording lost
+        // audio.
+        let ring = Arc::new(AudioRing::new(1, 8, AUDIO_CHANNELS));
+        let capacity = 1 * 8 * AUDIO_CHANNELS;
+
+        let output = std::env::temp_dir().join("openscreen-capture-audio-pause-drop.mp4");
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            30,
+            Some(1_000_000),
+            Some(Backend::Software),
+            vec![AudioSource { label: "system", ring: ring.clone(), gain: 1.0, bitrate: 128_000 }],
+            None,
+        )
+        .expect("start");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+
+        // Mid-take: the encoder falls far enough behind that the ring overflows.
+        ring.push_for_test(&vec![0.5; capacity * 3]);
+        let dropped = ring.dropped_samples();
+        assert!(dropped > 0, "the ring must have overflowed for this test to mean anything");
+
+        capture.pause();
+        // A long pause. Nothing that arrives during it belongs to the recording,
+        // and none of it is the encoder falling behind either.
+        ring.push_for_test(&vec![0.5; capacity * 10]);
+        capture.resume();
+
+        assert_eq!(
+            capture.dropped_audio(),
+            vec![("system", dropped)],
+            "the pause must not spend the tally of a drop that happened before it"
+        );
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn microphone_gain_clamps_instead_of_wrapping() {
+        // A boosted microphone that clips must clip flat. An out-of-range float
+        // survives until AAC quantises it, and then wraps to the opposite
+        // polarity — which sounds like a burst of noise, not like clipping.
+        let ring = Arc::new(AudioRing::new(1, AUDIO_SAMPLE_RATE as usize, AUDIO_CHANNELS));
+        ring.push_for_test(&[0.9, -0.9, 0.4, -0.4]);
+
+        let output = std::env::temp_dir().join("openscreen-capture-gain.mp4");
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            30,
+            Some(1_000_000),
+            Some(Backend::Software),
+            vec![AudioSource { label: "microphone", ring, gain: 4.0, bitrate: 128_000 }],
+            None,
+        )
+        .expect("start");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+
+        // stage() cleared the pre-roll, so feed the samples the run will see.
+        let mix = capture.audio.as_ref().expect("a mix exists");
+        mix.inputs[0].ring.push_for_test(&[0.9, -0.9, 0.4, -0.4]);
+        capture.advance().expect("advance");
+        for sample in &capture.audio.as_ref().unwrap().scratch {
+            assert!(
+                (-1.0..=1.0).contains(sample),
+                "gain produced {sample}, which is outside the representable range"
+            );
+        }
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn two_captures_become_one_muxed_track() {
+        // THE regression this guards. Two separate AAC tracks meant the preview
+        // — an HTML5 <video>, which plays only the default track and cannot
+        // switch — heard whichever came first. With system audio silent, that
+        // was silence, while the microphone sat in a track nothing selects.
+        let system = Arc::new(AudioRing::new(1, AUDIO_SAMPLE_RATE as usize, AUDIO_CHANNELS));
+        let mic = Arc::new(AudioRing::new(1, AUDIO_SAMPLE_RATE as usize, AUDIO_CHANNELS));
+        let output = std::env::temp_dir().join("openscreen-capture-one-track.mp4");
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            30,
+            Some(1_000_000),
+            Some(Backend::Software),
+            vec![
+                AudioSource { label: "system", ring: system.clone(), gain: 1.0, bitrate: 128_000 },
+                AudioSource { label: "microphone", ring: mic.clone(), gain: 1.0, bitrate: 128_000 },
+            ],
+            None,
+        )
+        .expect("start");
+
+        let mix = capture.audio.as_ref().expect("a mix exists");
+        assert_eq!(mix.inputs.len(), 2, "both captures feed the mix");
+        let track = mix.track;
+
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+        // stage() cleared the pre-roll, so feed after it.
+        system.push_for_test(&vec![0.25; 4096]);
+        mic.push_for_test(&vec![0.5; 4096]);
+        capture.advance().expect("advance");
+
+        let mix = capture.audio.as_ref().unwrap();
+        assert_eq!(mix.track, track, "there is exactly one audio track, and it never changes");
+        // The mixed scratch must carry BOTH contributions summed, not one of them.
+        assert!(
+            mix.scratch.iter().any(|s| (*s - 0.75).abs() < 1e-4),
+            "system 0.25 + mic 0.5 should sum to 0.75; got {:?}",
+            &mix.scratch[..mix.scratch.len().min(4)]
+        );
+
+        let summary = capture.finish().expect("finish");
+        assert!(summary.frames > 0);
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn a_silent_input_cannot_freeze_the_track() {
+        // A microphone unplugged mid-recording stops filling its ring. Mixing
+        // strictly on min(available) would then wait for it forever and the
+        // whole audio track would stop — including the system audio that is
+        // still arriving. AUDIO_STARVE_SAMPLES is what breaks that deadlock.
+        let system = Arc::new(AudioRing::new(2, AUDIO_SAMPLE_RATE as usize, AUDIO_CHANNELS));
+        let dead = Arc::new(AudioRing::new(2, AUDIO_SAMPLE_RATE as usize, AUDIO_CHANNELS));
+        let output = std::env::temp_dir().join("openscreen-capture-starve.mp4");
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            30,
+            Some(1_000_000),
+            Some(Backend::Software),
+            vec![
+                AudioSource { label: "system", ring: system.clone(), gain: 1.0, bitrate: 128_000 },
+                AudioSource { label: "microphone", ring: dead, gain: 1.0, bitrate: 128_000 },
+            ],
+            None,
+        )
+        .expect("start");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+
+        // Well past the quarter-second slack, with the other input silent.
+        system.push_for_test(&vec![0.4; AUDIO_STARVE_SAMPLES + 8192]);
+        capture.advance().expect("advance");
+
+        let mix = capture.audio.as_ref().unwrap();
+        assert!(
+            mix.inputs[0].pending.len() < AUDIO_STARVE_SAMPLES,
+            "the live input should have been consumed, not held hostage: {} left",
+            mix.inputs[0].pending.len()
+        );
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn a_long_stall_is_one_jump_not_a_burst_or_a_deleted_span() {
+        // A stall (the loop starved under load) must not be paid back as an
+        // unbounded catch-up burst that blocks `stop`, nor — the #511 bug — as a
+        // deleted slice of the timeline. Wall-clock PTS represents it as a single
+        // held frame whose PTS jumps to real time: one encode, honest duration.
+        let output = std::env::temp_dir().join("openscreen-capture-catchup.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 60, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+
+        // 500 ms at 60 fps is 30 slots due; a single advance writes ONE frame
+        // stamped at the real index, not 30 duplicates.
+        std::thread::sleep(Duration::from_millis(500));
+        let written = capture.advance().expect("advance");
+        assert_eq!(written, 1, "a stall is one time-stamped frame, not a burst");
+
+        let summary = capture.finish().expect("finish");
+        assert!(
+            summary.duration_ms >= 480,
+            "duration must track the ~500 ms elapsed, got {} ms",
+            summary.duration_ms
+        );
+        assert!(
+            summary.frames <= 3,
+            "the stall must not be backfilled with duplicates, encoded {} frames",
+            summary.frames
+        );
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn frames_arriving_while_paused_are_not_staged() {
+        // A paused recording must not ingest new pixels. The compositor keeps
+        // streaming while the app is paused, so frames still arrive; staging one
+        // would move the held picture to post-pause content, which the tail write
+        // in finish() could then encode when a stop follows a pause (#512). Pause
+        // must hold that privacy boundary — the staged picture freezes.
+        let output = std::env::temp_dir().join("openscreen-capture-pause-stage.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+
+        // Pause BEFORE any frame is staged, then a frame arrives during the pause.
+        capture.pause();
+        let staged = capture.stage(&frame(320, 240, shim::constants().video_format_bgrx));
+        assert_eq!(
+            staged.expect("staging while paused is a no-op, not an error"),
+            StageOutcome::Frozen,
+            "a frame arriving while paused is Frozen — not Staged (nothing staged) nor Dropped (nothing failed)",
+        );
+        assert!(!capture.started(), "a frame received while paused must not start the timeline");
+
+        let summary = capture.finish().expect("finish");
+        assert_eq!(summary.frames, 0, "nothing captured while paused may reach the file");
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn finishing_while_paused_still_records_the_active_time_before_the_pause() {
+        // Stop can arrive while paused — the user pauses, then decides to stop
+        // without resuming. The active time between the last heartbeat and the
+        // pause must still reach the timeline; dropping it would compress the
+        // file and desync the screen from audio (#511), the same class of bug.
+        // current_index() freezes at the pause boundary, so the tail write is
+        // both safe and required while paused.
+        let output = std::env::temp_dir().join("openscreen-capture-pause-finish.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 60, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+
+        // ~200 ms of active time passes WITHOUT a heartbeat servicing it (loop
+        // starved), then the user pauses and stops.
+        std::thread::sleep(Duration::from_millis(200));
+        capture.pause();
+        let summary = capture.finish().expect("finish");
+
+        assert!(
+            summary.duration_ms >= 180,
+            "the ~200 ms active before the pause must reach the timeline, got {} ms",
+            summary.duration_ms
+        );
+        let skew = (summary.duration_ms as i64 - summary.wall_clock_ms as i64).abs();
+        assert!(
+            skew <= 60,
+            "duration {} ms and wall-clock {} ms diverged by {} ms",
+            summary.duration_ms, summary.wall_clock_ms, skew
+        );
+        let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn sparse_wakeups_do_not_compress_the_timeline() {
+        // THE regression guard for #511. advance() is serviced only a couple of
+        // times, far less often than the frame rate, as if the event loop were
+        // starved under load. The old frame-index PTS produced a file shorter
+        // than real time (55.2 s for 61 s in the field report); wall-clock PTS
+        // keeps duration ~= elapsed, and the wall-clock telemetry agrees with it.
+        let output = std::env::temp_dir().join("openscreen-capture-sparse.mp4");
+        let (mut capture, _) =
+            Capture::start(&output, 320, 240, 60, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+                .expect("start");
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("stage");
+
+        std::thread::sleep(Duration::from_millis(200));
+        capture.advance().expect("advance");
+        std::thread::sleep(Duration::from_millis(200));
+        capture.advance().expect("advance");
+
+        let summary = capture.finish().expect("finish");
+        // ~400 ms of real time, honoured despite only a couple of encoded frames.
+        assert!(
+            summary.duration_ms >= 360,
+            "the timeline compressed: {} ms for ~400 ms of capture",
+            summary.duration_ms
+        );
+        // Duration and measured wall-clock must agree within a small epsilon —
+        // the invariant the `timeline-divergence` warning (main.rs) watches.
+        let skew = (summary.duration_ms as i64 - summary.wall_clock_ms as i64).abs();
+        assert!(
+            skew <= 60,
+            "duration {} ms and wall-clock {} ms diverged by {} ms",
+            summary.duration_ms, summary.wall_clock_ms, skew
+        );
+        // Variable-rate, not a duplicate burst: far fewer than 400 ms × 60 fps.
+        assert!(summary.frames < 10, "expected a handful of held frames, got {}", summary.frames);
+        let _ = std::fs::remove_file(&output);
+    }
+}

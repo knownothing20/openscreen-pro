@@ -1,0 +1,123 @@
+---
+title: Gravador de tela grátis com zoom automático
+description: "O OpenScreen é um gravador de tela grátis e open source com zoom automático para Windows, macOS e Linux. Dá zoom nos cliques que gravou."
+keywords:
+  - gravador de tela com zoom automático
+  - gravador de tela grátis zoom automático open source
+  - gravador de tela zoom que segue o cursor
+  - zoom automático gravação de tela windows
+---
+
+import DemoLoop from "@site/src/components/DemoLoop";
+
+# Um gravador de tela grátis com zoom automático
+
+O OpenScreen é um gravador de tela gratuito, com licença MIT, com zoom automático para Windows, macOS e Linux. Depois de cada gravação, ele lê os cliques que gravou e dá zoom neles, sem chamada de rede e sem modelo de IA. Screen Studio, Cap e Camtasia também dão zoom automaticamente; o OpenScreen faz isso de graça, nos três sistemas.
+
+Esta página é publicada pelo projeto OpenScreen. Os dados sobre Screen Studio, Cap e Camtasia vêm de screen.studio, cap.so e techsmith.com e foram verificados em setembro de 2026. As fontes estão listadas no final.
+
+<DemoLoop name="classic-zoom" />
+
+## Resumo rápido {#at-a-glance}
+
+| | |
+| --- | --- |
+| Onde encontrar | Melhoria automática → Zooms automáticos, na barra de ferramentas da linha do tempo do editor |
+| O que ele lê | Os cliques que o OpenScreen salva com uma gravação |
+| Onde os zooms entram | Nos seus cliques. Cliques próximos entre si compartilham o mesmo zoom |
+| Cada zoom automático | 1,25×, 1,5× ou 1,8×, a maior profundidade que mantém os cliques dele visíveis, com o foco seguindo o cursor |
+| Início e fim | Os primeiros 2,5 segundos e o último segundo do vídeo ficam sem zoom |
+| IA, rede ou chave | Nenhuma |
+| Profundidades de zoom manual | 1,25×, 1,5×, 1,8×, 2,2×, 3,5× ou 5× |
+| Foco | Um ponto que você posiciona, ou o cursor gravado |
+| Câmera 3D | Desativada, tela virada para a esquerda ou para a direita, ou Órbita 3D |
+| Linha de comando | A opção `--auto-zoom` do comando `export` |
+| Plataformas | Windows 10 (1903 ou posterior) e 11, x64. macOS 13 ou posterior, Apple Silicon e Intel. Linux, x64 |
+| Preço | Grátis, inclusive para uso comercial. Licença MIT |
+
+## Como os zooms automáticos funcionam {#how-automatic-zooms-work}
+
+No modo padrão de cursor editável, o OpenScreen grava o ponteiro separado dos pixels. Ele mantém o cursor do sistema fora do vídeo e salva o movimento e os cliques do ponteiro em um arquivo `.cursor.json` ao lado. Os zooms automáticos são construídos a partir dos cliques desse arquivo.
+
+1. **Agrupar os cliques.** Cliques com menos de 3 segundos de intervalo compartilham o mesmo zoom, desde que caibam juntos nele.
+2. **Definir o tempo de cada zoom.** Ele já está totalmente aplicado meio segundo antes do primeiro clique e se mantém por 1,5 segundo depois do último, para que o resultado do clique continue visível. Ele sempre se mantém por pelo menos 1,8 segundo. Perto do início ou do fim de um clipe, o tempo dele se desloca para caber, e ele é descartado quando já não cabe.
+3. **Escolher a profundidade.** A maior entre 1,25×, 1,5× e 1,8× que mantém todos os cliques dele visíveis, com uma margem ao redor deles.
+4. **Manter o vídeo calmo.** Entre dois zooms, a tela inteira aparece por pelo menos 1,5 segundo. Dois zooms mais próximos que isso viram um só quando os cliques deles cabem juntos; caso contrário, o que tem menos cliques é descartado. Os primeiros 2,5 segundos e o último segundo do vídeo ficam sem zoom, e o clique que parou a gravação é ignorado.
+
+O processo é uma regra determinística sobre cliques gravados, não um recurso de IA. Não faz chamada de rede nem carrega modelo, e funciona da mesma forma no Windows, no macOS e no Linux.
+
+Alguns detalhes importam na prática:
+
+- **Seus próprios zooms permanecem.** Zooms que você posicionou manualmente são mantidos, e os novos ficam afastados deles, com a tela inteira aparecendo no intervalo.
+- **Cada clipe recebe seus próprios zooms.** Em uma linha do tempo com vários clipes, cada clipe é associado ao próprio trecho da gravação, mesmo quando dois clipes vêm da mesma gravação. Um zoom nunca atravessa um corte.
+- **Um único desfazer remove o lote.** Todo o processo é uma única edição.
+- **Os resultados são zooms comuns.** Clique em um para mudar sua profundidade, câmera 3D ou foco, arraste as bordas para mover o início e o fim, ou apague-o.
+- **Ele roda depois de cada gravação.** Cada nova gravação recebe seus zooms ao abrir no editor. Para evitar isso, desative **Zoom automático após a gravação** no modo **Gravar** do editor. Para rodá-lo quando quiser, escolha **Zooms automáticos** no editor, ou passe `--auto-zoom` na linha de comando.
+- **Ele avisa quando nada se qualifica.** O editor informa que nenhum momento de zoom automático foi encontrado.
+- **Ele funciona a partir de cliques gravados.** Os cliques são gravados no Windows. No macOS, eles exigem a permissão de Acessibilidade, e no Linux seu usuário precisa estar no grupo `input`.
+- **Apontar não é clicar.** Um ponteiro mantido parado enquanto você fala sobre algo não recebe zoom. Adicione um manualmente com `Z`.
+
+O mesmo menu tem um segundo item, **Cortes inteligentes**, marcado *Com IA*. É um recurso diferente: ele pede ao agente de chat opcional para cortar tempo morto. Ele espera a transcrição da gravação, e só funciona depois que você conecta um provedor de IA com sua própria chave. Veja [Edição com IA](/docs/ai-editing/).
+
+## Zooms manuais e foco que segue o cursor {#manual-zooms-and-cursor-following-focus}
+
+Os zooms automáticos são um ponto de partida. As mesmas regiões de zoom podem ser posicionadas e ajustadas manualmente.
+
+- **Adicione um zoom com `Z`.** Ele é inserido no cursor de reprodução em 1,8×, com o foco no centro do quadro. Arraste as bordas para definir quando ele começa e termina.
+- **Seis profundidades.** 1,25×, 1,5×, 1,8×, 2,2×, 3,5× e 5×.
+- **Dois modos de foco.** Manual mantém um ponto: arraste o marcador de foco na pré-visualização, ou redefina-o para o centro. Automático segue o cursor gravado.
+- **Um botão para todos os zooms.** A mira de Foco automático na barra de ferramentas faz todos os zooms seguirem o cursor. Desative-a e cada zoom volta para a própria configuração.
+- **Câmera 3D.** Cada zoom pode ficar plano, virar a tela para a esquerda ou para a direita, ou voar com uma câmera Órbita 3D que segue o foco do zoom.
+- **A webcam durante um zoom.** No layout picture-in-picture, **Encolher ao ampliar** deixa a câmera menor enquanto a tela está com zoom. Fica ativado por padrão.
+
+Um zoom manual com foco manual não precisa de dados de cursor, então também funciona em um vídeo importado de outra ferramenta. Veja [Regiões de zoom](/docs/editing-timeline/#zoom-regions) para o inspetor de zoom.
+
+<DemoLoop name="3d-camera" />
+
+## O cursor depois da gravação {#the-cursor-after-the-take}
+
+O mesmo movimento gravado conduz o cursor na exportação. A aba Cursor mostra ou oculta o cursor e define tamanho, suavização, desfoque de movimento, rebote de clique e impacto do clique. O caminho do cursor é suavizado da mesma forma na pré-visualização e na exportação, então a pré-visualização corresponde ao arquivo.
+
+O rebote de clique precisa de cliques gravados. No macOS isso exige a permissão de Acessibilidade, e no Linux seu usuário precisa estar no grupo `input`. [Gravação](/docs/recording/) lista o que cada plataforma captura.
+
+<DemoLoop name="3d-cursors" />
+
+## Pela linha de comando {#from-the-command-line}
+
+O comando `export` da [CLI](/docs/cli/) aceita `--auto-zoom`. Antes de renderizar, ele planeja zooms a partir dos cliques da gravação, da mesma forma que o editor, e os mantém afastados dos zooms do próprio projeto. Um vídeo sem dados de cursor do OpenScreen não lhe dá nada com que trabalhar.
+
+## Outras ferramentas que dão zoom automaticamente {#other-tools-that-zoom-automatically}
+
+Zooms automáticos são comuns nessa categoria, e o OpenScreen é uma de várias ferramentas que os oferecem.
+
+- **Screen Studio.** O zoom automático dele foca nos lugares em que ocorreram cliques durante a gravação.
+- **Cap.** O Studio Mode dele gera segmentos de zoom ao redor de cliques gravados, a partir dos dados de cursor e clique que o Cap grava. A documentação dele diz que MP4s importados não ganham dados de clique durante a importação.
+- **Camtasia.** O SmartFocus identifica ações como rolagem e cliques, depois adiciona animações de panorâmica e zoom. Ele precisa de um arquivo `.trec` do Camtasia Recorder.
+
+Assim como o OpenScreen, o Cap e o Camtasia precisam de dados capturados pelo próprio gravador deles. OpenScreen, Screen Studio e Cap dão zoom nos cliques, e a IA do Camtasia escolhe ações como rolagem e cliques. Para comparações lado a lado, veja a [alternativa ao Screen Studio](/alternatives/screen-studio/), [OpenScreen vs Cap](/compare/openscreen-vs-cap/) e a [alternativa ao Camtasia](/alternatives/camtasia/).
+
+## Quando o OpenScreen não é a ferramenta certa {#when-openscreen-is-not-the-right-tool}
+
+- **Você quer zooms automáticos em material de outro gravador.** Os zooms automáticos precisam do arquivo de cursor que o OpenScreen grava. Um vídeo de outro app não tem nenhum, e uma gravação do OpenScreen feita no modo de cursor Sistema também não. Zooms manuais continuam funcionando nos dois casos.
+- **Você grava um iPhone ou iPad.** O OpenScreen grava uma tela ou uma janela em um computador Windows, macOS ou Linux, não um celular ou tablet.
+
+## Primeiros passos {#getting-started}
+
+1. Baixe o OpenScreen na [página de download](/download/). No Windows, a Microsoft Store é o caminho recomendado.
+2. Siga a [Instalação](/docs/installation/). No macOS, conceda as permissões na janela que se abre na primeira execução.
+3. Faça uma primeira gravação com o [início rápido](/docs/quick-start/), e deixe o modo de cursor em Sobreposição editável.
+4. A gravação abre no editor com os zooms automáticos já posicionados. Ajuste-os como descrito em [Edição e linha do tempo](/docs/editing-timeline/).
+
+Fazendo uma demo completa? O [guia de vídeo de demonstração de produto](/docs/guides/product-demo-video/) mostra como ritmar uma gravação para esses zooms, e a [página de legendas](/features/captions/) cobre a transcrição no dispositivo. O OpenScreen roda em [Windows](/screen-recorder-windows/), [macOS](/screen-recorder-mac/) e [Linux](/screen-recorder-linux/). Ou volte para a [página inicial do OpenScreen](/).
+
+## Fontes {#sources}
+
+Dados sobre Screen Studio, Cap e Camtasia, verificados em setembro de 2026:
+
+- Zoom automático do Screen Studio em posições de clique: [screen.studio/guide/auto-zoom](https://screen.studio/guide/auto-zoom)
+- Zooms automáticos e manuais do Cap, e MP4s importados: [cap.so/docs/recording/studio-mode](https://cap.so/docs/recording/studio-mode)
+- SmartFocus do Camtasia e sua exigência de `.trec`: [techsmith.com/camtasia/features/ai-auto-zoom-and-pan](https://www.techsmith.com/camtasia/features/ai-auto-zoom-and-pan/)
+
+Os dados do OpenScreen descrevem a versão 1.11.0 e remetem à documentação dele acima.
+
+Screen Studio, Cap e Camtasia são marcas registradas dos respectivos proprietários. O OpenScreen é um projeto independente e não é afiliado nem endossado por nenhum deles.

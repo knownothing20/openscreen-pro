@@ -1,0 +1,157 @@
+{
+	"tooltips": {
+		"hideHUD": "Kontrol panelini gizle",
+		"hideHUDTip": "Araç çubuğunu gizle. Bildirim alanındaki simgeden yeniden gösterebilirsiniz.",
+		"closeApp": "Uygulamayı kapat",
+		"restartRecording": "Bu kaydı sil ve yenisini başlat",
+		"cancelRecording": "Durdur ve bu kaydı sil",
+		"pauseRecording": "Kaydı duraklat",
+		"resumeRecording": "Kayda devam et",
+		"useVerticalTray": "Dikey araç çubuğunu kullan",
+		"useHorizontalTray": "Yatay araç çubuğunu kullan",
+		"changeSource": "Başka bir ekran veya pencere seç",
+		"systemAudio": "Sistem sesi: bilgisayarın çaldığı sesi kaydeder",
+		"microphone": "Mikrofon: sesinizi kaydeder",
+		"camera": "Kamera: sizi düzenleyicide taşıyabileceğiniz ayrı bir katman olarak kaydeder",
+		"openStudio": "Stüdyoyu aç: kayıtlarınızın düzenleyicisi",
+		"openNotes": "Notları aç: kayıt sırasında okuyacağınız metin",
+		"openNotesPlaceholder": "Notlarınızı buraya yazın...",
+		"notesToolbar": {
+			"bold": "Kalın",
+			"italic": "İtalik",
+			"strikethrough": "Üstü çizili",
+			"bulletList": "Madde işaretli liste",
+			"numberedList": "Numaralı liste",
+			"blockquote": "Alıntı",
+			"codeBlock": "Kod bloğu",
+			"play": "Otomatik kaydırmayı başlat",
+			"pause": "Otomatik kaydırmayı duraklat",
+			"speed": "Kaydırma hızı",
+			"decreaseSpeed": "Kaydırma hızını azalt",
+			"increaseSpeed": "Kaydırma hızını artır",
+			"fontSize": "Yazı tipi boyutu",
+			"decreaseFontSize": "Yazı tipi boyutunu küçült",
+			"increaseFontSize": "Yazı tipi boyutunu büyüt",
+			"mirror": "Yatay aynala",
+			"mirrorTip": "Metni aynalar, böylece aynada okunabilir"
+		}
+	},
+	"audio": {
+		"systemAudio": "Sistem sesi",
+		"microphone": "Mikrofon",
+		"inputDevice": "Giriş cihazı"
+	},
+	"webcam": {
+		"searching": "Aranıyor...",
+		"noneFound": "Kamera bulunamadı",
+		"unavailable": "Kamera kullanılamıyor",
+		"camera": "Kamera",
+		"cameraDevice": "Kamera cihazı",
+		"quality": "Kamera kalitesi",
+		"quality1080p": "1080p",
+		"quality1440p": "1440p",
+		"quality2160p": "4K"
+	},
+	"cursor": {
+		"name": "Düzenlenebilir imleç",
+		"editableTip": "Düzenlenebilir imleç: ayrı kaydedilir; düzenleyicide stilini değiştirebilir, otomatik yakınlaştırma kullanabilirsiniz",
+		"systemTip": "Sistem imleci: gerçek imleciniz, videoya kaydedilir. Stil değişikliği ve otomatik yakınlaştırma yok."
+	},
+	"sourceSelector": {
+		"loading": "Kaynaklar yükleniyor...",
+		"screens": "Ekranlar ({{count}})",
+		"windows": "Pencereler ({{count}})",
+		"emptyTitle": "Ekran veya pencere bulunamadı",
+		"emptyDescription": "Ekran kaydı iznini az önce verdiyseniz bu seçiciyi yeniden yükleyin. macOS'ta OpenScreen'i yeniden açmanız gerekebilir.",
+		"loadFailedDescription": "OpenScreen yakalama kaynaklarını yükleyemedi. Bu seçiciyi yeniden yükleyip tekrar deneyin.",
+		"defaultSourceName": "Ekran"
+	},
+	"recording": {
+		"selectSource": "Lütfen kayıt için bir kaynak seçin",
+		"systemPicker": "Sisteminiz neyi paylaşacağınızı soracak",
+		"start": "Kaydı başlat",
+		"stop": "Kaydı durdur ve kaydet",
+		"saving": "Kaydediliyor..."
+	},
+	"language": "Dil",
+	"languageWithName": "Dil: {{language}}",
+	"systemLanguagePrompt": {
+		"title": "Sistem dilinizi kullanmak ister misiniz?",
+		"description": "Sistem diliniz {{language}} olarak algılandı. OpenScreen i {{language}} diline geçirmek ister misiniz?",
+		"switch": "{{language}} diline geç",
+		"keepDefault": "Mevcut dili koru"
+	},
+	"softwareEncoderFallback": {
+		"title": "Yazılım kodlamasına geçildi",
+		"description": "Varsayılan GPU kodlayıcı başlatılamadığı için OpenScreen yazılım tabanlı H.264 kodlamasına geçti. Kayıt normal şekilde devam eder, ancak CPU kullanımı daha yüksek olabilir.",
+		"dismiss": "Anladım",
+		"dontShowAgain": "Bir daha gösterme"
+	},
+	"deviceSettings": {
+		"title": "Cihaz ayarları",
+		"close": "Kapat",
+		"micLevel": "Giriş seviyesi",
+		"micHint": "Mikrofonunuzu test etmek için konuşun",
+		"noMicrophones": "Mikrofon bulunamadı",
+		"preview": "Önizleme",
+		"previewUnavailable": "Önizleme kullanılamıyor",
+		"about": "Hakkında",
+		"version": "Sürüm {{version}}",
+		"checkingForUpdates": "Denetleniyor…"
+	},
+	"permissions": {
+		"title": "OpenScreen'in birkaç izne ihtiyacı var",
+		"subtitle": "macOS her birini yalnızca bir kez ister. Bunları istediğiniz zaman Sistem Ayarları'ndan değiştirebilirsiniz.",
+		"level": {
+			"required": "Gerekli",
+			"recommended": "Önerilen",
+			"optional": "İsteğe bağlı"
+		},
+		"rows": {
+			"screen": {
+				"name": "Ekran ve sistem sesi",
+				"description": "Ekranınızı ve Mac'inizin sesini kaydetmek için."
+			},
+			"systemAudio": {
+				"name": "Sistem sesi",
+				"description": "Mac'inizin sesini kaydetmek için. Ekran veya pencere seçmek için izin gerekmez."
+			},
+			"accessibility": {
+				"name": "Erişilebilirlik",
+				"description": "Kayıtlarınızda doğru imleci (ok, metin) göstermek için."
+			},
+			"microphone": {
+				"name": "Mikrofon",
+				"description": "Sesinizi kaydetmek için."
+			},
+			"camera": {
+				"name": "Kamera",
+				"description": "Web kameranızı kayıtlarınıza eklemek için."
+			}
+		},
+		"status": {
+			"granted": "İzin verildi",
+			"restricted": "Kuruluşunuz tarafından yönetiliyor"
+		},
+		"actions": {
+			"continue": "Devam",
+			"allow": "İzin ver",
+			"openSettings": "Ayarları Aç",
+			"restart": "OpenScreen'i yeniden başlat",
+			"start": "Başla"
+		},
+		"help": {
+			"screenPrompt": "Ardından macOS, Sistem Ayarları'nda OpenScreen'i açmanızı isteyecek.",
+			"screenSettings": "Sistem Ayarları'nda OpenScreen'i açın. macOS uygulamayı kapatıp yeniden açmayı önerirse kabul edin: bu pencere geri gelecek.",
+			"screenNotListed": "OpenScreen listede yok mu? + düğmesine tıklayın ve Uygulamalar'dan OpenScreen'i seçin.",
+			"screenRestart": "İzin verildi. OpenScreen'in bunu kullanabilmesi için yeniden başlatılması gerekiyor.",
+			"screenRecurring": "İlk kaydınızda macOS, OpenScreen'in sistem seçicisi olmadan ekranınıza doğrudan erişip erişemeyeceğini soracak. İzin Ver'e tıklayın. macOS bunu zaman zaman yeniden sorar; bu normaldir.",
+			"systemAudioPrompt": "macOS, OpenScreen'in Mac'inizin sesini kaydetmesine izin vermenizi isteyecek.",
+			"systemAudioRequested": "Reddettiyseniz, Sistem Ayarları'nda “Yalnızca Sistem Sesi Kaydı” altında OpenScreen'i açın."
+		},
+		"footer": {
+			"screenRequired": "Kayıt için ekran kaydı gereklidir.",
+			"ready": "Her şey hazır."
+		}
+	}
+}

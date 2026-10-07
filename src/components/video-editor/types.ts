@@ -1,0 +1,549 @@
+import {
+	effectiveZoomScale,
+	type ZoomDepth,
+	type ZoomScaleInput,
+} from "@/lib/ai-edition/timeline/zoom-scale";
+import type { WebcamLayoutPreset } from "@/lib/compositeLayout";
+import type { CursorKind } from "@/lib/cursor/cursorThemes";
+import { DEFAULT_PROJECT_APPEARANCE, SETTING_BOUNDS } from "@/lib/projectDefaults";
+import { clamp01 } from "@/utils/math";
+
+export type { ZoomDepth, ZoomScaleInput };
+export type ZoomFocusMode = "manual" | "auto";
+export type { WebcamLayoutPreset };
+/** Webcam size as a percentage of the canvas reference dimension (15-60). */
+export type WebcamSizePreset = number;
+
+export const DEFAULT_WEBCAM_SIZE_PRESET: WebcamSizePreset = 40;
+
+export const DEFAULT_WEBCAM_LAYOUT_PRESET: WebcamLayoutPreset = "picture-in-picture";
+
+export type WebcamMaskShape = "rectangle" | "circle" | "square" | "rounded";
+
+export const DEFAULT_WEBCAM_MASK_SHAPE: WebcamMaskShape = "square";
+
+export const DEFAULT_WEBCAM_MIRRORED = false;
+
+/** Background mode for the webcam feed (none, transparent AI cutout, blurred background, custom background). */
+export const WEBCAM_BACKGROUND_MODES = ["none", "transparent", "blur", "custom"] as const;
+
+export type WebcamBackgroundMode = (typeof WEBCAM_BACKGROUND_MODES)[number];
+
+/** A `legacyEditor` envelope is user-writable JSON: anything that is not one of the four
+ *  known modes has to fall back, or `renderSegmentedWebcam` matches no branch and encodes
+ *  a blank webcam track. */
+export function isWebcamBackgroundMode(value: unknown): value is WebcamBackgroundMode {
+	return (WEBCAM_BACKGROUND_MODES as readonly unknown[]).includes(value);
+}
+
+export const DEFAULT_WEBCAM_BACKGROUND_MODE: WebcamBackgroundMode = "none";
+
+/** Motion of a gradient or image wallpaper, rendered by the native compositor from programme
+ *  time. A solid colour keeps the value and ignores it: nothing on it could move. */
+export const WALLPAPER_MOTIONS = ["none", "drift", "aurora", "waves"] as const;
+
+export type WallpaperMotion = (typeof WALLPAPER_MOTIONS)[number];
+
+export function isWallpaperMotion(value: unknown): value is WallpaperMotion {
+	return (WALLPAPER_MOTIONS as readonly unknown[]).includes(value);
+}
+
+export const DEFAULT_WEBCAM_BLUR_INTENSITY = 0.5;
+
+/** When true, the picture-in-picture webcam keeps 70% of its size while a zoom is active. */
+export const DEFAULT_WEBCAM_REACTIVE_ZOOM = true;
+
+export interface WebcamPosition {
+	cx: number; // normalized horizontal center (0-1)
+	cy: number; // normalized vertical center (0-1)
+}
+
+export const DEFAULT_WEBCAM_POSITION: WebcamPosition | null = null;
+
+export interface ZoomFocus {
+	cx: number; // normalized horizontal center (0-1)
+	cy: number; // normalized vertical center (0-1)
+}
+
+export interface Rotation3D {
+	rotationX: number;
+	rotationY: number;
+	rotationZ: number;
+}
+
+export const DEFAULT_ROTATION_3D: Rotation3D = {
+	rotationX: 0,
+	rotationY: 0,
+	rotationZ: 0,
+};
+
+/** A fixed 3D angle: the screen holds one pose for the whole zoom. */
+export const FIXED_ROTATION_3D_PRESETS = ["left", "right"] as const;
+export type FixedRotation3DPreset = (typeof FIXED_ROTATION_3D_PRESETS)[number];
+
+/**
+ * A moving 3D camera. `orbit` keeps the screen still and moves a real camera around it, always
+ * level: to the side of a point of the screen, rising or dipping with it. The zoom's focus mode
+ * picks the point: the cursor under auto focus, which only drives it while the cursor is shown,
+ * the focus point under manual. The native compositor renders it
+ * (`crates/compositor/src/camera.rs`).
+ */
+export const MOVING_ROTATION_3D_PRESETS = ["orbit"] as const;
+export type MovingRotation3DPreset = (typeof MOVING_ROTATION_3D_PRESETS)[number];
+
+/** The zoom's "3D camera": absent means a flat screen. */
+export type Rotation3DPreset = FixedRotation3DPreset | MovingRotation3DPreset;
+
+export const ROTATION_3D_PRESET_ORDER: Rotation3DPreset[] = [
+	...MOVING_ROTATION_3D_PRESETS,
+	...FIXED_ROTATION_3D_PRESETS,
+];
+
+export function isRotation3DPreset(value: unknown): value is Rotation3DPreset {
+	return typeof value === "string" && (ROTATION_3D_PRESET_ORDER as string[]).includes(value);
+}
+
+/**
+ * A stored 3D camera, read: the presets that no longer exist map to the one that kept their look.
+ * `iso` (turned left, seen from above) became Left, with the same angle. Anything else unknown
+ * reads as a flat screen.
+ */
+export function readRotation3DPreset(value: unknown): Rotation3DPreset | undefined {
+	if (value === "iso") return "left";
+	return isRotation3DPreset(value) ? value : undefined;
+}
+
+// Left is the `iso` angle of v1.13.0, to the degree: turned left and seen from above, with its
+// slight roll. Right is its mirror (Y and Z negated). Every preset carries all three components on
+// purpose. With a single-axis rotation the projected quad keeps an edge exactly parallel to the
+// frame — both vertical edges for a pure Y rotation, which is geometry rather than a setting — and
+// a perfectly vertical edge cutting through text is indistinguishable from `overflow: hidden`.
+// That is what got reported three times as "the recording is truncated" while the plane was in
+// fact drawn whole. `regions.rs` holds the same numbers and a test asserting no edge comes within
+// 2° of an axis.
+//
+// A moving camera has no single pose. Its entry is its resting angle (`ELEVATION_DEG` in
+// `camera.rs`: cursor centred, the camera 4° above the screen, facing it), what a renderer without
+// the cursor track draws. A camera above tips the top edge toward the viewer, which is a negative X
+// rotation of the screen. It is a camera angle, not a screen rotation, so this is the nearest
+// equivalent rather than the same picture.
+export const ROTATION_3D_PRESETS: Record<Rotation3DPreset, Rotation3D> = {
+	left: { rotationX: -12, rotationY: -18, rotationZ: -2 },
+	right: { rotationX: -12, rotationY: 18, rotationZ: 2 },
+	orbit: { rotationX: -4, rotationY: 0, rotationZ: 0 },
+};
+
+/** Perspective distance in CSS px is this factor times min(viewport w, h). Same
+ * factor in preview and export so the look matches at any canvas resolution.
+ * Lower = camera closer = edges converge more visibly. At 2.6 the convergence was so flat that
+ * iso's top edge came out 0.08° off horizontal and the tilt stopped reading as a tilt. */
+export const ROTATION_3D_PERSPECTIVE_FACTOR = 1.6;
+
+export function rotation3DPerspective(width: number, height: number): number {
+	return Math.min(width, height) * ROTATION_3D_PERSPECTIVE_FACTOR;
+}
+
+/**
+ * Origin of a zoom region. "auto" marks zooms from the magic-wand suggest pass;
+ * toggling the wand off removes only these. Editing an auto zoom promotes it to
+ * "manual" so it survives. Undefined is treated as "manual" for back-compat.
+ */
+export type ZoomRegionSource = "auto" | "manual";
+
+export interface ZoomRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+	depth: ZoomDepth;
+	focus: ZoomFocus;
+	focusMode?: ZoomFocusMode;
+	rotationPreset?: Rotation3DPreset;
+	/** Custom scale overriding the preset depth (1.0-5.0, two decimal precision). */
+	customScale?: number;
+	source?: ZoomRegionSource;
+	/** When true, cursor is hidden during this zoom region. */
+	hideCursor?: boolean;
+}
+
+export function getRotation3D(region: Pick<ZoomRegion, "rotationPreset">): Rotation3D {
+	if (!region.rotationPreset) return DEFAULT_ROTATION_3D;
+	return ROTATION_3D_PRESETS[region.rotationPreset];
+}
+
+export function isRotation3DIdentity(r: Rotation3D, eps = 0.01): boolean {
+	return Math.abs(r.rotationX) < eps && Math.abs(r.rotationY) < eps && Math.abs(r.rotationZ) < eps;
+}
+
+export function lerpRotation3D(a: Rotation3D, b: Rotation3D, t: number): Rotation3D {
+	return {
+		rotationX: a.rotationX + (b.rotationX - a.rotationX) * t,
+		rotationY: a.rotationY + (b.rotationY - a.rotationY) * t,
+		rotationZ: a.rotationZ + (b.rotationZ - a.rotationZ) * t,
+	};
+}
+
+/**
+ * Max uniform scale that, with `rot` and a perspective of `perspective` CSS px, keeps
+ * the projected bounding box of a width x height element inside its original rectangle.
+ * Returns 1 when no scaling is needed. Projects each rotated corner (x' = x*P/(P-z)) and
+ * returns the limiting half-extent ratio so the rotated recording stays inside the zoom window.
+ */
+export function computeRotation3DContainScale(
+	rot: Rotation3D,
+	width: number,
+	height: number,
+	perspective: number,
+): number {
+	const a = (rot.rotationX * Math.PI) / 180;
+	const b = (rot.rotationY * Math.PI) / 180;
+	const g = (rot.rotationZ * Math.PI) / 180;
+	const ca = Math.cos(a);
+	const sa = Math.sin(a);
+	const cb = Math.cos(b);
+	const sb = Math.sin(b);
+	const cg = Math.cos(g);
+	const sg = Math.sin(g);
+	const halfW = width / 2;
+	const halfH = height / 2;
+	const corners: Array<[number, number]> = [
+		[-halfW, -halfH],
+		[halfW, -halfH],
+		[halfW, halfH],
+		[-halfW, halfH],
+	];
+
+	let maxAbsX = 0;
+	let maxAbsY = 0;
+
+	for (const [x0, y0] of corners) {
+		// CSS "rotateX rotateY rotateZ" applies right-to-left: Z first, then Y, then X.
+		let px = x0;
+		let py = y0;
+		let pz = 0;
+
+		// rotateZ
+		const zx = px * cg - py * sg;
+		const zy = px * sg + py * cg;
+		px = zx;
+		py = zy;
+
+		// rotateY
+		const yx = px * cb + pz * sb;
+		const yz = -px * sb + pz * cb;
+		px = yx;
+		pz = yz;
+
+		// rotateX
+		const xy = py * ca - pz * sa;
+		const xz = py * sa + pz * ca;
+		py = xy;
+		pz = xz;
+
+		// Viewer at (0, 0, P) looking toward -z; a point at z=pz scales by P/(P-pz).
+		// perspective <= 0 means orthographic.
+		if (perspective > 0) {
+			const denom = perspective - pz;
+			if (denom <= 0) return 1; // pathological, skip scaling rather than crash
+			const f = perspective / denom;
+			px *= f;
+			py *= f;
+		}
+
+		if (Math.abs(px) > maxAbsX) maxAbsX = Math.abs(px);
+		if (Math.abs(py) > maxAbsY) maxAbsY = Math.abs(py);
+	}
+
+	if (maxAbsX === 0 || maxAbsY === 0) return 1;
+	const sx = halfW / maxAbsX;
+	const sy = halfH / maxAbsY;
+	return Math.min(sx, sy, 1);
+}
+
+export interface CursorTelemetryPoint {
+	timeMs: number;
+	cx: number;
+	cy: number;
+	visible?: boolean;
+	interactionType?: "move" | "click" | "double-click" | "right-click" | "middle-click" | "mouseup";
+	cursorType?:
+		| "arrow"
+		| "text"
+		| "pointer"
+		| "crosshair"
+		| "open-hand"
+		| "closed-hand"
+		| "resize-ew"
+		| "resize-ns"
+		| "not-allowed";
+}
+
+export interface CursorVisualSettings {
+	size: number;
+	smoothing: number;
+	motionBlur: number;
+	clickBounce: number;
+	/**
+	 * Draws every default-theme cursor shape as a modelled 3D object (compositor mode 15, its
+	 * sprite extruded): it hovers over the screen, casts a real shadow on it and touches down on
+	 * each click; pointing shapes also lean towards their motion. Other themes stay flat sprites.
+	 */
+	model3d: boolean;
+	/** The kinds drawn with the theme's arrow instead of their own sprite (`CURSOR_KINDS`). */
+	asArrow: CursorKind[];
+	/**
+	 * Each click gives the screen an impact, whatever the zoom's camera: a fixed angle rocks the
+	 * tilted screen toward the clicked side, the moving camera recoils, a flat screen is pushed
+	 * back (`frame_geometry::plan_frame`).
+	 */
+	clickImpact: boolean;
+	autoHide?: boolean;
+}
+
+// The project defaults, under the names the legacy editor reads: one value, not two to keep in sync.
+export const DEFAULT_CURSOR_SIZE = DEFAULT_PROJECT_APPEARANCE.cursor.size;
+export const DEFAULT_CURSOR_SMOOTHING = DEFAULT_PROJECT_APPEARANCE.cursor.smoothing;
+export const DEFAULT_CURSOR_MOTION_BLUR = DEFAULT_PROJECT_APPEARANCE.cursor.motionBlur;
+export const DEFAULT_CURSOR_CLICK_BOUNCE = DEFAULT_PROJECT_APPEARANCE.cursor.clickBounce;
+// Off: the flat sprite every existing project renders.
+export const DEFAULT_CURSOR_MODEL3D = DEFAULT_PROJECT_APPEARANCE.cursor.model3d;
+export const DEFAULT_CURSOR_AUTO_HIDE = DEFAULT_PROJECT_APPEARANCE.cursor.autoHide;
+export const DEFAULT_ZOOM_MOTION_BLUR = 0.35;
+
+export interface TrimRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+}
+
+/**
+ * "Full Camera" / "Cut to camera" timeline region. During this span, the webcam overlay
+ * animates its size/position until it covers the entire canvas, visually hiding the
+ * desktop behind it (the desktop keeps recording underneath, it's just covered).
+ * No focus/depth/rotation needed: unlike ZoomRegion, the destination is always "fill the
+ * canvas", so the shape stays intentionally simpler.
+ */
+export interface CameraFullscreenRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+}
+
+export type AnnotationType = "text" | "image" | "figure" | "blur";
+
+export type ArrowDirection =
+	| "up"
+	| "down"
+	| "left"
+	| "right"
+	| "up-right"
+	| "up-left"
+	| "down-right"
+	| "down-left";
+
+export interface FigureData {
+	arrowDirection: ArrowDirection;
+	color: string;
+	strokeWidth: number;
+}
+
+export type BlurShape = "rectangle" | "oval" | "freehand";
+export type BlurType = "blur" | "mosaic";
+export type BlurColor = "white" | "black";
+
+export const MIN_BLUR_INTENSITY = 2;
+export const MAX_BLUR_INTENSITY = 40;
+export const DEFAULT_BLUR_INTENSITY = 12;
+export const MIN_BLUR_BLOCK_SIZE = 4;
+export const MAX_BLUR_BLOCK_SIZE = 48;
+export const DEFAULT_BLUR_BLOCK_SIZE = 12;
+
+export interface BlurData {
+	type: BlurType;
+	shape: BlurShape;
+	color: BlurColor;
+	intensity: number;
+	blockSize: number;
+	// Points are normalized (0-100) within the annotation bounds.
+	freehandPoints?: Array<{ x: number; y: number }>;
+}
+
+export interface AnnotationPosition {
+	x: number;
+	y: number;
+}
+
+export interface AnnotationSize {
+	width: number;
+	height: number;
+}
+
+export type AnnotationTextAnimation =
+	| "none"
+	| "fade"
+	| "rise"
+	| "pop"
+	| "slide-left"
+	| "typewriter"
+	| "pulse";
+
+export interface AnnotationTextStyle {
+	color: string;
+	backgroundColor: string;
+	fontSize: number; // pixels
+	fontFamily: string;
+	fontWeight: "normal" | "bold";
+	fontStyle: "normal" | "italic";
+	textDecoration: "none" | "underline";
+	textAlign: "left" | "center" | "right";
+	textAnimation?: AnnotationTextAnimation;
+}
+
+export interface AnnotationRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+	type: AnnotationType;
+	content: string; // Legacy - still used for current type
+	textContent?: string; // Separate storage for text
+	imageContent?: string; // Separate storage for image data URL
+	/** `"frame"`: placed on the output frame. Absent: on the footage (see annotations/placement.ts). */
+	space?: "frame";
+	position: AnnotationPosition;
+	size: AnnotationSize;
+	style: AnnotationTextStyle;
+	zIndex: number;
+	/** When set, layout/style edits on one region can sync to all auto-caption siblings. */
+	annotationSource?: "auto-caption";
+	figureData?: FigureData;
+	blurData?: BlurData;
+}
+
+export const DEFAULT_ANNOTATION_POSITION: AnnotationPosition = {
+	x: 50,
+	y: 50,
+};
+
+export const DEFAULT_ANNOTATION_SIZE: AnnotationSize = {
+	width: 30,
+	height: 20,
+};
+
+export const DEFAULT_ANNOTATION_STYLE: AnnotationTextStyle = {
+	color: "#ffffff",
+	backgroundColor: "transparent",
+	fontSize: 32,
+	fontFamily: "Inter",
+	fontWeight: "bold",
+	fontStyle: "normal",
+	textDecoration: "none",
+	textAlign: "center",
+	textAnimation: "none",
+};
+
+export const DEFAULT_FIGURE_DATA: FigureData = {
+	arrowDirection: "right",
+	color: "#34B27B",
+	strokeWidth: 4,
+};
+
+export const DEFAULT_BLUR_FREEHAND_POINTS: Array<{ x: number; y: number }> = [
+	{ x: 10, y: 30 },
+	{ x: 25, y: 10 },
+	{ x: 55, y: 8 },
+	{ x: 82, y: 20 },
+	{ x: 90, y: 45 },
+	{ x: 78, y: 72 },
+	{ x: 52, y: 90 },
+	{ x: 22, y: 84 },
+	{ x: 8, y: 58 },
+];
+
+export const DEFAULT_BLUR_DATA: BlurData = {
+	type: "mosaic",
+	shape: "rectangle",
+	color: "white",
+	intensity: DEFAULT_BLUR_INTENSITY,
+	blockSize: DEFAULT_BLUR_BLOCK_SIZE,
+	freehandPoints: DEFAULT_BLUR_FREEHAND_POINTS,
+};
+
+export interface CropRegion {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+export const DEFAULT_CROP_REGION: CropRegion = {
+	x: 0,
+	y: 0,
+	width: 1,
+	height: 1,
+};
+
+export type PlaybackSpeed = number;
+
+export const [MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED] = SETTING_BOUNDS.playbackSpeed;
+// Chromium hard-caps HTMLMediaElement.playbackRate at 16 (setting more throws
+// NotSupportedError). At or below this, preview plays natively; above it, preview
+// frame-steps by seeking and audio export uses an offline pitch-preserved stretch.
+export const MAX_NATIVE_PLAYBACK_RATE = 16;
+
+export function clampPlaybackSpeed(speed: number): PlaybackSpeed {
+	return Math.round(Math.min(MAX_PLAYBACK_SPEED, Math.max(MIN_PLAYBACK_SPEED, speed)) * 100) / 100;
+}
+
+export interface SpeedRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+	speed: PlaybackSpeed;
+}
+
+export const SPEED_OPTIONS: Array<{ speed: PlaybackSpeed; label: string }> = [
+	{ speed: 0.25, label: "0.25×" },
+	{ speed: 0.5, label: "0.5×" },
+	{ speed: 0.75, label: "0.75×" },
+	{ speed: 1.25, label: "1.25×" },
+	{ speed: 1.5, label: "1.5×" },
+	{ speed: 1.75, label: "1.75×" },
+	{ speed: 2, label: "2×" },
+	{ speed: 3, label: "3×" },
+	{ speed: 4, label: "4×" },
+	{ speed: 5, label: "5×" },
+];
+
+export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1.5;
+
+// The table and the clamp moved to `@/lib/ai-edition/timeline/zoom-scale` so
+// the Electron main process can import them without the `@/` alias, which its
+// build does not resolve. Re-exported here because every renderer importer
+// (focusUtils, zoomRegionUtils, sceneDescription, the inspector, the timeline)
+// reaches them through this module.
+export {
+	DEFAULT_ZOOM_DEPTH,
+	effectiveZoomScale,
+	MAX_ZOOM_SCALE,
+	MIN_ZOOM_SCALE,
+	ZOOM_DEPTH_LEGEND,
+	ZOOM_DEPTH_SCALES,
+} from "@/lib/ai-edition/timeline/zoom-scale";
+
+/** Returns the effective zoom scale for a region, preferring customScale over the preset. */
+export function getZoomScale(region: ZoomScaleInput): number {
+	return effectiveZoomScale(region);
+}
+
+// An unknown focus means "centre", not "top-left" — so this one can't use the
+// shared clamp, which floors non-finite input to `min`. Same convention as
+// `finiteFraction` in useTimeline.ts.
+function focusOrCentre(value: number): number {
+	return Number.isFinite(value) ? clamp01(value) : 0.5;
+}
+
+export function clampFocus(focus: ZoomFocus): ZoomFocus {
+	return {
+		cx: focusOrCentre(focus.cx),
+		cy: focusOrCentre(focus.cy),
+	};
+}

@@ -1,0 +1,658 @@
+import {
+	Camera,
+	CameraOff,
+	ChevronDown,
+	LayoutGrid,
+	Loader2,
+	MicOff,
+	Mic as MicOn,
+	MonitorSmartphone,
+	MousePointer2,
+	Volume2,
+	VolumeX,
+	ZoomIn,
+} from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { AudioLevelMeter } from "@/components/ui/audio-level-meter";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useScopedT } from "@/contexts/I18nContext";
+import { useAudioLevelMeter } from "@/hooks/useAudioLevelMeter";
+import { useCameraDevices } from "@/hooks/useCameraDevices";
+import { useCameraPreviewStream } from "@/hooks/useCameraPreviewStream";
+import { useEditableCursorAvailable } from "@/hooks/useEditableCursorAvailable";
+import { useMicrophoneDevices } from "@/hooks/useMicrophoneDevices";
+import { usePortalOwnsSource } from "@/hooks/usePortalOwnsSource";
+import { canRecordMicrophone, getPlatform } from "@/utils/platformUtils";
+import styles from "./EditorShellV4.module.css";
+
+interface RecordingPrefsState {
+	micEnabled: boolean;
+	micDeviceId: string | null;
+	micDeviceName: string | null;
+	camEnabled: boolean;
+	camDeviceId: string | null;
+	camDeviceName: string | null;
+	systemAudioEnabled: boolean;
+	cursorCaptureMode: "editable-overlay" | "system";
+	hideDesktopIcons: boolean;
+	autoZoomEnabled: boolean;
+}
+
+const DEFAULT_PREFS: RecordingPrefsState = {
+	micEnabled: false,
+	micDeviceId: null,
+	micDeviceName: null,
+	camEnabled: false,
+	camDeviceId: null,
+	camDeviceName: null,
+	systemAudioEnabled: false,
+	cursorCaptureMode: "editable-overlay",
+	hideDesktopIcons: false,
+	autoZoomEnabled: true,
+};
+
+function normalizedRecordingPrefs(prefs: Partial<RecordingPrefsState>): RecordingPrefsState {
+	const next = { ...DEFAULT_PREFS, ...prefs };
+	// A saved microphone is not applied where a take cannot record it (#700): no
+	// meter holding the microphone open for a take that will not have it.
+	return { ...next, micEnabled: next.micEnabled && canRecordMicrophone() };
+}
+
+/**
+ * Rec-mode stage. The real capture pipeline lives in the standalone recorder
+ * HUD window (`electronAPI.startNewRecording`); this stage is a pre-flight
+ * config panel — source/mic/camera/cursor — that hands off to the HUD when
+ * the user hits record. It shares state with the HUD through the same
+ * cross-window bridges the rest of the app uses (main-process recording
+ * prefs + selected-source IPC, useMicrophoneDevices/useCameraDevices for
+ * enumeration) rather than owning an invented copy — and, unlike the HUD's
+ * own floating pill toolbar, it lays that state out as a normal settings
+ * panel sized for the editor's real estate, with a live camera/mic preview
+ * so device selection is verifiably wired to real hardware instead of just
+ * flipping a boolean.
+ */
+export function RecStage({
+	onStartRecording,
+	onClose,
+}: {
+	onStartRecording: () => void;
+	onClose?: () => void;
+}) {
+	const t = useScopedT("editor");
+	const [prefs, setPrefsState] = useState<RecordingPrefsState>(DEFAULT_PREFS);
+	// Bumped by every local change and every pushed snapshot, so the re-read after a
+	// failed write can tell that something newer has landed since.
+	const prefsRevision = useRef(0);
+	useEffect(() => {
+		let cancelled = false;
+		let receivedNewerSnapshot = false;
+		const unsubscribe = window.electronAPI?.onRecordingPrefsChanged?.((next) => {
+			receivedNewerSnapshot = true;
+			prefsRevision.current += 1;
+			if (!cancelled) setPrefsState(normalizedRecordingPrefs(next));
+		});
+		void window.electronAPI
+			?.getRecordingPrefs?.()
+			.then((p) => {
+				if (!cancelled && !receivedNewerSnapshot && p) {
+					setPrefsState(normalizedRecordingPrefs(p));
+				}
+			})
+			.catch((err) => {
+				// Bare ipcRenderer.invoke — rejects if the main handler throws. Keeping
+				// DEFAULT_PREFS is a fine outcome; an unhandled rejection is not.
+				console.warn("[rec-stage] failed to read the recording prefs:", err);
+			});
+		return () => {
+			cancelled = true;
+			unsubscribe?.();
+		};
+	}, []);
+	const updatePrefs = (patch: Partial<RecordingPrefsState>) => {
+		const revision = ++prefsRevision.current;
+		// The write is fired beside the optimistic patch rather than inside the updater:
+		// an updater is expected to be pure, and React re-invokes it under StrictMode,
+		// which sent every preference change twice.
+		setPrefsState((prev) => ({ ...prev, ...patch }));
+		void window.electronAPI?.setRecordingPrefs?.(patch).catch(async (err) => {
+			console.warn("[rec-stage] failed to persist the recording prefs:", err);
+			// Optimistic, then reconciled. The durable value is what the fresh-recording
+			// import reads back when it decides whether to place zooms, so a rejected
+			// write that left the patch on screen would have the user looking at Off
+			// while the next take still gets decorated. Re-read rather than invert the
+			// patch, and drop the answer if a pushed snapshot or a later change landed
+			// meanwhile: either is newer than what this re-read can say.
+			try {
+				const current = await window.electronAPI?.getRecordingPrefs?.();
+				if (current && revision === prefsRevision.current) {
+					setPrefsState(normalizedRecordingPrefs(current));
+				}
+			} catch (readErr) {
+				console.warn("[rec-stage] failed to re-read the recording prefs:", readErr);
+			}
+		});
+	};
+
+	const micDevices = useMicrophoneDevices(
+		prefs.micEnabled,
+		prefs.micDeviceId ?? undefined,
+		prefs.micDeviceName ?? undefined,
+	);
+	const camDevices = useCameraDevices(
+		true,
+		prefs.camDeviceId ?? undefined,
+		prefs.camDeviceName ?? undefined,
+	);
+
+	// Seed the device hooks' local "selected" state from the persisted prefs
+	// once devices are enumerated, so the dropdown reflects the last real
+	// choice instead of the hook's own "first device" default.
+	useEffect(() => {
+		if (prefs.micDeviceId && micDevices.devices.some((d) => d.deviceId === prefs.micDeviceId)) {
+			micDevices.setSelectedDeviceId(prefs.micDeviceId);
+		}
+	}, [prefs.micDeviceId, micDevices.devices, micDevices.setSelectedDeviceId]);
+	useEffect(() => {
+		if (prefs.camDeviceId && camDevices.devices.some((d) => d.deviceId === prefs.camDeviceId)) {
+			camDevices.setSelectedDeviceId(prefs.camDeviceId);
+		}
+	}, [prefs.camDeviceId, camDevices.devices, camDevices.setSelectedDeviceId]);
+
+	// Live proof the selected devices actually work — a level meter for mic,
+	// a real <video> feed for camera — instead of just toggling a pref flag.
+	const { level: micLevel } = useAudioLevelMeter({
+		enabled: prefs.micEnabled && micDevices.isReady && micDevices.devices.length > 0,
+		deviceId:
+			micDevices.selectedDeviceId && micDevices.selectedDeviceId !== "default"
+				? micDevices.selectedDeviceId
+				: undefined,
+	});
+	const { stream: cameraStream, error: cameraError } = useCameraPreviewStream({
+		enabled: prefs.camEnabled,
+		deviceId: camDevices.selectedDeviceId || undefined,
+	});
+	const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+	useEffect(() => {
+		if (cameraVideoRef.current) cameraVideoRef.current.srcObject = cameraStream;
+	}, [cameraStream]);
+
+	// ── capture source (screen/window) ──────────────────────────────
+	const [source, setSource] = useState<ProcessedDesktopSource | null>(null);
+	useEffect(() => {
+		let cancelled = false;
+		let receivedNewerSource = false;
+		const unsubscribe = window.electronAPI?.onSelectedSourceChanged?.((next) => {
+			receivedNewerSource = true;
+			if (!cancelled) setSource(next);
+		});
+		void window.electronAPI
+			?.getSelectedSource?.()
+			.then((next) => {
+				if (!cancelled && !receivedNewerSource) setSource(next ?? null);
+			})
+			.catch((err) => {
+				console.warn("[rec-stage] failed to read the selected source:", err);
+			});
+		return () => {
+			cancelled = true;
+			unsubscribe?.();
+		};
+	}, []);
+	const [sourceModalOpen, setSourceModalOpen] = useState(false);
+	const [sourceTab, setSourceTab] = useState<"screen" | "window">("screen");
+	const [sources, setSources] = useState<ProcessedDesktopSource[]>([]);
+	const [loadingSources, setLoadingSources] = useState(false);
+	const [systemSourcePicker, setSystemSourcePicker] = useState(false);
+	useEffect(() => {
+		let active = true;
+		void window.electronAPI
+			?.usesSystemSourcePicker?.()
+			.then((uses) => {
+				if (active) {
+					setSystemSourcePicker(uses === true);
+				}
+			})
+			.catch(() => undefined);
+		return () => {
+			active = false;
+		};
+	}, []);
+	const openSourceModal = async () => {
+		// With Apple's system picker (macOS 15.2+) the choice is made there, and the pick
+		// comes back through `onSelectedSourceChanged` like any other. Listing sources here
+		// would go through the Screen Recording grant the picker makes unnecessary.
+		if (systemSourcePicker) {
+			await window.electronAPI?.openSourceSelector?.();
+			return;
+		}
+		setSourceModalOpen(true);
+		setLoadingSources(true);
+		try {
+			const list = await window.electronAPI?.getSources?.({
+				types: ["screen", "window"],
+				thumbnailSize: { width: 320, height: 180 },
+				fetchWindowIcons: true,
+			});
+			setSources(list ?? []);
+		} finally {
+			setLoadingSources(false);
+		}
+	};
+	const chooseSource = async (candidate: ProcessedDesktopSource) => {
+		const result = await window.electronAPI?.selectSource?.(candidate);
+		setSource(result ?? null);
+		setSourceModalOpen(false);
+	};
+	const screenSources = sources.filter((s) => s.id.startsWith("screen:"));
+	const windowSources = sources.filter((s) => s.id.startsWith("window:"));
+	const visibleSources = sourceTab === "screen" ? screenSources : windowSources;
+
+	const editableCursor = prefs.cursorCaptureMode === "editable-overlay";
+	const editableCursorAvailable = useEditableCursorAvailable();
+	// Names for the On/Off pills: the row label is the accessible name, and `aria-pressed` says
+	// which state it is in. A pill named "On" or "Off" says which control it is nowhere.
+	const rowLabels = useId();
+	const rowLabelId = (row: string) => `${rowLabels}-${row}`;
+	// macOS leaves the icons out of the capture; Windows covers them for the take. Linux
+	// records through the portal, which offers neither, so the row would do nothing there.
+	const platform = getPlatform();
+	const desktopIconsHint =
+		platform === "darwin"
+			? t("rec.hideDesktopIconsHintMac")
+			: platform === "win32"
+				? t("rec.hideDesktopIconsHintWindows")
+				: null;
+	// Same answer as the HUD, from the same place. This stage used to decide for
+	// itself and always showed a picker, so the same build hid the choice on the
+	// HUD and demanded it here.
+	const portalOwnsSource = usePortalOwnsSource();
+	const sourceLabel = portalOwnsSource
+		? t("rec.systemPicker")
+		: (source?.name ?? t("rec.selectSource"));
+
+	return (
+		<div className={styles.recStage}>
+			<div className={styles.recCols}>
+				<div className={styles.recPreviewCol}>
+					<div className={styles.recPreviewFrame}>
+						{prefs.camEnabled ? (
+							cameraStream ? (
+								<video
+									ref={cameraVideoRef}
+									autoPlay
+									muted
+									playsInline
+									className={styles.recCameraVideo}
+								/>
+							) : cameraError ? (
+								<div className={styles.recPreviewPlaceholder}>
+									<CameraOff size={28} />
+									<span>{t("rec.cameraAccessError")}</span>
+								</div>
+							) : (
+								<div className={styles.recPreviewPlaceholder}>
+									<Loader2 size={28} className="animate-spin" />
+									<span>{t("rec.startingCamera")}</span>
+								</div>
+							)
+						) : (
+							<div className={styles.recPreviewPlaceholder}>
+								<MonitorSmartphone size={28} />
+								<span>{sourceLabel}</span>
+								<span className={styles.recPreviewHint}>{t("rec.turnOnCameraHint")}</span>
+							</div>
+						)}
+						<div className={styles.recBadge}>
+							<span className={styles.recDot} aria-hidden />
+							<span>{sourceLabel}</span>
+						</div>
+						{prefs.micEnabled && (
+							<div className={styles.recMicMeter}>
+								<MicOn size={13} />
+								<AudioLevelMeter level={micLevel} className={styles.recLevelMeter} />
+							</div>
+						)}
+					</div>
+				</div>
+
+				<div className={styles.recPanel}>
+					{/* No source row on Linux: `SelectSources` has no parameter naming
+					    a source, so this picker could not steer the capture — it only
+					    raised a second portal dialog, via `desktopCapturer.getSources()`,
+					    whose grant was discarded. The compositor's own picker decides,
+					    and it appears when recording starts. */}
+					{portalOwnsSource ? (
+						<div className={styles.recRow}>
+							<div className={styles.recRowLabel}>
+								<MonitorSmartphone size={15} />
+								{t("rec.source")}
+							</div>
+							{/* Muted TEXT, not a styled-down button. Keeping the button's
+							    class on a span left it looking pressable — border, pill,
+							    hover state — which promises an interaction that cannot
+							    exist here. This row states what will happen; it is not a
+							    control. */}
+							<span className={styles.recRowMuted}>{sourceLabel}</span>
+						</div>
+					) : (
+						<div className={styles.recRow}>
+							<div className={styles.recRowLabel}>
+								<MonitorSmartphone size={15} />
+								{t("rec.source")}
+							</div>
+							<button
+								type="button"
+								className={styles.recRowSourceBtn}
+								onClick={() => void openSourceModal()}
+							>
+								{sourceLabel}
+								<ChevronDown size={13} style={{ opacity: 0.6 }} />
+							</button>
+						</div>
+					)}
+
+					<div className={styles.recRow}>
+						<div id={rowLabelId("systemAudio")} className={styles.recRowLabel}>
+							{prefs.systemAudioEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+							{t("rec.systemAudio")}
+						</div>
+						{/* "System audio" is jargon for what the computer plays: the one row whose label
+						    alone does not say what it records. The row tooltips open above their pill: to
+						    the left they would sit on the label being read, and below the last row they
+						    would cover Start recording. */}
+						<Tooltip content={t("rec.systemAudioTip")} side="top">
+							<button
+								type="button"
+								className={`${styles.recToggleBtn}${prefs.systemAudioEnabled ? ` ${styles.on}` : ""}`}
+								aria-labelledby={rowLabelId("systemAudio")}
+								aria-pressed={prefs.systemAudioEnabled}
+								onClick={() => updatePrefs({ systemAudioEnabled: !prefs.systemAudioEnabled })}
+							>
+								{prefs.systemAudioEnabled ? t("rec.on") : t("rec.off")}
+							</button>
+						</Tooltip>
+					</div>
+
+					{canRecordMicrophone() ? (
+						<div className={styles.recRow}>
+							<div id={rowLabelId("microphone")} className={styles.recRowLabel}>
+								{prefs.micEnabled ? <MicOn size={15} /> : <MicOff size={15} />}
+								{t("rec.microphone")}
+							</div>
+							<div className={styles.recRowControl}>
+								{prefs.micEnabled ? (
+									micDevices.isLoading || !micDevices.isReady ? (
+										<span className={styles.recRowMuted}>
+											<Loader2 size={13} className="animate-spin" />
+											{t("rec.loading")}
+										</span>
+									) : micDevices.error ? (
+										<span className={styles.recRowMuted} title={micDevices.error}>
+											{t("rec.microphoneUnavailable")}
+										</span>
+									) : micDevices.devices.length === 0 ? (
+										<span className={styles.recRowMuted}>{t("rec.noMicrophoneFound")}</span>
+									) : (
+										<select
+											className={styles.recSelect}
+											value={micDevices.selectedDeviceId}
+											onChange={(e) => {
+												const deviceId = e.target.value;
+												micDevices.setSelectedDeviceId(deviceId);
+												// The label travels with the id: the native Windows
+												// helper selects a microphone by NAME, and records the
+												// Windows default endpoint when it is missing.
+												updatePrefs({
+													micDeviceId: deviceId,
+													micDeviceName:
+														micDevices.devices.find((d) => d.deviceId === deviceId)?.label ?? null,
+												});
+											}}
+										>
+											{micDevices.devices.map((d) => (
+												<option key={d.deviceId} value={d.deviceId}>
+													{d.label}
+												</option>
+											))}
+										</select>
+									)
+								) : null}
+								<button
+									type="button"
+									className={`${styles.recToggleBtn}${prefs.micEnabled ? ` ${styles.on}` : ""}`}
+									aria-labelledby={rowLabelId("microphone")}
+									aria-pressed={prefs.micEnabled}
+									onClick={() => updatePrefs({ micEnabled: !prefs.micEnabled })}
+								>
+									{prefs.micEnabled ? t("rec.on") : t("rec.off")}
+								</button>
+							</div>
+						</div>
+					) : null}
+
+					<div className={styles.recRow}>
+						<div id={rowLabelId("camera")} className={styles.recRowLabel}>
+							{prefs.camEnabled ? <Camera size={15} /> : <CameraOff size={15} />}
+							{t("rec.camera")}
+						</div>
+						<div className={styles.recRowControl}>
+							{prefs.camEnabled ? (
+								camDevices.isLoading ? (
+									<span className={styles.recRowMuted}>
+										<Loader2 size={13} className="animate-spin" />
+										{t("rec.loading")}
+									</span>
+								) : camDevices.devices.length === 0 ? (
+									<span className={styles.recRowMuted}>{t("rec.noCameraFound")}</span>
+								) : (
+									<select
+										className={styles.recSelect}
+										value={camDevices.selectedDeviceId}
+										onChange={(e) => {
+											const deviceId = e.target.value;
+											camDevices.setSelectedDeviceId(deviceId);
+											updatePrefs({
+												camDeviceId: deviceId,
+												camDeviceName:
+													camDevices.devices.find((d) => d.deviceId === deviceId)?.label ?? null,
+											});
+										}}
+									>
+										{camDevices.devices.map((d) => (
+											<option key={d.deviceId} value={d.deviceId}>
+												{d.label}
+											</option>
+										))}
+									</select>
+								)
+							) : null}
+							<button
+								type="button"
+								className={`${styles.recToggleBtn}${prefs.camEnabled ? ` ${styles.on}` : ""}`}
+								aria-labelledby={rowLabelId("camera")}
+								aria-pressed={prefs.camEnabled}
+								onClick={() => updatePrefs({ camEnabled: !prefs.camEnabled })}
+							>
+								{prefs.camEnabled ? t("rec.on") : t("rec.off")}
+							</button>
+						</div>
+					</div>
+
+					{/* Without its native helper the browser records, and it always draws the system cursor
+					    into the video: there is nothing to switch, so neither this row nor Auto-zoom, which
+					    reads what the editable cursor records, is shown. Same rule as the HUD's button. */}
+					{editableCursorAvailable ? (
+						<div className={styles.recRow}>
+							<div id={rowLabelId("cursor")} className={styles.recRowLabel}>
+								<MousePointer2 size={15} />
+								{t("rec.editableCursor")}
+							</div>
+							<Tooltip content={t("rec.editableCursorTip")} side="top">
+								<button
+									type="button"
+									className={`${styles.recToggleBtn}${editableCursor ? ` ${styles.on}` : ""}`}
+									aria-labelledby={rowLabelId("cursor")}
+									aria-pressed={editableCursor}
+									onClick={() =>
+										updatePrefs({
+											cursorCaptureMode: editableCursor ? "system" : "editable-overlay",
+										})
+									}
+								>
+									{editableCursor ? t("rec.on") : t("rec.off")}
+								</button>
+							</Tooltip>
+						</div>
+					) : null}
+
+					{/* Auto-zoom places zooms from the cursor telemetry the editable-overlay mode
+					    writes. The system cursor writes none, so the row is not offered there. */}
+					{editableCursorAvailable && editableCursor ? (
+						<div className={styles.recRow}>
+							<div id={rowLabelId("autoZoom")} className={styles.recRowLabel}>
+								<ZoomIn size={15} />
+								{t("rec.autoZoom")}
+							</div>
+							<button
+								type="button"
+								data-testid="rec-auto-zoom-button"
+								className={`${styles.recToggleBtn}${prefs.autoZoomEnabled ? ` ${styles.on}` : ""}`}
+								aria-labelledby={rowLabelId("autoZoom")}
+								aria-pressed={prefs.autoZoomEnabled}
+								onClick={() => updatePrefs({ autoZoomEnabled: !prefs.autoZoomEnabled })}
+							>
+								{prefs.autoZoomEnabled ? t("rec.on") : t("rec.off")}
+							</button>
+						</div>
+					) : null}
+
+					{desktopIconsHint ? (
+						<div className={styles.recRow}>
+							<div id={rowLabelId("hideDesktopIcons")} className={styles.recRowLabel}>
+								<LayoutGrid size={15} />
+								{t("rec.hideDesktopIcons")}
+							</div>
+							<Tooltip content={desktopIconsHint} side="top">
+								<button
+									type="button"
+									className={`${styles.recToggleBtn}${prefs.hideDesktopIcons ? ` ${styles.on}` : ""}`}
+									aria-labelledby={rowLabelId("hideDesktopIcons")}
+									aria-pressed={prefs.hideDesktopIcons}
+									onClick={() => updatePrefs({ hideDesktopIcons: !prefs.hideDesktopIcons })}
+								>
+									{prefs.hideDesktopIcons ? t("rec.on") : t("rec.off")}
+								</button>
+							</Tooltip>
+						</div>
+					) : null}
+				</div>
+			</div>
+
+			<div className={styles.recActions}>
+				{onClose ? (
+					<button type="button" className={styles.recCancelBtn} onClick={onClose}>
+						{t("rec.cancel")}
+					</button>
+				) : null}
+				<button type="button" className={styles.bigRecBtn} onClick={onStartRecording}>
+					<span className={styles.bigRecDot} aria-hidden />
+					{t("rec.startRecording")}
+				</button>
+			</div>
+			<p className={styles.recActionsHint}>{t("rec.startRecordingHint")}</p>
+
+			{sourceModalOpen ? (
+				<SourceModal
+					loading={loadingSources}
+					tab={sourceTab}
+					onTabChange={setSourceTab}
+					screenCount={screenSources.length}
+					windowCount={windowSources.length}
+					sources={visibleSources}
+					selectedId={source?.id ?? null}
+					onSelect={(s) => void chooseSource(s)}
+					onClose={() => setSourceModalOpen(false)}
+				/>
+			) : null}
+		</div>
+	);
+}
+
+function SourceModal({
+	loading,
+	tab,
+	onTabChange,
+	screenCount,
+	windowCount,
+	sources,
+	selectedId,
+	onSelect,
+	onClose,
+}: {
+	loading: boolean;
+	tab: "screen" | "window";
+	onTabChange: (tab: "screen" | "window") => void;
+	screenCount: number;
+	windowCount: number;
+	sources: ProcessedDesktopSource[];
+	selectedId: string | null;
+	onSelect: (source: ProcessedDesktopSource) => void;
+	onClose: () => void;
+}) {
+	const t = useScopedT("editor");
+	return (
+		<div className={styles.sourceModalOverlay} onClick={onClose}>
+			<div className={styles.sourceModalCard} onClick={(e) => e.stopPropagation()}>
+				<div className={styles.sourceModalTabs}>
+					<button
+						type="button"
+						className={`${styles.sourceModalTab}${tab === "screen" ? ` ${styles.active}` : ""}`}
+						onClick={() => onTabChange("screen")}
+					>
+						{t("rec.sourceModal.screens", { count: screenCount })}
+					</button>
+					<button
+						type="button"
+						className={`${styles.sourceModalTab}${tab === "window" ? ` ${styles.active}` : ""}`}
+						onClick={() => onTabChange("window")}
+					>
+						{t("rec.sourceModal.windows", { count: windowCount })}
+					</button>
+				</div>
+				<div className={styles.sourceGrid}>
+					{loading ? (
+						<div className={styles.sourceModalEmpty}>
+							<Loader2 size={20} className="animate-spin" />
+							{t("rec.sourceModal.loadingSources")}
+						</div>
+					) : sources.length === 0 ? (
+						<div className={styles.sourceModalEmpty}>
+							{tab === "screen"
+								? t("rec.sourceModal.noScreensFound")
+								: t("rec.sourceModal.noWindowsFound")}
+						</div>
+					) : (
+						sources.map((s) => (
+							<button
+								key={s.id}
+								type="button"
+								className={`${styles.sourceCard}${s.id === selectedId ? ` ${styles.active}` : ""}`}
+								onClick={() => onSelect(s)}
+							>
+								<div className={styles.sourceCardThumb}>
+									{s.thumbnail ? <img src={s.thumbnail} alt="" /> : <MonitorSmartphone size={22} />}
+								</div>
+								<span className={styles.sourceCardName}>{s.name}</span>
+							</button>
+						))
+					)}
+				</div>
+				<div className={styles.sourceModalFooter}>
+					<button type="button" className={styles.sourceModalCancelBtn} onClick={onClose}>
+						{t("rec.sourceModal.cancel")}
+					</button>
+				</div>
+			</div>
+		</div>
+	);
+}

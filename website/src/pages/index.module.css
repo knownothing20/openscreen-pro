@@ -1,0 +1,414 @@
+/* Marketing landing page. Both themes — every colour here is an --os-* token,
+   which swaps under [data-theme="light"]; nothing may be a literal. */
+
+.hero,
+.features,
+.quickStart {
+	background: var(--os-bg);
+	color: var(--os-fg);
+}
+
+/* The promise hands straight over to the live, full-width picture. */
+.hero {
+	padding: clamp(44px, 6vh, 72px) 28px clamp(44px, 5vh, 64px);
+	background: radial-gradient(ellipse 60% 40% at 50% 0%, var(--os-accent-wash), transparent 60%), var(--os-bg);
+}
+
+.heroInner {
+	max-width: 1080px;
+	margin: 0 auto;
+}
+
+/* Japanese has no spaces, so the hero lines broke mid-word on phones
+   (動 / 画編集). auto-phrase breaks between phrases instead; browsers without it
+   keep the old behaviour. */
+.heroInner:lang(ja) {
+	word-break: auto-phrase;
+}
+
+.heroCopy {
+	text-align: center;
+}
+
+.title {
+	margin: 0 auto;
+	max-width: 22ch;
+	font-size: clamp(42px, 5vw, 66px);
+	font-weight: 700;
+	letter-spacing: -0.03em;
+	line-height: 1.1;
+	text-wrap: balance;
+	color: var(--os-fg-emphasis);
+}
+
+.tagline {
+	margin: 28px auto 0;
+	max-width: 620px;
+	font-size: 18px;
+	line-height: 1.55;
+	color: var(--os-fg);
+}
+
+.reassurance {
+	margin: 18px 0 0;
+	font-size: 13px;
+	line-height: 1.55;
+	color: var(--os-fg-2);
+}
+
+.actions {
+	display: flex;
+	gap: 12px;
+	flex-wrap: wrap;
+	justify-content: center;
+	margin: 32px 0 0;
+}
+
+.platforms {
+	margin: 8px 0 0;
+	font-size: 12px;
+	color: var(--os-muted);
+}
+
+.primaryCta {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.75rem 1.65rem;
+	border-radius: 9px;
+	font-weight: 600;
+	font-size: 1rem;
+	text-decoration: none;
+	transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* The glow is derived from the accent rather than written as a literal: the old
+   rgba(16,185,129,.25) was the *dark* accent, and it shipped unchanged into the
+   light theme. Foreground is --os-bg, not #fff — white on the light-theme accent
+   measures 3.76:1, which is a Level AA failure on the page's main call to
+   action. Against --os-bg the same button measures 7.81:1 dark and 4.96:1 light:
+   AA in both, AAA in one. */
+.primaryCta {
+	background: var(--os-accent);
+	color: var(--os-bg);
+	box-shadow: 0 8px 24px var(--os-accent-ring);
+}
+
+.primaryCta:hover {
+	transform: translateY(-2px);
+	color: var(--os-bg);
+}
+
+/* ---- shared section chrome ---- */
+
+.sectionKicker {
+	font-family: var(--ifm-font-family-monospace);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.16em;
+	color: var(--os-accent);
+	text-transform: uppercase;
+}
+
+.sectionTitle {
+	margin: 14px 0 0 !important;
+	font-size: clamp(24px, 2.8vw, 32px);
+	font-weight: 750 !important;
+	letter-spacing: -0.025em;
+	color: var(--os-fg-emphasis) !important;
+}
+
+/* ---- coda ----
+   Three claims that are not events: a licence, an absence of network traffic, a
+   list of platforms. Everything that *is* an event — the editor, the recorder,
+   the captions, the agent — is demonstrated above, so these three are set as
+   columns of prose rather than as cards: a card is a container for a thing, and
+   there is no thing here, only a sentence. The rules between them are the only
+   chrome, and they are what makes three paragraphs read as one list. */
+
+.features {
+	padding: 140px 28px 0;
+}
+
+.featuresInner {
+	max-width: 1080px;
+	margin: 0 auto;
+	text-align: center;
+}
+
+.trio {
+	margin-top: 52px;
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	text-align: left;
+}
+
+.trioItem {
+	padding: 6px 38px;
+	border-left: 1px solid var(--os-border-soft);
+}
+
+/* The first column's rule would be a rule against nothing, and its text has to
+   line up with the heading above it, so it keeps the gutter and loses the edge.
+   The last one only loses the gutter. */
+.trioItem:first-child {
+	padding-left: 0;
+	border-left: none;
+}
+
+.trioItem:last-child {
+	padding-right: 0;
+}
+
+.trioTick {
+	color: var(--os-accent);
+}
+
+.trioItem h3 {
+	margin: 16px 0 0;
+	font-size: 16.5px;
+	font-weight: 650;
+	letter-spacing: -0.015em;
+	color: var(--os-fg-emphasis);
+}
+
+.trioItem p {
+	margin: 10px 0 0;
+	font-size: 13.5px;
+	line-height: 1.75;
+	color: var(--os-fg);
+	text-wrap: pretty;
+}
+
+@media (max-width: 900px) {
+	.trio {
+		grid-template-columns: 1fr;
+		gap: 34px;
+	}
+
+	/* Stacked, a left rule points down the page instead of between the columns
+	   it was separating. */
+	.trioItem,
+	.trioItem:first-child {
+		padding: 0;
+		border-left: none;
+	}
+}
+
+/* ---- quick start ---- */
+
+.quickStart {
+	padding: 140px 28px 100px;
+	display: flex;
+	justify-content: center;
+}
+
+.quickStartInner {
+	width: 100%;
+	max-width: 1080px;
+	text-align: center;
+}
+
+/* Grid items stretch, which is what keeps the three panes equal height even
+   though only two of them carry a command. */
+.installGrid {
+	margin-top: 52px;
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 0.875rem;
+	text-align: left;
+}
+
+@media (max-width: 700px) {
+	.installGrid {
+		grid-template-columns: 1fr;
+	}
+}
+
+.artifactChip {
+	margin-left: auto;
+	padding: 1px 7px;
+	border-radius: 999px;
+	border: 1px solid var(--os-border-soft);
+	font-family: var(--ifm-font-family-monospace);
+	font-size: 10.5px;
+	color: var(--os-muted);
+}
+
+/* Windows has no command to run. Styling the line as prose rather than as
+   accented code keeps the pane the same size without implying it's typed. */
+.plainAction {
+	color: var(--os-fg-2);
+	font-family: var(--ifm-font-family-base);
+	font-style: italic;
+}
+
+/* Flex column so .terminalBody can absorb the slack: the install commands are
+   1–3 lines depending on platform, and without this the foot rule would sit at
+   a different height in each of the three panes. */
+.terminal {
+	display: flex;
+	flex-direction: column;
+	border-radius: 14px;
+	border: 1px solid var(--os-border);
+	background: var(--os-surface-1);
+	box-shadow: var(--os-elev-card);
+	overflow: hidden;
+	text-align: left;
+}
+
+.terminalHeader {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 16px;
+	border-bottom: 1px solid var(--os-border-soft);
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--os-fg-2);
+}
+
+.terminalBody {
+	flex: 1;
+	margin: 0;
+	padding: 1rem;
+	font-size: 12.5px;
+	line-height: 1.7;
+	color: var(--os-fg-2);
+	overflow-x: auto;
+	white-space: pre-wrap;
+}
+
+/* Colours the `#` comment lines inside the three install panes. */
+.meta {
+	color: var(--os-muted);
+}
+
+/* Second half of each pane: what the platform actually gives you. */
+.paneFoot {
+	margin: 0;
+	padding: 0.875rem 1rem;
+	border-top: 1px solid var(--os-border-soft);
+	font-size: 12px;
+	line-height: 1.55;
+	color: var(--os-muted);
+}
+
+.accentText {
+	color: var(--os-accent);
+}
+
+.productSummary {
+	margin: 18px auto 0;
+	max-width: 700px;
+	font-size: 16px;
+	line-height: 1.7;
+	color: var(--os-fg-2);
+}
+
+.productSummary a {
+	color: var(--os-accent);
+}
+
+/* The interface languages, under the trio: a quiet line in the note's type, so
+   a dozen names read as a list rather than as a fourth claim. */
+.appLanguages {
+	margin: 36px auto 0;
+	max-width: 700px;
+	font-size: 13px;
+	line-height: 1.7;
+	color: var(--os-muted);
+	text-align: center;
+}
+
+.quickStartNote {
+	margin: 30px auto 0;
+	max-width: 700px;
+	font-size: 12.5px;
+	line-height: 1.7;
+	color: var(--os-muted);
+}
+
+.quickStartNote a {
+	color: var(--os-accent);
+}
+
+.quickStartNote code {
+	margin: 0 2px;
+	padding: 1px 5px;
+	border-radius: 5px;
+	border: 1px solid var(--os-border-soft);
+	background: var(--os-surface-1);
+	font-size: 11.5px;
+	color: var(--os-fg-2);
+}
+
+/* ---- phone ----
+   The 28px section gutter is a third of the width of a small phone. */
+
+@media (max-width: 600px) {
+	.hero {
+		padding: 32px 20px 36px;
+	}
+
+	.title {
+		font-size: clamp(34px, 9.5vw, 44px);
+	}
+
+	.tagline {
+		margin-top: 20px;
+		font-size: 16px;
+	}
+
+	.reassurance {
+		margin-top: 16px;
+	}
+
+	.actions {
+		gap: 8px;
+		margin-top: 24px;
+	}
+
+	.features {
+		padding: 96px 20px 0;
+	}
+
+	.quickStart {
+		padding: 96px 20px 76px;
+	}
+}
+
+/* Keep some of the live picture visible in short desktop windows. */
+@media (min-width: 601px) and (max-height: 700px) {
+	.hero {
+		padding-top: 24px;
+		padding-bottom: 28px;
+	}
+
+	.title {
+		line-height: 1.04;
+	}
+
+	.tagline {
+		margin-top: 22px;
+	}
+
+	.actions {
+		margin-top: 26px;
+	}
+
+	.reassurance {
+		margin-top: 16px;
+	}
+
+	.platforms {
+		margin-top: 6px;
+	}
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+	.primaryCta {
+		transition: none;
+	}
+}

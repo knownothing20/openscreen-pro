@@ -1,0 +1,157 @@
+{
+	"tooltips": {
+		"hideHUD": "Masquer le HUD",
+		"hideHUDTip": "Masquer la barre. Réaffichez-la depuis l'icône de la zone de notification.",
+		"closeApp": "Fermer l'application",
+		"restartRecording": "Supprimer cet enregistrement et en démarrer un nouveau",
+		"cancelRecording": "Arrêter et supprimer cet enregistrement",
+		"pauseRecording": "Mettre en pause l'enregistrement",
+		"resumeRecording": "Reprendre l'enregistrement",
+		"useVerticalTray": "Utiliser la barre verticale",
+		"useHorizontalTray": "Utiliser la barre horizontale",
+		"changeSource": "Choisir un autre écran ou une autre fenêtre",
+		"systemAudio": "Audio système : enregistre le son que joue votre ordinateur",
+		"microphone": "Microphone : enregistre votre voix",
+		"camera": "Caméra : vous enregistre sur un calque séparé, déplaçable dans l'éditeur",
+		"openStudio": "Ouvrir le Studio : l'éditeur de vos enregistrements",
+		"openNotes": "Ouvrir les notes : texte à lire pendant l'enregistrement",
+		"openNotesPlaceholder": "Prenez des notes ici...",
+		"notesToolbar": {
+			"bold": "Gras",
+			"italic": "Italique",
+			"strikethrough": "Barré",
+			"bulletList": "Liste à puces",
+			"numberedList": "Liste numérotée",
+			"blockquote": "Citation",
+			"codeBlock": "Bloc de code",
+			"play": "Démarrer le défilement automatique",
+			"pause": "Mettre le défilement en pause",
+			"speed": "Vitesse de défilement",
+			"decreaseSpeed": "Réduire la vitesse de défilement",
+			"increaseSpeed": "Augmenter la vitesse de défilement",
+			"fontSize": "Taille de police",
+			"decreaseFontSize": "Réduire la taille de police",
+			"increaseFontSize": "Augmenter la taille de police",
+			"mirror": "Miroir horizontal",
+			"mirrorTip": "Retourne le texte pour pouvoir le lire dans un miroir"
+		}
+	},
+	"audio": {
+		"systemAudio": "Audio système",
+		"microphone": "Microphone",
+		"inputDevice": "Périphérique d'entrée"
+	},
+	"webcam": {
+		"searching": "Recherche en cours...",
+		"noneFound": "Aucune caméra trouvée",
+		"unavailable": "Caméra non disponible",
+		"camera": "Caméra",
+		"cameraDevice": "Périphérique caméra",
+		"quality": "Qualité de la caméra",
+		"quality1080p": "1080p",
+		"quality1440p": "1440p",
+		"quality2160p": "4K"
+	},
+	"cursor": {
+		"name": "Curseur éditable",
+		"editableTip": "Curseur éditable : enregistré séparément, pour changer son style et utiliser le zoom automatique dans l'éditeur",
+		"systemTip": "Curseur système : votre vrai curseur, enregistré dans la vidéo. Sans changement de style ni zoom automatique."
+	},
+	"sourceSelector": {
+		"loading": "Chargement des sources...",
+		"screens": "Écrans ({{count}})",
+		"windows": "Fenêtres ({{count}})",
+		"emptyTitle": "Aucun écran ni fenêtre trouvé",
+		"emptyDescription": "Si vous venez d'accorder l'autorisation d'enregistrement d'écran, rechargez ce sélecteur. Sur macOS, il peut être nécessaire de rouvrir OpenScreen.",
+		"loadFailedDescription": "OpenScreen n'a pas pu charger les sources de capture. Rechargez ce sélecteur et réessayez.",
+		"defaultSourceName": "Écran"
+	},
+	"recording": {
+		"selectSource": "Veuillez sélectionner une source à enregistrer",
+		"systemPicker": "Le système vous demandera quoi partager",
+		"start": "Démarrer l'enregistrement",
+		"stop": "Arrêter et sauvegarder l'enregistrement",
+		"saving": "Sauvegarde..."
+	},
+	"language": "Langue",
+	"languageWithName": "Langue : {{language}}",
+	"systemLanguagePrompt": {
+		"title": "Utiliser la langue de votre système ?",
+		"description": "Nous avons détecté {{language}} comme langue système. Voulez-vous passer OpenScreen en {{language}} ?",
+		"switch": "Passer en {{language}}",
+		"keepDefault": "Conserver la langue actuelle"
+	},
+	"softwareEncoderFallback": {
+		"title": "Passage à l'encodage logiciel",
+		"description": "L'encodeur GPU par défaut n'a pas pu démarrer, OpenScreen est donc passé à l'encodage H.264 logiciel. L'enregistrement devrait continuer normalement, mais l'utilisation du processeur peut être plus élevée.",
+		"dismiss": "Compris",
+		"dontShowAgain": "Ne plus afficher"
+	},
+	"deviceSettings": {
+		"title": "Paramètres des périphériques",
+		"close": "Fermer",
+		"micLevel": "Niveau d'entrée",
+		"micHint": "Parlez pour tester votre microphone",
+		"noMicrophones": "Aucun microphone détecté",
+		"preview": "Aperçu",
+		"previewUnavailable": "Aperçu indisponible",
+		"about": "À propos",
+		"version": "Version {{version}}",
+		"checkingForUpdates": "Recherche…"
+	},
+	"permissions": {
+		"title": "OpenScreen a besoin de quelques autorisations",
+		"subtitle": "macOS vous demande de les accorder une seule fois. Vous pouvez les modifier à tout moment dans Réglages Système.",
+		"level": {
+			"required": "Obligatoire",
+			"recommended": "Recommandée",
+			"optional": "Facultative"
+		},
+		"rows": {
+			"screen": {
+				"name": "Écran et son du système",
+				"description": "Pour enregistrer votre écran et le son de votre Mac."
+			},
+			"systemAudio": {
+				"name": "Son du système",
+				"description": "Pour enregistrer le son de votre Mac. Choisir un écran ou une fenêtre ne demande aucune autorisation."
+			},
+			"accessibility": {
+				"name": "Accessibilité",
+				"description": "Pour afficher le bon curseur (flèche, texte) dans vos enregistrements."
+			},
+			"microphone": {
+				"name": "Micro",
+				"description": "Pour enregistrer votre voix."
+			},
+			"camera": {
+				"name": "Caméra",
+				"description": "Pour ajouter votre webcam à vos enregistrements."
+			}
+		},
+		"status": {
+			"granted": "Autorisé",
+			"restricted": "Géré par votre organisation"
+		},
+		"actions": {
+			"continue": "Continuer",
+			"allow": "Autoriser",
+			"openSettings": "Ouvrir Réglages",
+			"restart": "Redémarrer OpenScreen",
+			"start": "Commencer"
+		},
+		"help": {
+			"screenPrompt": "macOS vous demandera ensuite d'activer OpenScreen dans Réglages Système.",
+			"screenSettings": "Dans Réglages Système, activez OpenScreen. Si macOS propose de le quitter et le rouvrir, acceptez : cette fenêtre reviendra.",
+			"screenNotListed": "OpenScreen n'apparaît pas dans la liste ? Cliquez sur +, puis choisissez OpenScreen dans Applications.",
+			"screenRestart": "Autorisé. OpenScreen doit redémarrer pour pouvoir l'utiliser.",
+			"screenRecurring": "À votre premier enregistrement, macOS vous demandera si OpenScreen peut accéder directement à votre écran, sans passer par le sélecteur du système. Cliquez sur Autoriser. macOS repose la question de temps en temps, c'est normal.",
+			"systemAudioPrompt": "macOS vous demandera d'autoriser OpenScreen à enregistrer le son de votre Mac.",
+			"systemAudioRequested": "Si vous avez refusé, activez OpenScreen sous « Enregistrement des sons du système uniquement » dans Réglages Système."
+		},
+		"footer": {
+			"screenRequired": "L'enregistrement de l'écran est nécessaire pour enregistrer.",
+			"ready": "Tout est prêt."
+		}
+	}
+}

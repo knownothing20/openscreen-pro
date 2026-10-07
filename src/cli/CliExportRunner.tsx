@@ -1,0 +1,406 @@
+// Hidden-window runner for `openscreen export`. Loads an .openscreen project,
+// migrates it to the AxcutDocument the native Rust compositor consumes, and
+// drives exportMultiNative/exportGifNative — mirroring the v4 ExportDialog so
+// CLI exports and GUI exports stay pixel-identical. The hidden window does no
+// compositing itself: the render runs in the main process; this runner only
+// builds the clip list + scene JSON and relays progress.
+
+import { useEffect, useRef, useState } from "react";
+import {
+	type EditorProjectData,
+	normalizeProjectEditor,
+	resolveProjectMedia,
+	toFileUrl,
+	validateProjectData,
+} from "@/components/video-editor/projectPersistence";
+import { migrateProjectDataToAxcutDocument } from "@/lib/ai-edition/document/migrate";
+import {
+	collectEffectiveClipDims,
+	pickExtremeDims,
+	resolveAspectRatioValue,
+} from "@/lib/ai-edition/document/outputFormat";
+import { applyProbedDuration } from "@/lib/ai-edition/document/timeline";
+import { type AxcutDocument, isAxcutDocumentFile } from "@/lib/ai-edition/schema";
+import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
+import {
+	appendAutoZoomSuggestions,
+	collectAutoZoomSuggestionsForDocument,
+} from "@/lib/ai-edition/timeline/apply-auto-zooms";
+import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
+import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
+import type { CliDoneResult, CliExportRequest } from "@/lib/cliContracts";
+import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
+import { calculateMp4ExportSettings } from "@/lib/exporter/mp4ExportSettings";
+import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
+import { mixVoiceoverIntoVideo } from "@/lib/exporter/voiceoverMix";
+import { exportGifNative, exportMultiNative, nativeBridgeClient } from "@/native";
+import type { CompositorClipInput } from "@/native/contracts";
+import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
+import { type ExportProject, loadDocumentProject } from "./exportProject";
+
+const MP4_EXPORT_FPS = 60;
+
+function probeVideoDimensions(
+	url: string,
+): Promise<{ width: number; height: number; durationMs: number }> {
+	return new Promise((resolve, reject) => {
+		const video = document.createElement("video");
+		video.preload = "metadata";
+		video.muted = true;
+		const cleanup = () => {
+			clearTimeout(timer);
+			video.removeAttribute("src");
+			video.load();
+		};
+		// A stalled load fires neither event; without a deadline the CLI hangs.
+		const timer = setTimeout(() => {
+			cleanup();
+			reject(new Error(`Timed out reading video metadata: ${url}`));
+		}, 30_000);
+		video.onloadedmetadata = () => {
+			const width = video.videoWidth;
+			const height = video.videoHeight;
+			const durationMs = Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : 0;
+			cleanup();
+			resolve({ width, height, durationMs });
+		};
+		video.onerror = () => {
+			cleanup();
+			reject(new Error(`Failed to load video metadata: ${url}`));
+		};
+		video.src = url;
+	});
+}
+
+function replaceExtension(filePath: string, newExtension: string): string {
+	return filePath.replace(/\.(openscreen|json)$/i, "") + newExtension;
+}
+
+/** Mirrors ExportDialog.buildNativeClipList: trim-narrowed visible clips mapped
+ * onto the native multiclip contract. Kept in lock-step with
+ * buildSceneDescription so export and scene agree on the clip stream. */
+function buildNativeClipList(axcutDocument: AxcutDocument): CompositorClipInput[] {
+	const assetById = new Map(axcutDocument.assets.map((asset) => [asset.id, asset]));
+	return resolveVisibleClips(axcutDocument).flatMap((clip) => {
+		const asset = assetById.get(clip.assetId);
+		if (!asset?.originalPath) {
+			return [];
+		}
+		const camera = assetCameraSource(asset);
+		const sourceEndSec = resolveClipSourceEndSec(clip, asset);
+		return [
+			{
+				screenPath: asset.originalPath,
+				webcamPath: camera.path,
+				sourceStartSec: clip.sourceStartSec,
+				sourceEndSec,
+				webcamOffsetSec: camera.offsetSec,
+				hasAudio: true,
+			},
+		];
+	});
+}
+
+/** Mirrors ExportDialog.gifOutputDims: cap height at the preset, keep even. */
+function gifOutputDims(
+	preset: GifSizePreset,
+	tierDims: { width: number; height: number } | null,
+): { width?: number; height?: number } {
+	if (!tierDims) return {};
+	const maxHeight = GIF_SIZE_PRESETS[preset].maxHeight;
+	if (!Number.isFinite(maxHeight) || tierDims.height <= maxHeight) {
+		return { width: tierDims.width, height: tierDims.height };
+	}
+	const scale = maxHeight / tierDims.height;
+	const even = (n: number) => Math.max(2, Math.round(n * scale) & ~1);
+	return { width: even(tierDims.width), height: even(tierDims.height) };
+}
+
+/**
+ * A legacy v2 project (`{ version, media, editor }`), as written before the editor saved the
+ * document itself: migrated to an AxcutDocument, with what the migration cannot know probed.
+ */
+async function loadLegacyProject(project: EditorProjectData): Promise<ExportProject> {
+	const media = resolveProjectMedia(project);
+	if (!media) {
+		throw new Error("Project file does not reference any recorded media");
+	}
+	// Prefer the main process's approved session paths: they carry the
+	// packed-project sibling fallback when the stored absolute paths are stale.
+	try {
+		const sessionResult = await window.electronAPI.getCurrentRecordingSession();
+		const session = sessionResult?.session;
+		if (session?.screenVideoPath) {
+			media.screenVideoPath = session.screenVideoPath;
+			if (media.webcamVideoPath && session.webcamVideoPath) {
+				media.webcamVideoPath = session.webcamVideoPath;
+			}
+		}
+	} catch {
+		// Fall back to the paths stored in the project file.
+	}
+	const editor = normalizeProjectEditor(project.editor ?? {});
+
+	const probed = await probeVideoDimensions(toFileUrl(media.screenVideoPath));
+
+	// Migrate the .openscreen project onto the AxcutDocument the native
+	// compositor consumes. The migration is pure and carries zooms, annotations,
+	// trims and the legacy editor settings; the clip's duration is unknown until
+	// probed, so applyProbedDuration must run or the export is a single frame.
+	let axcutDocument = migrateProjectDataToAxcutDocument({
+		...project,
+		media,
+		editor,
+	});
+	const primaryAssetId = axcutDocument.project.primaryAssetId ?? axcutDocument.assets[0]?.id;
+	if (!primaryAssetId) {
+		throw new Error("Project migration produced no media asset");
+	}
+	if (probed.durationMs > 0) {
+		axcutDocument = applyProbedDuration(axcutDocument, primaryAssetId, probed.durationMs / 1000);
+	}
+	// The screen's dimensions, for the same reason as the camera's below: the pure migration
+	// cannot know them, and the scene's screen box, the output frame and Auto all read them off
+	// `asset.video`. Without them the CLI laid every recording out as 1920x1080 while sizing the
+	// export from the probe, two answers to one question.
+	if (probed.width > 0 && probed.height > 0) {
+		axcutDocument = {
+			...axcutDocument,
+			assets: axcutDocument.assets.map((asset) =>
+				asset.id === primaryAssetId
+					? {
+							...asset,
+							video: {
+								codec: "unknown",
+								fps: 0,
+								...asset.video,
+								width: probed.width,
+								height: probed.height,
+							},
+						}
+					: asset,
+			),
+		};
+	}
+
+	// The camera's dimensions decide the PiP's layout box, and this is the one caller the
+	// document cannot answer for: there is no editor session here to have probed and saved
+	// them, so without this the CLI lays the box out from a hardcoded 4:3 and a 16:9 camera
+	// exports framed differently from the same project opened in the app.
+	//
+	// Failure-tolerant on purpose, unlike the screen probe above which is allowed to reject:
+	// a camera file that has gone missing should cost the export its camera, not the export.
+	if (media.webcamVideoPath) {
+		const camera = await probeVideoDimensions(toFileUrl(media.webcamVideoPath)).catch(() => null);
+		if (camera) {
+			axcutDocument = {
+				...axcutDocument,
+				assets: axcutDocument.assets.map((asset) =>
+					asset.cameraTrack
+						? {
+								...asset,
+								cameraTrack: {
+									...asset.cameraTrack,
+									width: camera.width,
+									height: camera.height,
+								},
+							}
+						: asset,
+				),
+			};
+		}
+	}
+	return {
+		document: axcutDocument,
+		editor,
+		screenVideoPath: media.screenVideoPath,
+		durationMs: probed.durationMs,
+		sourceDims: { width: probed.width, height: probed.height },
+	};
+}
+
+async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
+	const loaded = await nativeBridgeClient.project.loadProjectFileFromPath(request.projectPath);
+	if (!loaded.success || loaded.project === undefined) {
+		throw new Error(loaded.error ?? loaded.message ?? "Failed to load project file");
+	}
+	let project: ExportProject;
+	if (isAxcutDocumentFile(loaded.project)) {
+		project = await loadDocumentProject(loaded.project, (videoPath) =>
+			probeVideoDimensions(toFileUrl(videoPath)),
+		);
+	} else if (validateProjectData(loaded.project)) {
+		project = await loadLegacyProject(loaded.project);
+	} else {
+		throw new Error("Project file is not a valid .openscreen project");
+	}
+	const { editor } = project;
+	let axcutDocument = project.document;
+
+	const format = request.format ?? editor.exportFormat;
+	if (request.audioPath && format === "gif") {
+		throw new Error(
+			"--audio is only supported for MP4 exports (this project's stored format is gif; pass --format mp4)",
+		);
+	}
+	const quality = request.quality ?? editor.exportQuality;
+	const gifFrameRate = request.gifFrameRate ?? editor.gifFrameRate;
+	const gifSizePreset = request.gifSizePreset ?? editor.gifSizePreset;
+	const outPath =
+		request.outPath ?? replaceExtension(request.projectPath, format === "gif" ? ".gif" : ".mp4");
+	// Use the same per-clip auto-zoom suggestions as the editor, including its default span and
+	// anchoring behavior.
+	if (request.autoZoom) {
+		const suggestions = await collectAutoZoomSuggestionsForDocument(axcutDocument, (videoPath) =>
+			nativeBridgeClient.cursor.getTelemetry(videoPath).catch(() => []),
+		);
+		axcutDocument = appendAutoZoomSuggestions(axcutDocument, suggestions);
+		window.electronAPI.cliLog(
+			"info",
+			`Auto-zoom: added ${suggestions.length} region(s) from cursor telemetry`,
+		);
+	}
+
+	// Output sizing mirrors the ExportDialog: crop-aware smallest clip on the
+	// timeline, normalized to the document's aspect ratio.
+	const smallestSource =
+		pickExtremeDims(collectEffectiveClipDims(axcutDocument), "smallest") ?? project.sourceDims;
+	const aspectRatioValue = resolveAspectRatioValue(
+		axcutDocument,
+		getEditorSettings(axcutDocument).aspectRatio,
+	);
+	const outDims = calculateMp4ExportSettings({
+		quality,
+		sourceWidth: smallestSource.width,
+		sourceHeight: smallestSource.height,
+		aspectRatioValue,
+		frameRate: MP4_EXPORT_FPS,
+	});
+
+	const builtClips = buildNativeClipList(axcutDocument);
+	if (builtClips.length === 0) {
+		throw new Error("The project's timeline has no visible clips to export");
+	}
+	const sceneDesc = buildSceneDescription(axcutDocument);
+
+	// The webcam background effect is applied by the compositor from the scene, so the clip
+	// list needs no pre-rendering pass.
+	const clips = builtClips;
+	const sceneJson = JSON.stringify(sceneDesc);
+
+	// Progress: native pushes raw encoded-frame counts; totals and pacing are
+	// computed here, mirroring the ExportDialog.
+	const outFps = format === "gif" ? gifFrameRate : MP4_EXPORT_FPS;
+	// Speed-adjusted, not source seconds — see `outputFrameCount`. Counting raw duration
+	// is what made a 1.25x timeline stop the bar at 80% (OpenScreen#371).
+	const totalFrames = outputFrameCount(clips, sceneDesc.speedRegions, outFps);
+	const exportStartedAt = Date.now();
+	const unsubscribeProgress = window.electronAPI.onNativeExportProgress?.((frames: number) => {
+		const elapsedSec = (Date.now() - exportStartedAt) / 1000;
+		const rate = frames > 0 ? frames / Math.max(elapsedSec, 0.001) : 0;
+		window.electronAPI.cliProgress({
+			percentage: Math.min(100, (frames / totalFrames) * 100),
+			currentFrame: frames,
+			totalFrames,
+			estimatedTimeRemaining: rate > 0 ? Math.max(0, (totalFrames - frames) / rate) : 0,
+		});
+	});
+
+	try {
+		if (format === "gif") {
+			const dims = gifOutputDims(gifSizePreset, outDims);
+			await exportGifNative(clips, outPath, sceneJson, {
+				...dims,
+				fps: gifFrameRate,
+				loopCount: editor.gifLoop ? 0 : 1,
+			});
+			return {
+				success: true,
+				outputPath: outPath,
+				format,
+				width: dims.width,
+				height: dims.height,
+			};
+		}
+
+		// MP4: native writes outPath directly. When a voiceover is requested, mix
+		// it afterwards (the native pipeline has no extra-audio-track concept) and
+		// overwrite the same file.
+		await exportMultiNative(clips, outPath, sceneJson, {
+			width: outDims.width,
+			height: outDims.height,
+			fps: MP4_EXPORT_FPS,
+			codec: "h264",
+			bitrate: outDims.bitrate,
+		});
+
+		if (request.audioPath) {
+			window.electronAPI.cliProgress({ percentage: 100, phase: "mixing-voiceover" });
+			const [videoResponse, audioResponse] = await Promise.all([
+				fetch(toFileUrl(outPath)),
+				fetch(toFileUrl(request.audioPath)),
+			]);
+			if (!videoResponse.ok) {
+				throw new Error(`Failed to read the exported video back for mixing: ${outPath}`);
+			}
+			if (!audioResponse.ok) {
+				throw new Error(`Failed to read voiceover file: ${request.audioPath}`);
+			}
+			const mixed = await mixVoiceoverIntoVideo(await videoResponse.blob(), {
+				voiceoverData: await audioResponse.arrayBuffer(),
+				mode: request.audioMode,
+				offsetSec: request.audioOffsetSec,
+			});
+			const saveResult = await window.electronAPI.writeExportToPath(
+				await mixed.arrayBuffer(),
+				outPath,
+			);
+			if (!saveResult.success) {
+				throw new Error(saveResult.message ?? `Failed to write mixed output to ${outPath}`);
+			}
+		}
+
+		return {
+			success: true,
+			outputPath: outPath,
+			format,
+			width: outDims.width,
+			height: outDims.height,
+		};
+	} finally {
+		unsubscribeProgress?.();
+	}
+}
+
+export function CliExportRunner() {
+	const startedRef = useRef(false);
+	const [status, setStatus] = useState("Starting export…");
+
+	useEffect(() => {
+		if (startedRef.current) return;
+		startedRef.current = true;
+
+		void (async () => {
+			try {
+				const request = (await window.electronAPI.cliGetRequest()) as CliExportRequest;
+				if (request.kind !== "export") {
+					throw new Error(`cli-export window received a ${request.kind} request`);
+				}
+				setStatus(`Exporting ${request.projectPath}…`);
+				const result = await runExport(request);
+				await window.electronAPI.cliDone(result);
+			} catch (error) {
+				const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+				await window.electronAPI.cliDone({ success: false, error: message });
+			}
+		})();
+	}, []);
+
+	return (
+		<div className="flex h-screen items-center justify-center bg-[#09090b] text-white/60 text-sm">
+			{status}
+		</div>
+	);
+}
+
+export default CliExportRunner;

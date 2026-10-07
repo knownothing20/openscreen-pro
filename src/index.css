@@ -1,0 +1,399 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	:root {
+		--background: 0 0% 100%;
+		--foreground: 20 14.3% 4.1%;
+		--card: 0 0% 100%;
+		--card-foreground: 20 14.3% 4.1%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 20 14.3% 4.1%;
+		--primary: 24 9.8% 10%;
+		--primary-foreground: 60 9.1% 97.8%;
+		--secondary: 60 4.8% 95.9%;
+		--secondary-foreground: 24 9.8% 10%;
+		--muted: 60 4.8% 95.9%;
+		--muted-foreground: 25 5.3% 44.7%;
+		--accent: 60 4.8% 95.9%;
+		--accent-foreground: 24 9.8% 10%;
+		--destructive: 0 84.2% 60.2%;
+		--destructive-foreground: 60 9.1% 97.8%;
+		--border: 20 5.9% 90%;
+		--input: 20 5.9% 90%;
+		--ring: 20 14.3% 4.1%;
+		--chart-1: 12 76% 61%;
+		--chart-2: 173 58% 39%;
+		--chart-3: 197 37% 24%;
+		--chart-4: 43 74% 66%;
+		--chart-5: 27 87% 67%;
+		--radius: 0.5rem;
+	}
+	.dark {
+		--background: 20 14.3% 4.1%;
+		--foreground: 60 9.1% 97.8%;
+		--card: 20 14.3% 4.1%;
+		--card-foreground: 60 9.1% 97.8%;
+		--popover: 20 14.3% 4.1%;
+		--popover-foreground: 60 9.1% 97.8%;
+		--primary: 60 9.1% 97.8%;
+		--primary-foreground: 24 9.8% 10%;
+		--secondary: 12 6.5% 15.1%;
+		--secondary-foreground: 60 9.1% 97.8%;
+		--muted: 12 6.5% 15.1%;
+		--muted-foreground: 24 5.4% 63.9%;
+		--accent: 12 6.5% 15.1%;
+		--accent-foreground: 60 9.1% 97.8%;
+		--destructive: 0 62.8% 30.6%;
+		--destructive-foreground: 60 9.1% 97.8%;
+		--border: 12 6.5% 15.1%;
+		--input: 12 6.5% 15.1%;
+		--ring: 24 5.7% 82.9%;
+		--chart-1: 220 70% 50%;
+		--chart-2: 160 60% 45%;
+		--chart-3: 30 80% 55%;
+		--chart-4: 280 65% 60%;
+		--chart-5: 340 75% 55%;
+	}
+}
+
+@layer base {
+	* {
+		@apply border-border;
+	}
+	body {
+		@apply bg-background text-foreground;
+		/* Every window — HUD, picker, permissions, notes, anything portaled to
+		   body — speaks the brand face, not just the editor shell. */
+		font-family: var(--font-body);
+		-webkit-user-select: none;
+		user-select: none;
+		overflow: hidden;
+		text-rendering: geometricPrecision;
+	}
+	/* Lucide's 2/24 stroke draws 1.33px lines at the 16px most of the chrome uses,
+	   which reads as delicate; a touch heavier reads as friendly. Overrides any
+	   per-icon strokeWidth on purpose. */
+	svg.lucide {
+		stroke-width: 2.25;
+	}
+}
+
+/* Smooth timeline cursor animations */
+@layer utilities {
+	.editor-workspace {
+		display: flex;
+		flex-direction: column;
+		padding: 14px;
+		background:
+			radial-gradient(
+				circle at 18% 0%,
+				rgba(52, 178, 123, 0.08),
+				transparent 30%
+			),
+			linear-gradient(180deg, #08090b 0%, #050606 100%);
+	}
+
+	.editor-main-deck {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) clamp(286px, 20vw, 352px);
+		gap: 14px;
+		min-height: 0;
+	}
+
+	.editor-preview-zone,
+	.editor-settings-rail {
+		min-width: 0;
+		min-height: 0;
+	}
+
+	.editor-preview-panel,
+	.editor-timeline-panel,
+	.editor-inspector-shell {
+		background:
+			linear-gradient(
+				180deg,
+				rgba(255, 255, 255, 0.035),
+				rgba(255, 255, 255, 0.012)
+			),
+			#090a0c;
+		border: 1px solid rgba(255, 255, 255, 0.075);
+		border-radius: 18px;
+		box-shadow:
+			0 24px 70px rgba(0, 0, 0, 0.42),
+			inset 0 1px 0 rgba(255, 255, 255, 0.045);
+	}
+
+	.editor-timeline-panel {
+		border-radius: 16px;
+		background:
+			linear-gradient(180deg, rgba(18, 20, 24, 0.96), rgba(8, 9, 11, 0.98)),
+			#090a0c;
+	}
+
+	.editor-resize-handle {
+		height: 12px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 999px;
+		transition:
+			background-color 160ms ease,
+			opacity 160ms ease;
+		opacity: 0.8;
+	}
+
+	.editor-resize-handle:hover {
+		background: rgba(255, 255, 255, 0.035);
+		opacity: 1;
+	}
+
+	.editor-panel-section {
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
+	}
+
+	.editor-control-surface {
+		border: 1px solid rgba(255, 255, 255, 0.055);
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.032);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+	}
+
+	.editor-inspector-shell {
+		color: #d9e2ee;
+	}
+
+	.editor-inspector-shell button,
+	.editor-inspector-shell [role="button"] {
+		letter-spacing: 0;
+	}
+
+	.editor-inspector-shell button:focus-visible,
+	.editor-inspector-shell [role="button"]:focus-visible {
+		outline: 1px solid rgba(52, 178, 123, 0.68);
+		outline-offset: 2px;
+	}
+
+	.editor-inspector-shell [data-radix-collection-item],
+	.editor-inspector-shell input,
+	.editor-inspector-shell textarea {
+		letter-spacing: 0;
+	}
+
+	.editor-inspector-shell [role="slider"] {
+		box-shadow: 0 0 0 4px rgba(52, 178, 123, 0.12);
+	}
+
+	.editor-inspector-shell .editor-panel-section > h3 {
+		display: none;
+	}
+
+	.editor-inspector-shell .editor-panel-section > div {
+		overflow: visible;
+	}
+
+	@media (max-width: 1240px) {
+		.editor-workspace {
+			gap: 10px;
+			padding: 10px;
+		}
+
+		.editor-main-deck {
+			grid-template-columns: minmax(0, 1fr) 286px;
+			gap: 10px;
+		}
+	}
+
+	@media (max-width: 1020px) {
+		.editor-main-deck {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: minmax(0, 1fr) 180px;
+		}
+
+		.editor-settings-rail {
+			min-height: 180px;
+		}
+	}
+
+	@media (min-width: 1900px) {
+		.editor-workspace {
+			padding: 18px;
+			gap: 18px;
+		}
+
+		.editor-main-deck {
+			grid-template-columns: minmax(0, 1fr) 372px;
+			gap: 18px;
+		}
+	}
+
+	.timeline-cursor-smooth {
+		will-change: transform;
+		transition:
+			left 33ms linear,
+			right 33ms linear;
+	}
+
+	.custom-scrollbar {
+		scrollbar-width: thin;
+		scrollbar-color: rgba(148, 163, 184, 0.32) transparent;
+	}
+
+	.custom-scrollbar::-webkit-scrollbar {
+		width: 10px;
+		height: 10px;
+	}
+
+	.custom-scrollbar::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	.custom-scrollbar::-webkit-scrollbar-thumb {
+		background: rgba(148, 163, 184, 0.22);
+		border: 3px solid transparent;
+		border-radius: 999px;
+		background-clip: content-box;
+	}
+
+	.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+		background: rgba(52, 178, 123, 0.55);
+		border: 3px solid transparent;
+		background-clip: content-box;
+	}
+
+	.squircle {
+		corner-shape: squircle;
+	}
+
+	/* Smooth playback scrubber */
+	input[type="range"] {
+		-webkit-appearance: none;
+		appearance: none;
+	}
+
+	input[type="range"]::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		background: #fff;
+		cursor: pointer;
+		box-shadow: 0 2px 8px rgba(255, 255, 255, 0.32);
+		border: 2px solid #fff;
+		transition: all 0.08s ease-out;
+	}
+
+	input[type="range"]::-webkit-slider-thumb:hover {
+		background: #fff;
+		transform: scale(1.15);
+		box-shadow: 0 3px 10px rgba(255, 255, 255, 0.5);
+		border-color: #34b27b;
+	}
+
+	input[type="range"]::-webkit-slider-thumb:active {
+		transform: scale(1.25);
+	}
+
+	input[type="range"]::-moz-range-thumb {
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		background: #fff;
+		cursor: pointer;
+		border: 2px solid #fff;
+		box-shadow: 0 2px 8px rgba(255, 255, 255, 0.32);
+		transition: all 0.08s ease-out;
+	}
+
+	input[type="range"]::-moz-range-thumb:hover {
+		background: #fff;
+		transform: scale(1.15);
+		box-shadow: 0 3px 10px rgba(255, 255, 255, 0.5);
+		border-color: #34b27b;
+	}
+
+	input[type="range"]::-moz-range-thumb:active {
+		transform: scale(1.25);
+	}
+
+	/* Hide scrollbar in Chrome, Safari, and Opera */
+	.no-scrollbar::-webkit-scrollbar {
+		display: none;
+	}
+
+	/* Hide scrollbar in Firefox */
+	.no-scrollbar {
+		scrollbar-width: none;
+	}
+
+	/* Hide scrollbar in IE and Edge */
+	.no-scrollbar {
+		-ms-overflow-style: none;
+	}
+}
+
+/* Sonner puts the toast close button on the START side — top-left in a left-to-right UI —
+   and overhanging the corner, half outside the toast. Nothing else in this app closes
+   there: every dialog, pane and inspector puts its cross INSIDE the top end corner, and a
+   dismiss control that moves depending on the surface is one the eye has to hunt for.
+
+   Three things have to change together, which is why this is not a one-liner:
+     - the side, via sonner's own custom properties;
+     - the overhang, by dropping its translate — sonner's default pulls the button out of
+       the box by 35% in both axes;
+     - `top`, which sonner hardcodes to 0 rather than exposing as a variable, so it takes a
+       rule on the element itself.
+
+   Flipped per direction rather than hard-coded to `right`, so the mirroring survives an
+   RTL locale (ar ships today; the app does not set `dir` yet, but this must not be the
+   thing that breaks when it does).
+
+   The leading `html` is not decoration: sonner injects its stylesheet at runtime, after
+   this file, so an override of equal specificity would lose on source order. */
+html [data-sonner-toaster][dir="ltr"] {
+	--toast-close-button-start: unset;
+	--toast-close-button-end: 8px;
+	--toast-close-button-transform: none;
+}
+
+html [data-sonner-toaster][dir="rtl"] {
+	--toast-close-button-start: 8px;
+	--toast-close-button-end: unset;
+	--toast-close-button-transform: none;
+}
+
+/* Room for the button, so a long title does not run under it. Logical, not `padding-right`,
+   for the same mirroring reason as above. */
+html [data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+	padding-inline-end: 36px;
+}
+
+/* Inside the box, the chrome sonner gives the button stops making sense: a bordered,
+   opaque chip reads as a badge stuck on the corner when it is overhanging, and as a second
+   surface floating on the toast when it is not. Plain icon, weight on hover only.
+
+   The colours are here and not in the Toaster's `classNames`: sonner sets the button's
+   colour at (0,4,0), which a Tailwind utility at (0,3,0) cannot beat, while the leading
+   `html` puts this rule at (0,4,1). Tokens, so the cross follows the toast's theme. */
+html [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] {
+	top: 8px;
+	border-color: transparent;
+	background: transparent;
+	color: var(--muted);
+	transition: background 0.12s ease-out, color 0.12s ease-out;
+}
+
+/* `border-color` again, on purpose. The base rule's `transparent` loses on hover: sonner's
+   `:hover` rule sits at (0,5,0), above that rule's (0,4,1), and brings back
+   `--normal-border-hover`, a ring around a cross that has no border at rest. The `html`
+   keeps this one at (0,5,1). */
+html [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button]:hover {
+	border-color: transparent;
+	background: color-mix(in oklab, var(--fg) 10%, transparent);
+	color: var(--fg);
+}

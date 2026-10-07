@@ -1,0 +1,2102 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { nativeBridgeClient } from "@/native";
+import type { NativePlatform } from "@/native/contracts";
+import { TooltipProvider } from "../ui/tooltip";
+import { HUD_BAR_BOTTOM, HUD_POPOVER_GAP, HUD_POPOVER_MAX_HEIGHT } from "./hudGeometry";
+import { LaunchWindow } from "./LaunchWindow";
+
+type SelectedSourceChangedListener = Parameters<
+	Window["electronAPI"]["onSelectedSourceChanged"]
+>[0];
+
+const platformState = vi.hoisted(() => ({ value: "darwin" as NativePlatform }));
+// A macOS whose ScreenCaptureKit captures the microphone, unless a test says otherwise.
+const systemVersionState = vi.hoisted(() => ({ value: "15.5" }));
+const linuxHelperAvailable = vi.hoisted(() => ({ value: true }));
+const resizeCallbacks = vi.hoisted(() => [] as Array<ResizeObserverCallback>);
+
+class StubResizeObserver {
+	observe() {
+		return undefined;
+	}
+	unobserve() {
+		return undefined;
+	}
+	disconnect() {
+		return undefined;
+	}
+}
+
+class CapturingResizeObserver extends StubResizeObserver {
+	constructor(callback: ResizeObserverCallback) {
+		super();
+		resizeCallbacks.push(callback);
+	}
+}
+
+const recorderState = vi.hoisted(() => ({
+	value: {
+		recording: false,
+		paused: false,
+		saving: false,
+		elapsedSeconds: 0,
+		toggleRecording: vi.fn(),
+		togglePaused: vi.fn(),
+		canPauseRecording: false,
+		restartRecording: vi.fn(),
+		cancelRecording: vi.fn(),
+		microphoneEnabled: false,
+		setMicrophoneEnabled: vi.fn(),
+		microphoneDeviceId: undefined,
+		setMicrophoneDeviceId: vi.fn(),
+		setMicrophoneDeviceName: vi.fn(),
+		webcamEnabled: false,
+		setWebcamEnabled: vi.fn(async () => true),
+		webcamDeviceId: undefined,
+		setWebcamDeviceId: vi.fn(),
+		setWebcamDeviceName: vi.fn(),
+		webcamQuality: "2160p",
+		setWebcamQuality: vi.fn(),
+		systemAudioEnabled: false,
+		setSystemAudioEnabled: vi.fn(),
+		cursorCaptureMode: "editable-overlay",
+		setCursorCaptureMode: vi.fn(),
+		softwareEncoderFallbackNoticeVisible: false,
+		dismissSoftwareEncoderFallbackNotice: vi.fn(),
+		recordingPrefsLoaded: true,
+	},
+}));
+
+let hudCursorListeners: Array<(x: number, y: number) => void> = [];
+let selectedSourceChangedListeners: SelectedSourceChangedListener[] = [];
+let sourceSelectorClosedListeners: Array<() => void> = [];
+let lastPickedSourceName: string | null = null;
+
+vi.mock("../../hooks/useScreenRecorder", () => ({
+	useScreenRecorder: () => recorderState.value,
+}));
+
+const micDevicesState = vi.hoisted(() => ({
+	value: [] as Array<{ deviceId: string; label: string; groupId: string }>,
+	enabled: undefined as boolean | undefined,
+}));
+
+vi.mock("../../hooks/useMicrophoneDevices", () => ({
+	useMicrophoneDevices: (enabled: boolean) => {
+		micDevicesState.enabled = enabled;
+		return {
+			devices: micDevicesState.value,
+			selectedDeviceId: "default",
+			setSelectedDeviceId: vi.fn(),
+			isReady: true,
+		};
+	},
+}));
+
+const cameraDevicesState = vi.hoisted(() => ({
+	isReady: true,
+	// Empty by default, as before. The device-settings panel only renders its
+	// camera controls when a camera exists, so tests that reach for them fill
+	// this in.
+	devices: [] as Array<{ deviceId: string; label: string }>,
+}));
+
+vi.mock("../../hooks/useCameraDevices", () => ({
+	useCameraDevices: () => ({
+		devices: cameraDevicesState.devices,
+		selectedDeviceId: "",
+		setSelectedDeviceId: vi.fn(),
+		isLoading: false,
+		isReady: cameraDevicesState.isReady,
+		error: null,
+	}),
+}));
+
+const audioLevelMeter = vi.hoisted(() => ({ call: vi.fn() }));
+vi.mock("../../hooks/useAudioLevelMeter", () => ({
+	useAudioLevelMeter: (options: unknown) => {
+		audioLevelMeter.call(options);
+		return { level: 0 };
+	},
+}));
+
+vi.mock("../../hooks/useCameraPreviewStream", () => ({
+	useCameraPreviewStream: () => ({ stream: null, error: null }),
+}));
+
+vi.mock("../../lib/requestCameraAccess", () => ({
+	requestCameraAccess: vi.fn(async () => ({ success: true, granted: true, status: "granted" })),
+}));
+
+vi.mock("@/native", () => ({
+	nativeBridgeClient: {
+		system: {
+			getPlatform: vi.fn(async () => platformState.value),
+		},
+	},
+}));
+
+const appInfoState = vi.hoisted(() => ({
+	value: { version: "1.9.6", canCheckForUpdates: true },
+}));
+const updateCheckMock = vi.hoisted(() => vi.fn(async () => undefined));
+
+const i18nState = vi.hoisted(() => ({
+	value: {
+		locale: "en",
+		setLocale: vi.fn(),
+		systemLocaleSuggestion: null as string | null,
+		acceptSystemLocaleSuggestion: vi.fn(),
+		dismissSystemLocaleSuggestion: vi.fn(),
+		resolveSystemLocaleSuggestion: vi.fn(),
+	},
+}));
+
+vi.mock("@/i18n/loader", () => ({
+	getAvailableLocales: () => ["en"],
+	getLocaleName: () => "English",
+}));
+
+vi.mock("@/contexts/I18nContext", () => ({
+	useI18n: () => i18nState.value,
+	useScopedT: () => (key: string, vars?: Record<string, string | number>) => {
+		const translations: Record<string, string> = {
+			"sourceSelector.defaultSourceName": "Screen",
+			"recording.selectSource": "Please select a source to record",
+			"recording.systemPicker": "Your system will ask what to share",
+			"recording.start": "Start recording",
+			"recording.stop": "Stop and save the recording",
+			"tooltips.useVerticalTray": "Use vertical tray",
+			"tooltips.useHorizontalTray": "Use horizontal tray",
+			"tooltips.changeSource": "Choose another screen or window",
+			"tooltips.systemAudio": "System audio: records the sound your computer plays",
+			"tooltips.microphone": "Microphone: records your voice",
+			"tooltips.camera": "Camera: records you as a separate layer you can move in the editor",
+			"tooltips.openNotes": "Open Notes: text to read while you record",
+			"tooltips.hideHUDTip": "Hide the recording bar. Show it again from the tray icon.",
+			"audio.systemAudio": "System audio",
+			"audio.microphone": "Microphone",
+			"webcam.camera": "Camera",
+			"webcam.searching": "Searching...",
+			"webcam.noneFound": "No camera found",
+			"webcam.unavailable": "Camera unavailable",
+			"deviceSettings.title": "Device settings",
+			"deviceSettings.close": "Close",
+			"deviceSettings.micLevel": "Input level",
+			"deviceSettings.micHint": "Speak to check your microphone",
+			"deviceSettings.noMicrophones": "No microphone found",
+			"deviceSettings.preview": "Preview",
+			"deviceSettings.previewUnavailable": "Preview unavailable",
+			"deviceSettings.about": "About",
+			"deviceSettings.version": "Version {{version}}",
+			"actions.checkForUpdates": "Check for updates",
+			"deviceSettings.checkingForUpdates": "Checking…",
+			"audio.inputDevice": "Input device",
+			"webcam.cameraDevice": "Camera device",
+			"cursor.name": "Editable cursor",
+			"cursor.editableTip":
+				"Editable cursor: recorded separately, so you can restyle it and auto-zoom in the editor",
+			"cursor.systemTip":
+				"System cursor: your real cursor, recorded in the video. No restyling, no auto-zoom.",
+			"tooltips.openStudio": "Open Studio: the editor for your recordings",
+			"tooltips.hideHUD": "Hide HUD",
+			"tooltips.closeApp": "Close App",
+			"tooltips.restartRecording": "Delete this recording and start a new one",
+			"tooltips.cancelRecording": "Stop and delete this recording",
+			language: "Language",
+			languageWithName: "Language: {{language}}",
+			"systemLanguagePrompt.title": "Use your system language?",
+			"systemLanguagePrompt.description":
+				"We detected English as your system language. Do you want to switch OpenScreen to English?",
+			"systemLanguagePrompt.keepDefault": "Keep current language",
+			"systemLanguagePrompt.switch": "Switch to English",
+			"softwareEncoderFallback.title": "Switched to software encoding",
+			"softwareEncoderFallback.description":
+				"The default GPU encoder failed to start, so OpenScreen fell back to software H.264 encoding. Recording should continue as normal, but CPU usage may be higher.",
+			"softwareEncoderFallback.dismiss": "Got it",
+			"softwareEncoderFallback.dontShowAgain": "Don't show again",
+		};
+		const value = translations[key] ?? key;
+		if (!vars) return value;
+		return value.replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+			String(vars[name] ?? `{{${name}}}`),
+		);
+	},
+}));
+
+function renderLaunchWindow() {
+	return render(
+		<TooltipProvider>
+			<LaunchWindow />
+		</TooltipProvider>,
+	);
+}
+
+/**
+ * Opens a control's tooltip the way the keyboard does (focus opens it at once, without the
+ * hover delay) and returns its text. Radix draws a visually hidden `role="tooltip"` copy for
+ * assistive technology, which is what is read here.
+ */
+async function tooltipOn(testId: string): Promise<string | null> {
+	const control = screen.getByTestId(testId);
+	act(() => control.focus());
+	const text = (await screen.findByRole("tooltip")).textContent;
+	act(() => control.blur());
+	await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+	return text;
+}
+
+function stubElectronAPI(getSelectedSource: Window["electronAPI"]["getSelectedSource"]) {
+	window.electronAPI = {
+		...window.electronAPI,
+		getSelectedSource,
+		openSourceSelector: vi.fn(async () => ({ opened: true })),
+		getLastPickedSource: vi.fn(async () => lastPickedSourceName),
+		// Follows the platform under test. Pinned to "darwin" before, which was
+		// invisible while only `nativeBridgeClient` was consulted for it — and
+		// silently wrong the moment anything read the platform through here.
+		getPlatform: vi.fn(() => platformState.value),
+		getSystemVersion: vi.fn(() => systemVersionState.value),
+		// Only the Linux tests read this; the helper being present is what hands
+		// source selection to the portal.
+		isNativeLinuxCaptureAvailable: vi.fn(async () => ({
+			success: true,
+			available: linuxHelperAvailable.value,
+		})),
+		getAppInfo: vi.fn(async () => appInfoState.value),
+		checkForUpdates: updateCheckMock,
+		setHudOverlaySize: vi.fn(),
+		setHudOverlayContent: vi.fn(),
+		setHudOverlayIgnoreMouseEvents: vi.fn(),
+		onHudOverlayCursor: vi.fn((callback) => {
+			hudCursorListeners.push(callback);
+			return () => {
+				hudCursorListeners = hudCursorListeners.filter((listener) => listener !== callback);
+			};
+		}),
+		beginHudOverlayDrag: vi.fn(),
+		dragHudOverlayTo: vi.fn(),
+		endHudOverlayDrag: vi.fn(),
+		hudOverlayHide: vi.fn(),
+		hudOverlayClose: vi.fn(),
+		setRecordingPrefs: vi.fn(async (prefs) => prefs),
+		openNotes: vi.fn(),
+		switchToEditor: vi.fn(async () => undefined),
+		onSelectedSourceChanged: vi.fn((callback) => {
+			selectedSourceChangedListeners.push(callback);
+			return () => {
+				selectedSourceChangedListeners = selectedSourceChangedListeners.filter(
+					(listener) => listener !== callback,
+				);
+			};
+		}),
+		onSourceSelectorClosed: vi.fn((callback) => {
+			sourceSelectorClosedListeners.push(callback);
+			return () => {
+				sourceSelectorClosedListeners = sourceSelectorClosedListeners.filter(
+					(listener) => listener !== callback,
+				);
+			};
+		}),
+	} as typeof window.electronAPI;
+}
+
+const displayOneSource = {
+	id: "screen:1:0",
+	name: "Display 1",
+	display_id: "1",
+	thumbnail: null,
+	appIcon: null,
+} satisfies ProcessedDesktopSource;
+
+async function waitForSourceSelectionSubscription() {
+	await waitFor(() => {
+		expect(selectedSourceChangedListeners.length).toBeGreaterThan(0);
+	});
+}
+
+function emitSelectedSourceChanged(source: ProcessedDesktopSource) {
+	act(() => {
+		selectedSourceChangedListeners.forEach((listener) => listener(source));
+	});
+}
+
+function emitSourceSelectorClosed() {
+	act(() => {
+		sourceSelectorClosedListeners.forEach((listener) => listener());
+	});
+}
+
+function resetLaunchMocks() {
+	vi.stubGlobal("ResizeObserver", StubResizeObserver);
+	// The bar's orientation is a saved preference: a test that switches it must not leave the
+	// next one starting on a vertical bar.
+	localStorage.clear();
+	recorderState.value.toggleRecording = vi.fn();
+	recorderState.value.cursorCaptureMode = "editable-overlay";
+	recorderState.value.systemAudioEnabled = false;
+	recorderState.value.setSystemAudioEnabled.mockClear();
+	recorderState.value.setCursorCaptureMode.mockClear();
+	recorderState.value.softwareEncoderFallbackNoticeVisible = false;
+	recorderState.value.dismissSoftwareEncoderFallbackNotice.mockClear();
+	recorderState.value.recording = false;
+	recorderState.value.canPauseRecording = false;
+	recorderState.value.microphoneEnabled = false;
+	recorderState.value.setMicrophoneEnabled.mockClear();
+	recorderState.value.setMicrophoneDeviceId.mockClear();
+	recorderState.value.webcamEnabled = false;
+	recorderState.value.setWebcamEnabled.mockClear();
+	recorderState.value.recordingPrefsLoaded = true;
+	cameraDevicesState.isReady = true;
+	cameraDevicesState.devices = [];
+	micDevicesState.value = [];
+	micDevicesState.enabled = undefined;
+	systemVersionState.value = "15.5";
+	audioLevelMeter.call.mockClear();
+	hudCursorListeners = [];
+	selectedSourceChangedListeners = [];
+	sourceSelectorClosedListeners = [];
+	lastPickedSourceName = null;
+	i18nState.value.systemLocaleSuggestion = null;
+	i18nState.value.acceptSystemLocaleSuggestion.mockClear();
+	i18nState.value.dismissSystemLocaleSuggestion.mockClear();
+	i18nState.value.resolveSystemLocaleSuggestion.mockClear();
+	i18nState.value.setLocale.mockClear();
+	linuxHelperAvailable.value = true;
+	vi.mocked(nativeBridgeClient.system.getPlatform).mockImplementation(
+		async () => platformState.value,
+	);
+	appInfoState.value = { version: "1.9.6", canCheckForUpdates: true };
+	updateCheckMock.mockReset();
+	updateCheckMock.mockResolvedValue(undefined);
+	stubElectronAPI(vi.fn(async () => null));
+}
+
+describe("LaunchWindow record button", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("opens the source selector instead of disabling the primary action when no source is selected", async () => {
+		renderLaunchWindow();
+
+		const recordButton = await screen.findByTestId("launch-record-button");
+
+		expect(recordButton).toBeEnabled();
+		expect(recordButton).toHaveAttribute("aria-label", "Please select a source to record");
+
+		fireEvent.click(recordButton);
+
+		await waitFor(() => {
+			expect(window.electronAPI.openSourceSelector).toHaveBeenCalledTimes(1);
+		});
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+	});
+
+	it("does not render an auto-zoom toggle button (auto-zoom is systematic)", () => {
+		renderLaunchWindow();
+		expect(screen.queryByTestId("launch-auto-zoom-button")).toBeNull();
+	});
+
+	it("records immediately after source selection when the record button opened the picker", async () => {
+		renderLaunchWindow();
+		await waitForSourceSelectionSubscription();
+
+		fireEvent.click(await screen.findByTestId("launch-record-button"));
+		emitSelectedSourceChanged(displayOneSource);
+
+		await waitFor(() => {
+			expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+		});
+		expect(screen.getByTestId("launch-record-button")).toHaveAttribute(
+			"aria-label",
+			"Start recording",
+		);
+	});
+
+	it("names the last pick in Apple's picker without treating it as selected", async () => {
+		lastPickedSourceName = "Studio Display";
+		renderLaunchWindow();
+
+		const sourceButton = screen.getByTestId("launch-source-selector-button");
+		await waitFor(() => expect(sourceButton).toHaveTextContent("Studio Display"));
+		expect(sourceButton).toHaveAttribute("data-remembered", "true");
+		// Nothing is live, so Record still asks first and only records once a source is chosen.
+		expect(screen.getByTestId("launch-record-button")).toHaveAttribute(
+			"aria-label",
+			"Please select a source to record",
+		);
+		fireEvent.click(screen.getByTestId("launch-record-button"));
+		await waitFor(() => expect(window.electronAPI.openSourceSelector).toHaveBeenCalledTimes(1));
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+	});
+
+	it("shows a live pick in place of the remembered name, and the name again once it is gone", async () => {
+		lastPickedSourceName = "Studio Display";
+		renderLaunchWindow();
+		await waitForSourceSelectionSubscription();
+		const sourceButton = screen.getByTestId("launch-source-selector-button");
+		await waitFor(() => expect(sourceButton).toHaveTextContent("Studio Display"));
+
+		emitSelectedSourceChanged(displayOneSource);
+		await waitFor(() => expect(sourceButton).toHaveTextContent("Display 1"));
+		expect(sourceButton).not.toHaveAttribute("data-remembered");
+
+		act(() => {
+			selectedSourceChangedListeners.forEach((listener) => listener(null));
+		});
+		await waitFor(() => expect(sourceButton).toHaveTextContent("Studio Display"));
+		expect(sourceButton).toHaveAttribute("data-remembered", "true");
+	});
+
+	it("keeps the default name when nothing was picked before", async () => {
+		renderLaunchWindow();
+
+		const sourceButton = screen.getByTestId("launch-source-selector-button");
+		await waitFor(() => expect(window.electronAPI.getLastPickedSource).toHaveBeenCalled());
+		expect(sourceButton).toHaveTextContent("Screen");
+		expect(sourceButton).not.toHaveAttribute("data-remembered");
+	});
+
+	it("does not record after manual source selection", async () => {
+		renderLaunchWindow();
+		await waitForSourceSelectionSubscription();
+
+		emitSelectedSourceChanged(displayOneSource);
+
+		await waitFor(() => {
+			expect(screen.getByTestId("launch-record-button")).toHaveAttribute(
+				"aria-label",
+				"Start recording",
+			);
+		});
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+	});
+
+	it("names the idle HUD icon controls for assistive technology", async () => {
+		renderLaunchWindow();
+		await screen.findByTestId("launch-record-button");
+
+		expect(screen.getByTestId("launch-system-audio-button")).toHaveAttribute(
+			"aria-label",
+			"System audio",
+		);
+		expect(screen.getByTestId("launch-microphone-button")).toHaveAttribute(
+			"aria-label",
+			"Microphone",
+		);
+		expect(screen.getByTestId("launch-webcam-button")).toHaveAttribute("aria-label", "Camera");
+		expect(screen.getByTestId("launch-cursor-mode-button")).toHaveAttribute(
+			"aria-label",
+			"Editable cursor",
+		);
+		expect(screen.getByTestId("launch-open-studio-button")).toHaveAttribute(
+			"aria-label",
+			"Open Studio: the editor for your recordings",
+		);
+		expect(screen.getByRole("button", { name: "Hide HUD" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Close App" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Language: English" })).toBeInTheDocument();
+	});
+
+	// The name never changes with the state: "Disable microphone, pressed" reads as the opposite
+	// of what is happening. The state is aria-pressed, and the sentence is the tooltip.
+	it("gives every toggle one constant name and carries its state in aria-pressed", async () => {
+		const toggles = [
+			["launch-system-audio-button", "System audio"],
+			["launch-microphone-button", "Microphone"],
+			["launch-webcam-button", "Camera"],
+			["launch-cursor-mode-button", "Editable cursor"],
+		] as const;
+		const view = renderLaunchWindow();
+		await screen.findByTestId("launch-cursor-mode-button");
+
+		// Off, except the cursor, which starts editable.
+		for (const [testId, name] of toggles) {
+			const expected = testId === "launch-cursor-mode-button" ? "true" : "false";
+			expect(screen.getByTestId(testId)).toHaveAttribute("aria-label", name);
+			expect(screen.getByTestId(testId)).toHaveAttribute("aria-pressed", expected);
+		}
+
+		recorderState.value.systemAudioEnabled = true;
+		recorderState.value.microphoneEnabled = true;
+		recorderState.value.webcamEnabled = true;
+		recorderState.value.cursorCaptureMode = "system";
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		for (const [testId, name] of toggles) {
+			const expected = testId === "launch-cursor-mode-button" ? "false" : "true";
+			expect(screen.getByTestId(testId)).toHaveAttribute("aria-label", name);
+			expect(screen.getByTestId(testId)).toHaveAttribute("aria-pressed", expected);
+		}
+	});
+
+	it("says what each toggle records, in a tooltip that does not change with its state", async () => {
+		renderLaunchWindow();
+		await screen.findByTestId("launch-cursor-mode-button");
+
+		expect(await tooltipOn("launch-system-audio-button")).toBe(
+			"System audio: records the sound your computer plays",
+		);
+		expect(await tooltipOn("launch-microphone-button")).toBe("Microphone: records your voice");
+		expect(await tooltipOn("launch-webcam-button")).toBe(
+			"Camera: records you as a separate layer you can move in the editor",
+		);
+	});
+
+	// The two cursor modes are the one pair the user has to tell apart, so each tooltip defines
+	// the mode it names instead of describing the other one.
+	it("defines the editable cursor in its tooltip while it is on", async () => {
+		renderLaunchWindow();
+		await screen.findByTestId("launch-cursor-mode-button");
+
+		expect(await tooltipOn("launch-cursor-mode-button")).toBe(
+			"Editable cursor: recorded separately, so you can restyle it and auto-zoom in the editor",
+		);
+	});
+
+	it("defines the system cursor in its tooltip while it is on", async () => {
+		recorderState.value.cursorCaptureMode = "system";
+		renderLaunchWindow();
+		await screen.findByTestId("launch-cursor-mode-button");
+
+		expect(await tooltipOn("launch-cursor-mode-button")).toBe(
+			"System cursor: your real cursor, recorded in the video. No restyling, no auto-zoom.",
+		);
+	});
+
+	it("uses no native title on the controls that have a tooltip", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		renderLaunchWindow();
+		await screen.findByTestId("launch-cursor-mode-button");
+		await waitFor(() =>
+			expect(screen.getByTestId("launch-record-button")).toHaveAttribute(
+				"aria-label",
+				"Start recording",
+			),
+		);
+
+		const controls = [
+			...[
+				"launch-source-selector-button",
+				"launch-system-audio-button",
+				"launch-microphone-button",
+				"launch-webcam-button",
+				"launch-device-settings-button",
+				"launch-cursor-mode-button",
+				"launch-record-button",
+				"launch-open-studio-button",
+			].map((testId) => screen.getByTestId(testId)),
+			screen.getByRole("button", { name: "Hide HUD" }),
+			screen.getByRole("button", { name: "Close App" }),
+			screen.getByRole("button", { name: "Language: English" }),
+		];
+		for (const control of controls) {
+			expect(control).not.toHaveAttribute("title");
+		}
+	});
+
+	it("gives the Record button one tooltip, and it says what pressing it does", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		renderLaunchWindow();
+		const recordButton = await screen.findByTestId("launch-record-button");
+		await waitFor(() => expect(recordButton).toHaveAttribute("aria-label", "Start recording"));
+
+		act(() => recordButton.focus());
+		await screen.findByRole("tooltip");
+
+		// One Radix tooltip and no native title stacked on it, and not the source's name.
+		expect(screen.getAllByRole("tooltip")).toHaveLength(1);
+		expect(screen.getByRole("tooltip")).toHaveTextContent("Start recording");
+		expect(recordButton).not.toHaveAttribute("title");
+	});
+
+	it("names the source button's action once a source is shown, and asks for one before", async () => {
+		renderLaunchWindow();
+		expect(await tooltipOn("launch-source-selector-button")).toBe(
+			"Please select a source to record",
+		);
+
+		await waitForSourceSelectionSubscription();
+		emitSelectedSourceChanged(displayOneSource);
+		await waitFor(() =>
+			expect(screen.getByTestId("launch-source-selector-button")).toHaveTextContent("Display 1"),
+		);
+
+		expect(await tooltipOn("launch-source-selector-button")).toBe(
+			"Choose another screen or window",
+		);
+	});
+
+	it("says the recording is stopped and saved, not the source's name, while recording", async () => {
+		recorderState.value.recording = true;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		renderLaunchWindow();
+
+		expect(await tooltipOn("launch-record-button")).toBe("Stop and save the recording");
+		expect(screen.getByTestId("launch-record-button")).toHaveAttribute(
+			"aria-label",
+			"Stop and save the recording",
+		);
+	});
+
+	it("opens a horizontal bar's tooltips above it and a vertical bar's beside it", async () => {
+		renderLaunchWindow();
+		const audio = await screen.findByTestId("launch-system-audio-button");
+
+		act(() => audio.focus());
+		await screen.findByRole("tooltip");
+		expect(document.querySelector("[data-slot='tooltip-content']")).toHaveAttribute(
+			"data-side",
+			"top",
+		);
+		act(() => audio.blur());
+
+		// A tooltip above a vertical bar would cover the controls above the pointer.
+		fireEvent.click(screen.getByTestId("launch-tray-layout-button"));
+		act(() => screen.getByTestId("launch-system-audio-button").focus());
+		await waitFor(() =>
+			expect(document.querySelector("[data-slot='tooltip-content']")).toHaveAttribute(
+				"data-side",
+				"right",
+			),
+		);
+	});
+
+	// Radix measures from the small trigger, but the bar is what the eye sees: while recording, a
+	// vertical bar widens to fit the timer and the Pause button sits well inside its edge. The
+	// tooltip has to clear the bar, or it overlaps it.
+	it("opens a tooltip clear of the bar's edge, not just the trigger's", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.canPauseRecording = true;
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-tray-layout-button"));
+		const pause = await screen.findByTestId("launch-pause-button");
+		const bar = pause.closest("[data-tray-layout]") as HTMLElement;
+
+		const box = (x: number, width: number, height: number) => ({
+			x,
+			y: 0,
+			left: x,
+			top: 0,
+			right: x + width,
+			bottom: height,
+			width,
+			height,
+			toJSON: () => ({}),
+		});
+		// The bar is 100px wide; the button's right edge is 28px inside it.
+		vi.spyOn(bar, "getBoundingClientRect").mockReturnValue(box(0, 100, 300));
+		vi.spyOn(pause, "getBoundingClientRect").mockReturnValue(box(38, 34, 34));
+		// jsdom's viewport is zero-sized, which would make every placement overflow and flip.
+		const root = document.documentElement;
+		Object.defineProperty(root, "clientWidth", { value: 1000, configurable: true });
+		Object.defineProperty(root, "clientHeight", { value: 800, configurable: true });
+
+		try {
+			act(() => pause.focus());
+			await screen.findByRole("tooltip");
+
+			// Trigger's right edge 72 + the primitive's 8px gap + the 28px to the bar's edge.
+			const wrapper = document.querySelector<HTMLElement>("[data-radix-popper-content-wrapper]");
+			await waitFor(() => expect(wrapper?.style.transform).toBe("translate(108px, 17px)"));
+		} finally {
+			Reflect.deleteProperty(root, "clientWidth");
+			Reflect.deleteProperty(root, "clientHeight");
+		}
+	});
+
+	// Chromium records the pointer itself on these platforms once the native helper is missing,
+	// so the toggle would change nothing. An option that changes nothing is not shown.
+	it("hides the cursor toggle when capture falls back to the browser", async () => {
+		platformState.value = "linux";
+		linuxHelperAvailable.value = false;
+		recorderState.value.cursorCaptureMode = "system";
+		renderLaunchWindow();
+
+		// Asked twice: by the hook that decides who owns the source, and by the HUD for this
+		// toggle. Wait for both answers, or "hidden" would hold only because none had come yet.
+		const probe = vi.mocked(window.electronAPI.isNativeLinuxCaptureAvailable);
+		await waitFor(() => expect(probe).toHaveBeenCalledTimes(2));
+		await act(async () => {
+			await Promise.all(probe.mock.results.map((result) => result.value));
+		});
+
+		expect(screen.queryByTestId("launch-cursor-mode-button")).toBeNull();
+	});
+
+	it("shows the cursor toggle once the native helper is confirmed", async () => {
+		platformState.value = "linux";
+		linuxHelperAvailable.value = true;
+		renderLaunchWindow();
+
+		expect(await screen.findByTestId("launch-cursor-mode-button")).toBeInTheDocument();
+	});
+
+	it("waits for the native helper's answer before offering the cursor toggle", async () => {
+		platformState.value = "darwin";
+		let answer: (value: { success: boolean; available: boolean }) => void = () => undefined;
+		window.electronAPI.isNativeMacCaptureAvailable = vi.fn(
+			() =>
+				new Promise<{ success: boolean; available: boolean }>((resolve) => {
+					answer = resolve;
+				}),
+		) as unknown as Window["electronAPI"]["isNativeMacCaptureAvailable"];
+
+		try {
+			renderLaunchWindow();
+
+			await waitFor(() =>
+				expect(window.electronAPI.isNativeMacCaptureAvailable).toHaveBeenCalled(),
+			);
+			expect(screen.queryByTestId("launch-cursor-mode-button")).toBeNull();
+
+			await act(async () => {
+				answer({ success: true, available: true });
+			});
+			expect(screen.getByTestId("launch-cursor-mode-button")).toBeInTheDocument();
+		} finally {
+			// `stubElectronAPI` spreads the previous object, so a leftover probe would keep every
+			// later macOS test waiting for an answer that never comes.
+			Reflect.deleteProperty(window.electronAPI, "isNativeMacCaptureAvailable");
+		}
+	});
+
+	// Cancel and restart have no confirmation, so the tooltip is the only place the loss can be said.
+	it("names the recording-state HUD controls, and says what cancel and restart delete", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.canPauseRecording = true;
+		renderLaunchWindow();
+
+		expect(await screen.findByTestId("launch-pause-button")).toHaveAttribute(
+			"aria-label",
+			"tooltips.pauseRecording",
+		);
+		expect(screen.getByTestId("launch-restart-button")).toHaveAttribute(
+			"aria-label",
+			"Delete this recording and start a new one",
+		);
+		expect(screen.getByTestId("launch-cancel-button")).toHaveAttribute(
+			"aria-label",
+			"Stop and delete this recording",
+		);
+		expect(await tooltipOn("launch-cancel-button")).toBe("Stop and delete this recording");
+	});
+
+	it("says how to get the bar back in the hide button's tooltip, and keeps its name short", async () => {
+		renderLaunchWindow();
+		const hide = await screen.findByRole("button", { name: "Hide HUD" });
+
+		act(() => hide.focus());
+
+		expect(await screen.findByRole("tooltip")).toHaveTextContent(
+			"Hide the recording bar. Show it again from the tray icon.",
+		);
+	});
+
+	it("clears record-after-selection intent when the source picker closes without a selection", async () => {
+		renderLaunchWindow();
+		await waitForSourceSelectionSubscription();
+
+		fireEvent.click(await screen.findByTestId("launch-record-button"));
+		emitSourceSelectorClosed();
+		emitSelectedSourceChanged(displayOneSource);
+
+		await waitFor(() => {
+			expect(screen.getByTestId("launch-record-button")).toHaveAttribute(
+				"aria-label",
+				"Start recording",
+			);
+		});
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+	});
+
+	it("clears record-after-selection intent when opening the source picker fails", async () => {
+		window.electronAPI.openSourceSelector = vi.fn(async () => {
+			throw new Error("source selector failed");
+		});
+
+		renderLaunchWindow();
+		await waitForSourceSelectionSubscription();
+
+		fireEvent.click(await screen.findByTestId("launch-record-button"));
+
+		await waitFor(() => {
+			expect(window.electronAPI.openSourceSelector).toHaveBeenCalledTimes(1);
+		});
+
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		emitSelectedSourceChanged(displayOneSource);
+
+		await waitFor(() => {
+			expect(screen.getByTestId("launch-record-button")).toHaveAttribute(
+				"aria-label",
+				"Start recording",
+			);
+		});
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+	});
+
+	it("handles selected source polling failures", async () => {
+		const error = new Error("selected source unavailable");
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		stubElectronAPI(
+			vi.fn(async () => {
+				throw error;
+			}),
+		);
+
+		renderLaunchWindow();
+
+		await waitFor(() => {
+			expect(warnSpy).toHaveBeenCalledWith("Failed to refresh selected source:", error);
+		});
+
+		warnSpy.mockRestore();
+	});
+
+	it("starts recording when a source is already selected", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+
+		renderLaunchWindow();
+
+		const recordButton = await screen.findByTestId("launch-record-button");
+		await waitFor(() => {
+			expect(recordButton).toHaveAttribute("aria-label", "Start recording");
+		});
+
+		fireEvent.click(recordButton);
+
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+	});
+
+	it("stops immediately without waiting for device readiness", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.recordingPrefsLoaded = false;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+
+		renderLaunchWindow();
+		const recordButton = await screen.findByTestId("launch-record-button");
+		fireEvent.click(recordButton);
+
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+	});
+
+	it("can start again after stop when devices were already ready", async () => {
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+		const view = renderLaunchWindow();
+		const recordButton = await screen.findByTestId("launch-record-button");
+		await waitFor(() => {
+			expect(recordButton).toHaveAttribute("aria-label", "Start recording");
+		});
+
+		fireEvent.click(recordButton);
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+
+		recorderState.value.recording = true;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		fireEvent.click(recordButton);
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(2);
+
+		recorderState.value.recording = false;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+		fireEvent.click(recordButton);
+		expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(3);
+	});
+
+	it("does not wait for the camera list when the webcam is off", async () => {
+		cameraDevicesState.isReady = false;
+		recorderState.value.webcamEnabled = false;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+
+		renderLaunchWindow();
+
+		const recordButton = await screen.findByTestId("launch-record-button");
+		await waitFor(() => {
+			expect(recordButton).toHaveAttribute("aria-label", "Start recording");
+		});
+
+		fireEvent.click(recordButton);
+
+		await waitFor(() => {
+			expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("does not start recording twice while waiting for device prefs", async () => {
+		recorderState.value.recordingPrefsLoaded = false;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+
+		const view = renderLaunchWindow();
+		const recordButton = await screen.findByTestId("launch-record-button");
+		await waitFor(() => {
+			expect(recordButton).toHaveAttribute("aria-label", "Start recording");
+		});
+
+		fireEvent.click(recordButton);
+		fireEvent.click(recordButton);
+		expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+
+		recorderState.value.recordingPrefsLoaded = true;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		await waitFor(() => {
+			expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("starts with the latest record callback after prefs finish loading", async () => {
+		const firstToggle = vi.fn();
+		const secondToggle = vi.fn();
+		recorderState.value.toggleRecording = firstToggle;
+		recorderState.value.recordingPrefsLoaded = false;
+		stubElectronAPI(vi.fn(async () => displayOneSource));
+
+		const view = renderLaunchWindow();
+		const recordButton = await screen.findByTestId("launch-record-button");
+		await waitFor(() => {
+			expect(recordButton).toHaveAttribute("aria-label", "Start recording");
+		});
+
+		fireEvent.click(recordButton);
+		expect(firstToggle).not.toHaveBeenCalled();
+
+		recorderState.value.toggleRecording = secondToggle;
+		recorderState.value.recordingPrefsLoaded = true;
+		view.rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		await waitFor(() => {
+			expect(secondToggle).toHaveBeenCalledTimes(1);
+		});
+		expect(firstToggle).not.toHaveBeenCalled();
+	});
+
+	// The #385 regression, and #266 before it. A HUD that has gone click-through
+	// receives no pointer event of any kind, so every DOM route back — pointerenter,
+	// pointerdown, pointermove — is unreachable by construction. This test therefore
+	// fires NO pointer events at all: it delivers only the cursor position the main
+	// process pushes, which is the one signal that survives input-transparency, and
+	// requires that to be enough to make the bar clickable again.
+	it("leaves click-through on a pushed cursor position alone, with no pointer event", async () => {
+		platformState.value = "win32";
+
+		renderLaunchWindow();
+
+		await waitFor(() => {
+			expect(window.electronAPI.setHudOverlayIgnoreMouseEvents).toHaveBeenLastCalledWith(true);
+		});
+		expect(hudCursorListeners).not.toHaveLength(0);
+
+		// jsdom has no layout and does not implement elementFromPoint at all, so it is
+		// defined here to return what each point resolves to in a browser. The assertion
+		// is that the pushed cursor drives the hit test, not that jsdom can hit-test.
+		const bar = document.querySelector("[data-hud-interactive='true']");
+		expect(bar).not.toBeNull();
+		const elementFromPoint = vi.fn((_x: number, _y: number): Element | null => document.body);
+		Object.defineProperty(document, "elementFromPoint", {
+			value: elementFromPoint,
+			configurable: true,
+		});
+		const setIgnore = vi.mocked(window.electronAPI.setHudOverlayIgnoreMouseEvents);
+
+		try {
+			// The transparent reserve goes FIRST, while the window is still click-through.
+			// Do it after the bar has claimed input back and the assertion is vacuous: the
+			// renderer dedupes, so a point that wrongly enabled input would send no IPC at
+			// all and "still false" would hold either way. Here a wrong answer is an IPC.
+			setIgnore.mockClear();
+			for (const listener of hudCursorListeners) listener(10, 10);
+			expect(setIgnore).not.toHaveBeenCalled();
+
+			// And the bar hands input back.
+			elementFromPoint.mockReturnValue(bar);
+			for (const listener of hudCursorListeners) listener(410, 540);
+
+			expect(elementFromPoint).toHaveBeenCalledWith(410, 540);
+			expect(setIgnore).toHaveBeenCalledWith(false);
+		} finally {
+			Reflect.deleteProperty(document, "elementFromPoint");
+		}
+	});
+
+	// The mount effect's cleanup used to send `ignore=false` straight down the
+	// bridge, bypassing the wrapper that owns `hudIgnoreMouseEventsRef`. That left
+	// the mirror claiming the HUD was click-through while the main process had just
+	// been told the opposite, and the next run then deduped against the stale value
+	// and sent nothing at all — so the HUD stayed interactive with no way for the
+	// renderer to ask again. StrictMode runs mount → cleanup → mount on every mount,
+	// which makes dev the one environment where the click-through path never ran.
+	it("keeps the main process and the renderer's mirror in step across a remount", async () => {
+		platformState.value = "win32";
+
+		render(
+			<StrictMode>
+				<TooltipProvider>
+					<LaunchWindow />
+				</TooltipProvider>
+			</StrictMode>,
+		);
+
+		// The whole sequence, not its tail: because the wrapper dedupes, a cleanup
+		// that is deleted outright and a cleanup that asks for the wrong value both
+		// collapse to a lone [true] and would satisfy an assertion on the last call.
+		// Only mount → hand input back → mount again distinguishes the three.
+		await waitFor(() => {
+			expect(vi.mocked(window.electronAPI.setHudOverlayIgnoreMouseEvents).mock.calls).toEqual([
+				[true],
+				[false],
+				[true],
+			]);
+		});
+	});
+
+	it("unsubscribes from the pushed cursor when the HUD unmounts", async () => {
+		platformState.value = "win32";
+
+		const { unmount } = renderLaunchWindow();
+
+		await waitFor(() => {
+			expect(hudCursorListeners).not.toHaveLength(0);
+		});
+
+		unmount();
+
+		expect(hudCursorListeners).toHaveLength(0);
+	});
+
+	it("keeps the HUD interactive on Linux so the drag handle can receive pointer events", async () => {
+		platformState.value = "linux";
+
+		renderLaunchWindow();
+
+		await waitFor(() => {
+			expect(window.electronAPI.setHudOverlayIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+		});
+	});
+
+	// The ScreenCast portal has no parameter naming a source, so nothing this
+	// picker returned could ever reach the capture — it only raised a second
+	// portal dialog whose grant was discarded. On Linux the compositor's own
+	// picker, shown when recording starts, is the only thing that decides.
+	it("hides the in-app source button on Linux", async () => {
+		platformState.value = "linux";
+
+		renderLaunchWindow();
+
+		// The helper-availability answer arrives asynchronously, so the button is
+		// still there on the first frame — wait for it to go rather than race it.
+		await waitFor(() => {
+			expect(screen.queryByTestId("launch-source-selector-button")).toBeNull();
+		});
+	});
+
+	it("records straight away on Linux instead of demanding a source that cannot be selected", async () => {
+		platformState.value = "linux";
+
+		renderLaunchWindow();
+
+		const recordButton = await screen.findByTestId("launch-record-button");
+		expect(recordButton).toBeEnabled();
+		await waitFor(() => {
+			expect(recordButton).toHaveAttribute("aria-label", "Your system will ask what to share");
+		});
+
+		fireEvent.click(recordButton);
+
+		await waitFor(() => {
+			expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+		});
+		expect(window.electronAPI.openSourceSelector).not.toHaveBeenCalled();
+	});
+
+	// The portal reports a KIND, never a window title, so naming the source here
+	// could only ever be a guess — and guessing is what put a window's name on a
+	// recording of the whole screen.
+	/**
+	 * Without the helper the recorder falls back to Chromium's capture, which
+	 * DOES consume a source id. Hiding the picker there would leave no way to
+	 * start a recording at all.
+	 */
+	it("keeps the in-app source button on Linux when the native helper is missing", async () => {
+		platformState.value = "linux";
+		linuxHelperAvailable.value = false;
+
+		renderLaunchWindow();
+
+		expect(await screen.findByTestId("launch-source-selector-button")).toBeInTheDocument();
+		expect(screen.getByTestId("launch-record-button")).toHaveAttribute(
+			"aria-label",
+			"Please select a source to record",
+		);
+	});
+
+	/**
+	 * `portalOwnsSource` is resolved over IPC, so for a moment after mount it
+	 * still reads false on Linux. A Record click landing in that window opened a
+	 * selector the main process refuses — and the click used to be swallowed,
+	 * doing nothing at all. The refusal is authoritative and answers immediately,
+	 * so it starts the recording instead.
+	 */
+	it("records when the picker refuses because the portal owns the choice", async () => {
+		platformState.value = "linux";
+		// Forces the click down the open-the-selector path, as an unresolved
+		// portal check does.
+		linuxHelperAvailable.value = false;
+		window.electronAPI.openSourceSelector = vi.fn(async () => ({
+			opened: false,
+			reason: "portal-owns-selection",
+		})) as unknown as Window["electronAPI"]["openSourceSelector"];
+
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-record-button"));
+
+		await waitFor(() => {
+			expect(recorderState.value.toggleRecording).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("does not name a source while recording on Linux", async () => {
+		platformState.value = "linux";
+		recorderState.value.recording = true;
+
+		renderLaunchWindow();
+
+		const recordButton = await screen.findByTestId("launch-record-button");
+		await waitFor(() => {
+			expect(recordButton).toHaveAttribute("aria-label", "Stop and save the recording");
+		});
+	});
+});
+
+/** jsdom reports zero layout, so fake a rendered box for the elements we measure. */
+function stubBox(element: HTMLElement, width: number, height: number) {
+	vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+		top: 0,
+		left: 0,
+		right: width,
+		bottom: height,
+		width,
+		height,
+		x: 0,
+		y: 0,
+		toJSON: () => ({}),
+	});
+	Object.defineProperty(element, "scrollWidth", { value: width, configurable: true });
+	Object.defineProperty(element, "scrollHeight", { value: height, configurable: true });
+}
+
+async function flushResizeObservers() {
+	await act(async () => {
+		for (const callback of resizeCallbacks) {
+			callback([], {} as ResizeObserver);
+		}
+	});
+}
+
+function lastRequestedHudSize(): [number, number] {
+	const sizeMock = window.electronAPI.setHudOverlaySize as unknown as {
+		mock: { calls: Array<[number, number]> };
+	};
+	return sizeMock.mock.calls[sizeMock.mock.calls.length - 1];
+}
+
+describe("LaunchWindow overlay sizing", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+		resizeCallbacks.length = 0;
+		vi.stubGlobal("ResizeObserver", CapturingResizeObserver);
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("reserves room for a popover before one is ever opened", async () => {
+		renderLaunchWindow();
+
+		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
+			"[data-tray-layout]",
+		) as HTMLElement;
+		stubBox(bar, 400, 56);
+		await flushResizeObservers();
+
+		await waitFor(() => {
+			expect(window.electronAPI.setHudOverlaySize).toHaveBeenCalled();
+		});
+
+		const [, height] = lastRequestedHudSize();
+		// The window is already tall enough for a full-height popover, so opening one
+		// costs no native resize -- that is what stops the HUD jumping on first open.
+		expect(height).toBeGreaterThanOrEqual(
+			HUD_BAR_BOTTOM + 56 + HUD_POPOVER_GAP + HUD_POPOVER_MAX_HEIGHT,
+		);
+	});
+
+	it("reclaims the overlay once the content drops well below what was granted", async () => {
+		renderLaunchWindow();
+
+		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
+			"[data-tray-layout]",
+		) as HTMLElement;
+		// A bogus oversized reading (e.g. an unstyled first paint in dev) must not
+		// leave the overlay permanently inflated.
+		stubBox(bar, 1400, 700);
+		await flushResizeObservers();
+		const [inflatedWidth, inflatedHeight] = lastRequestedHudSize();
+
+		stubBox(bar, 400, 56);
+		await flushResizeObservers();
+
+		const [width, height] = lastRequestedHudSize();
+		expect(width).toBeLessThan(inflatedWidth);
+		expect(height).toBeLessThan(inflatedHeight);
+	});
+
+	it("does not resize the overlay when a popover opens", async () => {
+		renderLaunchWindow();
+
+		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
+			"[data-tray-layout]",
+		) as HTMLElement;
+		stubBox(bar, 400, 56);
+		await flushResizeObservers();
+
+		const sizeMock = window.electronAPI.setHudOverlaySize as unknown as {
+			mockClear: () => void;
+		};
+		sizeMock.mockClear();
+
+		fireEvent.click(screen.getByRole("button", { name: "Language: English" }));
+		await screen.findByTestId("hud-language-menu");
+		await flushResizeObservers();
+
+		expect(window.electronAPI.setHudOverlaySize).not.toHaveBeenCalled();
+	});
+
+	it("does not resize the overlay when the device-settings panel opens", async () => {
+		renderLaunchWindow();
+
+		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
+			"[data-tray-layout]",
+		) as HTMLElement;
+		stubBox(bar, 400, 56);
+		await flushResizeObservers();
+
+		const sizeMock = window.electronAPI.setHudOverlaySize as unknown as {
+			mockClear: () => void;
+		};
+		sizeMock.mockClear();
+
+		// The panel is the tallest floating surface, so the window reserves room for
+		// it up front. Growing on open would shift the bottom-anchored stack and
+		// show up as position judder — the exact thing the reserve model prevents.
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		await screen.findByTestId("hud-device-settings");
+		await flushResizeObservers();
+
+		expect(window.electronAPI.setHudOverlaySize).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByTestId("launch-device-settings-button"));
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+		});
+		await flushResizeObservers();
+
+		expect(window.electronAPI.setHudOverlaySize).not.toHaveBeenCalled();
+	});
+
+	it("reports an opened popover as part of the rect kept on screen", async () => {
+		renderLaunchWindow();
+
+		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
+			"[data-tray-layout]",
+		) as HTMLElement;
+		stubBox(bar, 400, 56);
+		await flushResizeObservers();
+
+		fireEvent.click(screen.getByRole("button", { name: "Language: English" }));
+		await screen.findByTestId("hud-language-menu");
+		// The anchor wraps the bar and the stack above it: with the menu open it is
+		// taller than the bar, and that whole height must stay inside the work area.
+		const stackHeight = 56 + HUD_POPOVER_GAP + 300;
+		stubBox(bar.parentElement as HTMLElement, 400, stackHeight);
+		await flushResizeObservers();
+
+		// The stub sits at (0, 0), which is not where the stack is in the allocated
+		// window. The reported position must come from the allocation, not the
+		// measurement: a measured one can belong to a viewport the main process has
+		// already resized, and anchoring the next layout flip on it walks the bar (#951).
+		const sizeCalls = (
+			window.electronAPI.setHudOverlaySize as unknown as {
+				mock: { calls: [number, number, unknown][] };
+			}
+		).mock.calls;
+		const [allocatedWidth, allocatedHeight] = sizeCalls[sizeCalls.length - 1];
+		expect(window.electronAPI.setHudOverlayContent).toHaveBeenLastCalledWith({
+			x: (allocatedWidth - 400) / 2,
+			y: allocatedHeight - HUD_BAR_BOTTOM - stackHeight,
+			width: 400,
+			height: stackHeight,
+		});
+	});
+
+	it("grows the HUD overlay tall enough to fit the system language prompt", async () => {
+		i18nState.value.systemLocaleSuggestion = "zh-CN";
+
+		renderLaunchWindow();
+
+		expect(await screen.findByText("Use your system language?")).toBeInTheDocument();
+
+		const bar = (await screen.findByTestId("hud-drag-handle")).closest(
+			"[data-tray-layout]",
+		) as HTMLElement;
+		stubBox(bar, 400, 56);
+		const noticeHeight = 130;
+		stubBox(screen.getByTestId("hud-notice-column"), 360, noticeHeight);
+		await flushResizeObservers();
+
+		await waitFor(() => {
+			expect(window.electronAPI.setHudOverlaySize).toHaveBeenCalled();
+		});
+
+		const [, height] = lastRequestedHudSize();
+		// Bar + popover reserve + the notice stacked above it, all of it on screen.
+		expect(height).toBeGreaterThanOrEqual(
+			HUD_BAR_BOTTOM + 56 + HUD_POPOVER_GAP + HUD_POPOVER_MAX_HEIGHT + noticeHeight,
+		);
+	});
+});
+
+describe("LaunchWindow language menu", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("sizes the menu from CSS instead of the overlay window's own height", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByRole("button", { name: "Language: English" }));
+
+		const menu = await screen.findByTestId("hud-language-menu");
+		// A measured maxHeight/bottom is what used to truncate the list to whatever
+		// the (initially tiny) overlay window could fit, then let it grow later when
+		// the window grew for an unrelated reason -- e.g. after dragging the HUD.
+		expect(menu.style.maxHeight).toBe("");
+		expect(menu.style.bottom).toBe("");
+		// And it lives inside the HUD stack, not portaled out to the document body.
+		expect(menu.closest("[data-tray-layout]")).toBeNull();
+		expect(menu.parentElement?.parentElement).toContainElement(
+			screen.getByTestId("hud-drag-handle"),
+		);
+	});
+});
+
+describe("LaunchWindow popover dismissal", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	/** Opens the language menu the way a user does, and hands back its panel. */
+	async function openLanguageMenu() {
+		fireEvent.click(await screen.findByRole("button", { name: "Language: English" }));
+		return await screen.findByTestId("hud-language-menu");
+	}
+
+	/** Same for the device-settings panel. */
+	async function openDeviceSettings() {
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		return await screen.findByTestId("hud-device-settings");
+	}
+
+	it("closes the language menu on Escape without changing the locale", async () => {
+		renderLaunchWindow();
+		await openLanguageMenu();
+
+		fireEvent.keyDown(window, { key: "Escape" });
+
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-language-menu")).not.toBeInTheDocument();
+		});
+		// Escape dismisses; it must never pick whatever entry happened to be under
+		// the cursor or focused.
+		expect(i18nState.value.setLocale).not.toHaveBeenCalled();
+		expect(i18nState.value.resolveSystemLocaleSuggestion).not.toHaveBeenCalled();
+	});
+
+	it("closes the language menu on a pointerdown outside the trigger and the panel", async () => {
+		renderLaunchWindow();
+		await openLanguageMenu();
+
+		// The HUD window is mostly empty reserve above the bar; a press there is a
+		// real DOM pointerdown on the root, and it has to dismiss.
+		fireEvent.pointerDown(document.body);
+
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-language-menu")).not.toBeInTheDocument();
+		});
+		expect(i18nState.value.setLocale).not.toHaveBeenCalled();
+	});
+
+	it("keeps the language menu open for a pointerdown inside the panel", async () => {
+		renderLaunchWindow();
+		const menu = await openLanguageMenu();
+
+		fireEvent.pointerDown(menu);
+
+		expect(screen.getByTestId("hud-language-menu")).toBeInTheDocument();
+	});
+
+	it("closes the language menu when the HUD window loses focus", async () => {
+		renderLaunchWindow();
+		await openLanguageMenu();
+
+		// A click that lands beyond the HUD's native window produces no pointerdown
+		// in this renderer at all — the only signal it gets is the window blur. And
+		// once focus is gone, Escape can no longer be delivered here either, so this
+		// is the one listener that can unstick that state (issue #435).
+		fireEvent.blur(window);
+
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-language-menu")).not.toBeInTheDocument();
+		});
+		expect(i18nState.value.setLocale).not.toHaveBeenCalled();
+	});
+
+	it("closes the device-settings panel on Escape", async () => {
+		renderLaunchWindow();
+		await openDeviceSettings();
+
+		fireEvent.keyDown(window, { key: "Escape" });
+
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+		});
+	});
+
+	it("closes the device-settings panel on a pointerdown outside the trigger and the panel", async () => {
+		renderLaunchWindow();
+		await openDeviceSettings();
+
+		fireEvent.pointerDown(document.body);
+
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+		});
+	});
+
+	it("closes the device-settings panel when the HUD window loses focus", async () => {
+		renderLaunchWindow();
+		await openDeviceSettings();
+
+		fireEvent.blur(window);
+
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+		});
+	});
+
+	it("leaves a key that is not Escape alone", async () => {
+		renderLaunchWindow();
+		await openLanguageMenu();
+
+		fireEvent.keyDown(window, { key: "a" });
+
+		expect(screen.getByTestId("hud-language-menu")).toBeInTheDocument();
+	});
+});
+
+describe("LaunchWindow device buttons", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("turns the microphone on with a single click, without opening anything", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-microphone-button"));
+
+		expect(recorderState.value.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+		expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+	});
+
+	it("turns the microphone off with a single click when it is already on", async () => {
+		recorderState.value.microphoneEnabled = true;
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-microphone-button"));
+
+		expect(recorderState.value.setMicrophoneEnabled).toHaveBeenCalledWith(false);
+	});
+
+	it("persists turning system audio on", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-system-audio-button"));
+
+		expect(recorderState.value.setSystemAudioEnabled).toHaveBeenCalledWith(true);
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({ systemAudioEnabled: true });
+	});
+
+	it("persists turning system audio off", async () => {
+		recorderState.value.systemAudioEnabled = true;
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-system-audio-button"));
+
+		expect(recorderState.value.setSystemAudioEnabled).toHaveBeenCalledWith(false);
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+			systemAudioEnabled: false,
+		});
+	});
+
+	it("persists turning the microphone on", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-microphone-button"));
+
+		expect(recorderState.value.setMicrophoneEnabled).toHaveBeenCalledWith(true);
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({ micEnabled: true });
+	});
+
+	it("persists turning the microphone off", async () => {
+		recorderState.value.microphoneEnabled = true;
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-microphone-button"));
+
+		expect(recorderState.value.setMicrophoneEnabled).toHaveBeenCalledWith(false);
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({ micEnabled: false });
+	});
+
+	it("persists switching to the system cursor", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-cursor-mode-button"));
+
+		expect(recorderState.value.setCursorCaptureMode).toHaveBeenCalledWith("system");
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+			cursorCaptureMode: "system",
+		});
+	});
+
+	it("persists switching to the editable cursor", async () => {
+		recorderState.value.cursorCaptureMode = "system";
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-cursor-mode-button"));
+
+		expect(recorderState.value.setCursorCaptureMode).toHaveBeenCalledWith("editable-overlay");
+		expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({
+			cursorCaptureMode: "editable-overlay",
+		});
+	});
+
+	it("does not mutate toggles or preferences while recording", async () => {
+		recorderState.value.recording = true;
+		renderLaunchWindow();
+
+		const systemAudioButton = await screen.findByTestId("launch-system-audio-button");
+		const microphoneButton = await screen.findByTestId("launch-microphone-button");
+		const cursorButton = await screen.findByTestId("launch-cursor-mode-button");
+
+		// Locked, not `disabled`: see the next test.
+		expect(systemAudioButton).toHaveAttribute("aria-disabled", "true");
+		expect(microphoneButton).toHaveAttribute("aria-disabled", "true");
+		expect(cursorButton).toHaveAttribute("aria-disabled", "true");
+		fireEvent.click(systemAudioButton);
+		fireEvent.click(microphoneButton);
+		fireEvent.click(cursorButton);
+
+		expect(recorderState.value.setSystemAudioEnabled).not.toHaveBeenCalled();
+		expect(recorderState.value.setMicrophoneEnabled).not.toHaveBeenCalled();
+		expect(recorderState.value.setCursorCaptureMode).not.toHaveBeenCalled();
+		expect(window.electronAPI.setRecordingPrefs).not.toHaveBeenCalled();
+	});
+
+	// A natively disabled button takes no pointer or focus events, so its tooltip could never
+	// open. During a take the toggles show what is being recorded, so they stay reachable.
+	it("keeps the toggles reachable with their tooltip while recording", async () => {
+		recorderState.value.recording = true;
+		recorderState.value.systemAudioEnabled = true;
+		renderLaunchWindow();
+		await screen.findByTestId("launch-cursor-mode-button");
+
+		const locked = [
+			["launch-system-audio-button", "System audio: records the sound your computer plays"],
+			["launch-microphone-button", "Microphone: records your voice"],
+			[
+				"launch-webcam-button",
+				"Camera: records you as a separate layer you can move in the editor",
+			],
+			[
+				"launch-cursor-mode-button",
+				"Editable cursor: recorded separately, so you can restyle it and auto-zoom in the editor",
+			],
+			["launch-device-settings-button", "Device settings"],
+		] as const;
+		for (const [testId, sentence] of locked) {
+			expect(screen.getByTestId(testId)).not.toBeDisabled();
+			expect(await tooltipOn(testId)).toBe(sentence);
+		}
+		expect(screen.getByTestId("launch-system-audio-button")).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+	});
+
+	it("keeps a local toggle change when preference persistence fails", async () => {
+		const error = new Error("preference store unavailable");
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		vi.mocked(window.electronAPI.setRecordingPrefs).mockRejectedValue(error);
+
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-system-audio-button"));
+
+		expect(recorderState.value.setSystemAudioEnabled).toHaveBeenCalledWith(true);
+		await waitFor(() => {
+			expect(warnSpy).toHaveBeenCalledWith("Failed to persist the device preference:", error);
+		});
+
+		warnSpy.mockRestore();
+	});
+
+	it("turns the camera on with a single click, without opening anything", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-webcam-button"));
+
+		await waitFor(() => {
+			expect(recorderState.value.setWebcamEnabled).toHaveBeenCalledWith(true);
+		});
+		expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+	});
+
+	it("does not store the camera as on when it cannot be turned on (#967)", async () => {
+		recorderState.value.setWebcamEnabled.mockResolvedValueOnce(false);
+
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-webcam-button"));
+
+		await waitFor(() => {
+			expect(recorderState.value.setWebcamEnabled).toHaveBeenCalledWith(true);
+		});
+		// Let the toggle's then() run before checking what it stored.
+		await act(async () => undefined);
+		expect(window.electronAPI.setRecordingPrefs).not.toHaveBeenCalledWith({ camEnabled: true });
+	});
+
+	it("stores the camera as on once it was turned on", async () => {
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-webcam-button"));
+
+		await waitFor(() => {
+			expect(window.electronAPI.setRecordingPrefs).toHaveBeenCalledWith({ camEnabled: true });
+		});
+	});
+
+	it("turns the camera off with a single click when it is already on", async () => {
+		recorderState.value.webcamEnabled = true;
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-webcam-button"));
+
+		await waitFor(() => {
+			expect(recorderState.value.setWebcamEnabled).toHaveBeenCalledWith(false);
+		});
+	});
+});
+
+describe("LaunchWindow device settings", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("opens from the settings button and closes again from its own Close control", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+		expect(panel).toBeInTheDocument();
+
+		fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+
+		await waitFor(() => {
+			expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+		});
+	});
+
+	it("selects a device without switching it on", async () => {
+		micDevicesState.value = [
+			{ deviceId: "mic-a", label: "Mic A", groupId: "g" },
+			{ deviceId: "mic-b", label: "Mic B", groupId: "g" },
+		];
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+
+		fireEvent.click(within(panel).getByRole("menuitemradio", { name: /Mic B/ }));
+
+		// Selection is a preference, not an activation — that separation is the
+		// whole reason the picker moved out of the mic button.
+		expect(recorderState.value.setMicrophoneDeviceId).toHaveBeenCalledWith("mic-b");
+		expect(recorderState.value.setMicrophoneEnabled).not.toHaveBeenCalled();
+	});
+
+	it("uses an unconstrained meter request for the default microphone pseudo-device", async () => {
+		micDevicesState.value = [{ deviceId: "default", label: "System default", groupId: "g" }];
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		await screen.findByTestId("hud-device-settings");
+		expect(audioLevelMeter.call).toHaveBeenLastCalledWith({
+			enabled: true,
+			deviceId: undefined,
+		});
+	});
+
+	// The gear is disabled while recording, but a panel that was already open stays mounted —
+	// and the main process refuses the check for the length of a take. Offering the button then
+	// would give the user a click that does nothing at all: no dialog, no error, no feedback.
+	it("withdraws the update check when a recording starts under an open panel", async () => {
+		const { rerender } = renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+		expect(await within(panel).findByTestId("hud-check-for-updates")).toBeInTheDocument();
+
+		recorderState.value.recording = true;
+		rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		// The version stays: "what am I running" is exactly the question a take does not change.
+		expect(within(panel).queryByTestId("hud-check-for-updates")).not.toBeInTheDocument();
+		expect(within(panel).getByText("Version 1.9.6")).toBeInTheDocument();
+	});
+
+	// Changing the capture resolution re-runs the webcam acquisition effect, whose cleanup stops
+	// every track of the live stream — the same stream the browser, macOS and Linux paths hand to
+	// the webcam MediaRecorder. Mid-take that ends the camera partway through, without a word.
+	it("ignores a camera quality change made in a panel left open by a recording", async () => {
+		cameraDevicesState.devices = [{ deviceId: "cam-1", label: "Logitech BRIO" }];
+		const { rerender } = renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+
+		recorderState.value.recording = true;
+		rerender(
+			<TooltipProvider>
+				<LaunchWindow />
+			</TooltipProvider>,
+		);
+
+		fireEvent.click(within(panel).getByTestId("camera-quality-1080p"));
+
+		expect(recorderState.value.setWebcamQuality).not.toHaveBeenCalled();
+		expect(window.electronAPI.setRecordingPrefs).not.toHaveBeenCalled();
+	});
+
+	it("is unavailable while recording, when devices can't be changed anyway", async () => {
+		recorderState.value.recording = true;
+
+		renderLaunchWindow();
+
+		const gear = await screen.findByTestId("launch-device-settings-button");
+		expect(gear).toHaveAttribute("aria-disabled", "true");
+		fireEvent.click(gear);
+		expect(screen.queryByTestId("hud-device-settings")).not.toBeInTheDocument();
+	});
+
+	it("shows the running version and hands the update check to the main process", async () => {
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+
+		expect(await within(panel).findByText("Version 1.9.6")).toBeInTheDocument();
+
+		fireEvent.click(within(panel).getByTestId("hud-check-for-updates"));
+
+		expect(updateCheckMock).toHaveBeenCalledTimes(1);
+	});
+
+	// A Microsoft Store, Flathub, Snap or Nix copy is kept current by its package manager, and
+	// pointing its user at a GitHub download starts a second, parallel install that then drifts
+	// forever. The version still shows — it is the answer to "what am I running?", not an offer.
+	it("offers no update check where a package manager owns the update", async () => {
+		appInfoState.value = { version: "1.9.6", canCheckForUpdates: false };
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+
+		expect(await within(panel).findByText("Version 1.9.6")).toBeInTheDocument();
+		expect(within(panel).queryByTestId("hud-check-for-updates")).not.toBeInTheDocument();
+	});
+
+	it("reads as checking until the main process reports a verdict", async () => {
+		let settleCheck: (() => void) | undefined;
+		updateCheckMock.mockImplementation(
+			() =>
+				new Promise<undefined>((resolve) => {
+					settleCheck = () => resolve(undefined);
+				}),
+		);
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		const panel = await screen.findByTestId("hud-device-settings");
+		const button = await within(panel).findByTestId("hud-check-for-updates");
+
+		fireEvent.click(button);
+
+		await waitFor(() => {
+			expect(button).toBeDisabled();
+		});
+		expect(button).toHaveTextContent("Checking…");
+
+		await act(async () => {
+			settleCheck?.();
+		});
+
+		expect(button).toBeEnabled();
+		expect(button).toHaveTextContent("Check for updates");
+	});
+});
+
+// ScreenCaptureKit captures the microphone from macOS 15 only; on 13 and 14 every take
+// came out without the voice, and without a word (#700).
+describe("LaunchWindow microphone before macOS 15", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+		micDevicesState.value = [{ deviceId: "mic-a", label: "Mic A", groupId: "g" }];
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	async function openDeviceSettings() {
+		renderLaunchWindow();
+		fireEvent.click(await screen.findByTestId("launch-device-settings-button"));
+		return screen.findByTestId("hud-device-settings");
+	}
+
+	it("offers no microphone on macOS 14: no button, no picker, no meter", async () => {
+		systemVersionState.value = "14.6.1";
+
+		const panel = await openDeviceSettings();
+
+		expect(screen.queryByTestId("launch-microphone-button")).toBeNull();
+		expect(within(panel).queryByText("Input device")).toBeNull();
+		expect(within(panel).queryByRole("menuitemradio", { name: /Mic A/ })).toBeNull();
+		// Nothing asks for the microphone: enumerating it is what raises the prompt.
+		expect(micDevicesState.enabled).toBe(false);
+		expect(audioLevelMeter.call).toHaveBeenLastCalledWith(
+			expect.objectContaining({ enabled: false }),
+		);
+		expect(screen.getByTestId("launch-webcam-button")).toBeInTheDocument();
+	});
+
+	it("offers it from macOS 15", async () => {
+		systemVersionState.value = "15.0";
+
+		const panel = await openDeviceSettings();
+
+		expect(screen.getByTestId("launch-microphone-button")).toBeInTheDocument();
+		expect(within(panel).getByText("Input device")).toBeInTheDocument();
+		expect(within(panel).getByRole("menuitemradio", { name: /Mic A/ })).toBeInTheDocument();
+		expect(micDevicesState.enabled).toBe(true);
+	});
+});
+
+describe("LaunchWindow HUD drag", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+		resizeCallbacks.length = 0;
+		vi.stubGlobal("ResizeObserver", CapturingResizeObserver);
+		// jsdom doesn't implement the Pointer Capture API; stub it so the drag handlers
+		// (which call set/has/releasePointerCapture) don't throw.
+		HTMLElement.prototype.setPointerCapture = vi.fn();
+		HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
+		HTMLElement.prototype.releasePointerCapture = vi.fn();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("sends the pointer's total travel, not per-frame deltas", async () => {
+		renderLaunchWindow();
+
+		const dragHandle = await screen.findByTestId("hud-drag-handle");
+
+		fireEvent.pointerDown(dragHandle, { screenX: 100, screenY: 100 });
+		expect(window.electronAPI.beginHudOverlayDrag).toHaveBeenCalledTimes(1);
+
+		fireEvent.pointerMove(dragHandle, { screenX: 140, screenY: 130 });
+		fireEvent.pointerMove(dragHandle, { screenX: 150, screenY: 140 });
+
+		// Absolute offsets from the drag origin: the main process applies them to the
+		// position it pinned at pointerdown, so nothing accumulates or drifts.
+		expect(window.electronAPI.dragHudOverlayTo).toHaveBeenNthCalledWith(1, 40, 30);
+		expect(window.electronAPI.dragHudOverlayTo).toHaveBeenNthCalledWith(2, 50, 40);
+
+		fireEvent.pointerUp(dragHandle, { screenX: 150, screenY: 140 });
+		expect(window.electronAPI.endHudOverlayDrag).toHaveBeenCalledTimes(1);
+	});
+
+	it("suppresses ResizeObserver-driven measurement while dragging, and measures once on release", async () => {
+		renderLaunchWindow();
+
+		const dragHandle = await screen.findByTestId("hud-drag-handle");
+
+		// A bar wide enough that it genuinely outgrows the reserved window width, so a
+		// measurement would produce a `setHudOverlaySize` call if it weren't suppressed.
+		const bar = dragHandle.closest("[data-tray-layout]") as HTMLElement;
+		stubBox(bar, 900, 56);
+
+		const sizeMock = window.electronAPI.setHudOverlaySize as unknown as {
+			mockClear: () => void;
+		};
+		sizeMock.mockClear();
+
+		fireEvent.pointerDown(dragHandle, { screenX: 100, screenY: 100 });
+
+		await flushResizeObservers();
+		expect(window.electronAPI.setHudOverlaySize).not.toHaveBeenCalled();
+
+		fireEvent.pointerMove(dragHandle, { screenX: 140, screenY: 130 });
+		fireEvent.pointerUp(dragHandle, { screenX: 140, screenY: 130 });
+
+		// Content is re-measured once the drag ends, so a real size change made mid-drag
+		// still gets picked up promptly.
+		await waitFor(() => {
+			expect(window.electronAPI.setHudOverlaySize).toHaveBeenCalled();
+		});
+	});
+});
+
+describe("LaunchWindow software encoder fallback notice", () => {
+	beforeEach(() => {
+		platformState.value = "darwin";
+		resetLaunchMocks();
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("stays hidden while the recorder reports no fallback", () => {
+		renderLaunchWindow();
+
+		expect(screen.queryByText("Switched to software encoding")).not.toBeInTheDocument();
+	});
+
+	it("shows the notice when the recorder reports a software fallback", async () => {
+		recorderState.value.softwareEncoderFallbackNoticeVisible = true;
+
+		renderLaunchWindow();
+
+		expect(await screen.findByText("Switched to software encoding")).toBeInTheDocument();
+		expect(screen.getByText(/fell back to software H\.264 encoding/)).toBeInTheDocument();
+	});
+
+	it("dismisses the notice without persisting when Got it is clicked", async () => {
+		recorderState.value.softwareEncoderFallbackNoticeVisible = true;
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByRole("button", { name: "Got it" }));
+
+		expect(recorderState.value.dismissSoftwareEncoderFallbackNotice).toHaveBeenCalledTimes(1);
+		expect(recorderState.value.dismissSoftwareEncoderFallbackNotice).toHaveBeenCalledWith();
+	});
+
+	it("persists the suppression when Don't show again is clicked", async () => {
+		recorderState.value.softwareEncoderFallbackNoticeVisible = true;
+
+		renderLaunchWindow();
+
+		fireEvent.click(await screen.findByRole("button", { name: "Don't show again" }));
+
+		expect(recorderState.value.dismissSoftwareEncoderFallbackNotice).toHaveBeenCalledTimes(1);
+		expect(recorderState.value.dismissSoftwareEncoderFallbackNotice).toHaveBeenCalledWith(true);
+	});
+});

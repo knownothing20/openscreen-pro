@@ -1,0 +1,157 @@
+{
+	"tooltips": {
+		"hideHUD": "Hide recording bar",
+		"hideHUDTip": "Hide the recording bar. Show it again from the tray icon.",
+		"closeApp": "Quit OpenScreen",
+		"restartRecording": "Delete this recording and start a new one",
+		"cancelRecording": "Stop and delete this recording",
+		"pauseRecording": "Pause recording",
+		"resumeRecording": "Resume recording",
+		"useVerticalTray": "Switch to vertical bar",
+		"useHorizontalTray": "Switch to horizontal bar",
+		"changeSource": "Choose another screen or window",
+		"systemAudio": "System audio: records the sound your computer plays",
+		"microphone": "Microphone: records your voice",
+		"camera": "Camera: records you as a separate layer you can move in the editor",
+		"openStudio": "Open Studio: the editor for your recordings",
+		"openNotes": "Open Notes: text to read while you record",
+		"openNotesPlaceholder": "Take notes here...",
+		"notesToolbar": {
+			"bold": "Bold",
+			"italic": "Italic",
+			"strikethrough": "Strikethrough",
+			"bulletList": "Bullet list",
+			"numberedList": "Numbered list",
+			"blockquote": "Blockquote",
+			"codeBlock": "Code block",
+			"play": "Start auto-scroll",
+			"pause": "Pause auto-scroll",
+			"speed": "Scroll speed",
+			"decreaseSpeed": "Decrease scroll speed",
+			"increaseSpeed": "Increase scroll speed",
+			"fontSize": "Font size",
+			"decreaseFontSize": "Decrease font size",
+			"increaseFontSize": "Increase font size",
+			"mirror": "Mirror horizontally",
+			"mirrorTip": "Flip the text left to right, to read it in a mirror"
+		}
+	},
+	"audio": {
+		"systemAudio": "System audio",
+		"microphone": "Microphone",
+		"inputDevice": "Input device"
+	},
+	"webcam": {
+		"searching": "Searching...",
+		"noneFound": "No camera found",
+		"unavailable": "Camera unavailable",
+		"camera": "Camera",
+		"cameraDevice": "Camera device",
+		"quality": "Camera quality",
+		"quality1080p": "1080p",
+		"quality1440p": "1440p",
+		"quality2160p": "4K"
+	},
+	"cursor": {
+		"name": "Editable cursor",
+		"editableTip": "Editable cursor: recorded separately, so you can restyle it and auto-zoom in the editor",
+		"systemTip": "System cursor: your real cursor, recorded in the video. No restyling, no auto-zoom."
+	},
+	"sourceSelector": {
+		"loading": "Loading screens and windows...",
+		"screens": "Screens ({{count}})",
+		"windows": "Windows ({{count}})",
+		"emptyTitle": "No screens or windows found",
+		"emptyDescription": "If you just granted screen recording permission, reload this picker. On macOS you may need to reopen OpenScreen.",
+		"loadFailedDescription": "OpenScreen couldn't load your screens and windows. Reload this picker and try again.",
+		"defaultSourceName": "Screen"
+	},
+	"recording": {
+		"selectSource": "Choose a screen or window to record",
+		"systemPicker": "Your system will ask what to share",
+		"start": "Start recording",
+		"stop": "Stop and save the recording",
+		"saving": "Saving..."
+	},
+	"language": "Language",
+	"languageWithName": "Language: {{language}}",
+	"systemLanguagePrompt": {
+		"title": "Use your system language?",
+		"description": "We detected {{language}} as your system language. Do you want to switch OpenScreen to {{language}}?",
+		"switch": "Switch to {{language}}",
+		"keepDefault": "Keep current language"
+	},
+	"softwareEncoderFallback": {
+		"title": "Switched to a backup encoder",
+		"description": "Your graphics card's encoder didn't start, so OpenScreen switched to a backup. Your recording is fine, though your computer may work a little harder.",
+		"dismiss": "Got it",
+		"dontShowAgain": "Don't show again"
+	},
+	"deviceSettings": {
+		"title": "Device settings",
+		"close": "Close",
+		"micLevel": "Input level",
+		"micHint": "Speak to check your microphone",
+		"noMicrophones": "No microphone found",
+		"preview": "Preview",
+		"previewUnavailable": "Preview unavailable",
+		"about": "About",
+		"version": "Version {{version}}",
+		"checkingForUpdates": "Checking…"
+	},
+	"permissions": {
+		"title": "OpenScreen needs a few permissions",
+		"subtitle": "macOS asks you to grant each one once. You can change them at any time in System Settings.",
+		"level": {
+			"required": "Required",
+			"recommended": "Recommended",
+			"optional": "Optional"
+		},
+		"rows": {
+			"screen": {
+				"name": "Screen & system audio",
+				"description": "To record your screen and the sound your Mac plays."
+			},
+			"systemAudio": {
+				"name": "System audio",
+				"description": "To record the sound your Mac plays. Choosing a screen or window needs no permission."
+			},
+			"accessibility": {
+				"name": "Accessibility",
+				"description": "To show the right cursor (pointer, text) in your recordings."
+			},
+			"microphone": {
+				"name": "Microphone",
+				"description": "To record your voice."
+			},
+			"camera": {
+				"name": "Camera",
+				"description": "To add your webcam to your recordings."
+			}
+		},
+		"status": {
+			"granted": "Allowed",
+			"restricted": "Managed by your organization"
+		},
+		"actions": {
+			"continue": "Continue",
+			"allow": "Allow",
+			"openSettings": "Open Settings",
+			"restart": "Restart OpenScreen",
+			"start": "Get started"
+		},
+		"help": {
+			"screenPrompt": "macOS will then ask you to turn on OpenScreen in System Settings.",
+			"screenSettings": "In System Settings, turn on OpenScreen. If macOS offers to quit and reopen it, accept: this window will come back.",
+			"screenNotListed": "OpenScreen isn't in the list? Click +, then choose OpenScreen in Applications.",
+			"screenRestart": "Allowed. OpenScreen needs to restart before it can use it.",
+			"screenRecurring": "On your first recording, macOS will ask whether OpenScreen may access your screen directly, without the system picker. Click Allow. macOS asks again from time to time; that's expected.",
+			"systemAudioPrompt": "macOS will ask you to allow OpenScreen to record the sound your Mac plays.",
+			"systemAudioRequested": "If you said no, turn on OpenScreen under “System Audio Recording Only” in System Settings."
+		},
+		"footer": {
+			"screenRequired": "Screen recording is needed to record.",
+			"ready": "You're all set."
+		}
+	}
+}
