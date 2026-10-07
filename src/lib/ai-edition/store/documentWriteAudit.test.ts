@@ -137,6 +137,11 @@ const DECLARED: WritePath[] = [
 		"save",
 		"gesture",
 	),
+	// Binding the bookmarks a take carried to the asset it just became. Unattended, like
+	// the timeline seed beside it: the markers were dropped mid-recording, not in the
+	// editor, so nothing here is an edit the user could want to undo — and recording it
+	// would make their first Ctrl+Z delete markers they dropped minutes earlier.
+	w("src/components/ai-edition/recordingImport.ts", "importPendingRecording", "save", "automatic"),
 	// Renaming the project from the title field.
 	w("src/components/ai-edition/NewEditorShell.tsx", "handleRenameProject", "save", "gesture"),
 	// Ctrl+S / File > Save.
@@ -287,6 +292,11 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeClip", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeRegion", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeRegions", "save", "gesture"),
+	// Recording markers: the ✕ on a tick, and the label typed into one. Both are the
+	// user's own edits, and both are undoable for that reason — a marker they deleted by
+	// mistake comes back with Ctrl+Z, exactly like a region.
+	w("src/lib/ai-edition/store/useTimeline.ts", "removeMarker", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "setMarkerLabel", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "saveZoomPatch", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setTrimEntries", "save", "gesture"),
 	// The live halves of the two drags.

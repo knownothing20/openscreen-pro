@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "Zur Markierung bei {{time}} springen",
+		"edit": "Markierung umbenennen",
+		"delete": "Markierung löschen",
+		"labelPlaceholder": "Bezeichnung"
+	},
 	"buttons": {
 		"addZoom": "Zoom zum aktuellen Zeitpunkt hinzufügen",
 		"autoFocusAll": "Auto-Fokus für alle Zooms",

@@ -6,6 +6,7 @@ import {
 	type WebcamQualityId,
 	webcamQualityFrom,
 } from "../src/hooks/webcamCaptureTarget";
+import { clampMarkerToastOpacity, DEFAULT_MARKER_TOAST_OPACITY } from "../src/lib/markerToast";
 import type { CursorCaptureMode } from "../src/lib/recordingSession";
 
 export interface RecordingPreferences {
@@ -29,6 +30,12 @@ export interface RecordingPreferences {
 	 * behaviour it gates has been on for every such installation.
 	 */
 	autoZoomEnabled: boolean;
+	/**
+	 * How opaque the HUD's own transient notices are (the "Marker added" toast), 0.2–1.
+	 * The HUD sits over whatever the user is recording, so a solid card in the corner is
+	 * both in the way and in the shot; this is the knob for how much it intrudes.
+	 */
+	markerToastOpacity: number;
 }
 
 export const DEFAULT_RECORDING_PREFERENCES: RecordingPreferences = {
@@ -43,7 +50,14 @@ export const DEFAULT_RECORDING_PREFERENCES: RecordingPreferences = {
 	cursorCaptureMode: "editable-overlay",
 	hideDesktopIcons: false,
 	autoZoomEnabled: true,
+	markerToastOpacity: DEFAULT_MARKER_TOAST_OPACITY,
 };
+
+/** A toast opacity inside the usable range. Anything unusable — absent in a settings file
+ *  written before the setting existed, a string, a NaN — reads as the default. */
+function clampToastOpacity(value: unknown): number {
+	return clampMarkerToastOpacity(value);
+}
 
 export interface RecordingSourceDescriptor {
 	platform: NodeJS.Platform;
@@ -122,6 +136,7 @@ function parseRecording(raw: RawSettings): RecordingPreferences {
 				: DEFAULT_RECORDING_PREFERENCES.cursorCaptureMode,
 		hideDesktopIcons: bool(raw.hideDesktopIcons, DEFAULT_RECORDING_PREFERENCES.hideDesktopIcons),
 		autoZoomEnabled: bool(raw.autoZoomEnabled, DEFAULT_RECORDING_PREFERENCES.autoZoomEnabled),
+		markerToastOpacity: clampToastOpacity(raw.markerToastOpacity),
 	};
 }
 
@@ -184,6 +199,9 @@ function validateRecordingPatch(patch: Partial<RecordingPreferences>): void {
 		// one the caller asked for.
 		if (key === "camQuality" && !WEBCAM_QUALITY_IDS.includes(value as WebcamQualityId)) {
 			throw new TypeError("camQuality is invalid");
+		}
+		if (key === "markerToastOpacity" && (typeof value !== "number" || !Number.isFinite(value))) {
+			throw new TypeError("markerToastOpacity must be a number");
 		}
 	}
 }

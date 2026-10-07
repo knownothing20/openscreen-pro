@@ -41,6 +41,7 @@
 	"recording": {
 		"failedCameraAccess": "请求摄像头权限失败。",
 		"cameraBlocked": "摄像头权限已被阻止。请在系统设置中启用以使用摄像头。",
+		"markerAdded": "已添加标记",
 		"systemAudioUnavailable": "系统音频不可用。将在无系统音频的情况下录制。",
 		"microphoneDenied": "麦克风权限被拒绝。录制将继续，但不包含音频。",
 		"cameraDenied": "摄像头权限被拒绝。录制将继续，但不包含摄像头画面。",

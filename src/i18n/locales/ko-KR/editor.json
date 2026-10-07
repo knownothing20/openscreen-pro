@@ -41,6 +41,7 @@
 	"recording": {
 		"failedCameraAccess": "카메라 접근 권한 요청에 실패했습니다.",
 		"cameraBlocked": "카메라 접근이 차단되어 있습니다. 시스템 설정에서 권한을 허용해 주세요.",
+		"markerAdded": "마커를 추가했습니다",
 		"systemAudioUnavailable": "시스템 오디오를 사용할 수 없습니다. 시스템 오디오 없이 녹화합니다.",
 		"microphoneDenied": "마이크 접근이 거부되었습니다. 오디오 없이 녹화를 계속합니다.",
 		"cameraDenied": "카메라 접근이 거부되었습니다. 웹캠 없이 녹화를 계속합니다.",

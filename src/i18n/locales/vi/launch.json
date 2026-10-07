@@ -14,6 +14,7 @@
 		"microphone": "Micro: ghi giọng nói của bạn",
 		"camera": "Máy ảnh: ghi bạn thành một lớp riêng có thể di chuyển trong trình chỉnh sửa",
 		"openStudio": "Mở Studio: trình chỉnh sửa cho các bản ghi hình của bạn",
+		"addMarker": "Thêm dấu mốc (Ctrl+Alt+M)",
 		"openNotes": "Mở ghi chú: văn bản để đọc khi ghi hình",
 		"openNotesPlaceholder": "Ghi chú của bạn tại đây...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "Không hiển thị lại"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "Độ mờ của thông báo",
+		"noticeOpacityHigh": "Đặc",
+		"noticeOpacityMedium": "Bán trong suốt",
+		"noticeOpacityLow": "Nhạt",
 		"title": "Cài đặt thiết bị",
 		"close": "Đóng",
 		"micLevel": "Mức đầu vào",

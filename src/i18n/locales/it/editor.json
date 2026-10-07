@@ -41,6 +41,7 @@
 	"recording": {
 		"failedCameraAccess": "Impossibile richiedere l'accesso alla fotocamera.",
 		"cameraBlocked": "L'accesso alla fotocamera è bloccato. Abilita nelle impostazioni di sistema l'utilizzo della webcam.",
+		"markerAdded": "Segnalibro aggiunto",
 		"systemAudioUnavailable": "Audio di sistema non disponibile. Registrazione senza audio di sistema.",
 		"microphoneDenied": "Accesso al microfono negato. La registrazione continuerà senza audio.",
 		"cameraDenied": "Accesso alla fotocamera negato. La registrazione continuerà senza webcam.",

@@ -74,6 +74,7 @@ const sampleDoc = {
 	annotations: [],
 	zoomRanges: [],
 	audioTracks: [],
+	markers: [],
 	legacyEditor: null,
 };
 

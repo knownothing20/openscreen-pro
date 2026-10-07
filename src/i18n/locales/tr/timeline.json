@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "{{time}} işaretine git",
+		"edit": "İşareti yeniden adlandır",
+		"delete": "İşareti sil",
+		"labelPlaceholder": "İşaret etiketi"
+	},
 	"buttons": {
 		"addZoom": "Şu anki zamanda yakınlaştırma ekle",
 		"autoFocusAll": "Tüm yakınlaştırmalar için Otomatik Odak",

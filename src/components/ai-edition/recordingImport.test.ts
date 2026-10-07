@@ -57,12 +57,16 @@ function stubElectronApi(
 	screenVideoPath: string | null,
 	cursorCaptureMode: "editable-overlay" | "system" = "editable-overlay",
 	warning?: string,
+	markers?: { id: string; sourceTimeSec: number; label?: string; createdAt?: string }[],
 ) {
 	let session: {
 		screenVideoPath: string;
 		createdAt: number;
 		cursorCaptureMode: "editable-overlay" | "system";
-	} | null = screenVideoPath ? { screenVideoPath, createdAt: 0, cursorCaptureMode } : null;
+		markers?: typeof markers;
+	} | null = screenVideoPath
+		? { screenVideoPath, createdAt: 0, cursorCaptureMode, ...(markers ? { markers } : {}) }
+		: null;
 	const api = {
 		getCurrentRecordingSession: vi.fn(async () =>
 			session ? { success: true, session, ...(warning ? { warning } : {}) } : { success: false },
@@ -106,6 +110,52 @@ describe("importPendingRecording", () => {
 		stubElectronApi(null);
 		await expect(importPendingRecording()).resolves.toBe(false);
 		expect(createProject).not.toHaveBeenCalled();
+	});
+
+	// Bookmarks dropped while the take was recording arrive on the session, and the import
+	// is the only place that can bind them: the asset they belong to does not exist until
+	// this function mints it, and a marker with no asset is one the timeline cannot place.
+	it("binds the take's markers to the asset it became", async () => {
+		const asset = {
+			id: "asset_1",
+			kind: "video" as const,
+			label: "Recording",
+			originalPath: "/recordings/recording-1.mp4",
+			durationSec: 60,
+			cameraTrack: null,
+		};
+		const base = createEmptyDocument({ projectId: "proj_stub", title: "Recording" });
+		const saveDocument = vi.fn(async (_document: AxcutDocument): Promise<boolean> => true);
+		useProjectStore.setState({
+			document: {
+				...base,
+				assets: [asset],
+				project: { ...base.project, primaryAssetId: asset.id },
+			},
+			createProject: vi.fn(async () => base),
+			addAsset: vi.fn(async () => asset),
+			replaceTimeline: vi.fn(async () => undefined),
+			saveDocument,
+		});
+		stubRecordingPrefs({});
+		stubElectronApi("/recordings/recording-1.mp4", "editable-overlay", undefined, [
+			{ id: "marker_a", sourceTimeSec: 12, createdAt: "2026-10-07T10:00:00.000Z" },
+		]);
+
+		await expect(importPendingRecording()).resolves.toBe(true);
+
+		const written = saveDocument.mock.calls
+			.map((call) => call[0])
+			.find((doc) => doc.markers.length > 0);
+		expect(written?.markers).toEqual([
+			{
+				id: "marker_a",
+				assetId: "asset_1",
+				sourceTimeSec: 12,
+				label: "",
+				createdAt: "2026-10-07T10:00:00.000Z",
+			},
+		]);
 	});
 
 	// The HUD that stopped a take which ended on its own closes as the editor opens,

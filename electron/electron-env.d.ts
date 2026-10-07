@@ -148,6 +148,13 @@ interface Window {
 			recordingId?: number,
 			cursorCaptureMode?: import("../src/lib/recordingSession").CursorCaptureMode,
 		) => Promise<void>;
+		/** Bookmark the recording take at a second the caller read off the HUD's own
+		 *  pause-aware elapsed clock. Resolves with how many markers the take now holds. */
+		addRecordingMarker: (
+			input: import("../src/lib/recordingSession").RecordingMarkerDropInput,
+		) => Promise<{ success: boolean; count: number }>;
+		/** The marker shortcut was pressed; drop a marker for the take in progress. */
+		onRecordingMarkerRequest: (callback: () => void) => () => void;
 		isNativeWindowsCaptureAvailable: () => Promise<{
 			success: boolean;
 			available: boolean;

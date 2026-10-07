@@ -99,6 +99,9 @@ function makeDoc(
 		annotations: overrides.annotations ?? [],
 		zoomRanges: overrides.zoomRanges ?? [],
 		audioTracks: overrides.audioTracks ?? [],
+		// Markers are editorial, never rendered: the scene description has no field for them,
+		// and this fixture carries an empty list so the document type stays satisfied.
+		markers: [],
 		legacyEditor: overrides.legacyEditor ?? null,
 	};
 }
@@ -2872,5 +2875,30 @@ describe("buildSceneDescription.audioTracks", () => {
 	it("is empty for a project with no imported audio", () => {
 		const doc = makeDoc({ assets: [makeAsset({ id: "a", originalPath: "/a.mp4" })] });
 		expect(buildSceneDescription(doc).audioTracks).toEqual([]);
+	});
+});
+
+// --- recording markers ------------------------------------------------------
+
+describe("buildSceneDescription.recordingMarkers", () => {
+	// The whole reason markers are stored as document data rather than as a track: they are
+	// editorial notes about the take, not something to draw. This is that claim as a test —
+	// the scene the compositor renders and the exporter encodes is byte-for-byte the same
+	// whether the project has markers or not, so no marker can reach the exported video.
+	it("is invisible to the scene: markers change nothing the compositor renders", () => {
+		const withoutMarkers = makeDoc();
+		const withMarkers: AxcutDocument = {
+			...withoutMarkers,
+			markers: [
+				{
+					id: "marker_a",
+					sourceTimeSec: 12,
+					label: "retake",
+					createdAt: "2026-10-07T10:00:00.000Z",
+				},
+				{ id: "marker_b", sourceTimeSec: 40, label: "", createdAt: "2026-10-07T10:00:01.000Z" },
+			],
+		};
+		expect(buildSceneDescription(withMarkers)).toEqual(buildSceneDescription(withoutMarkers));
 	});
 });

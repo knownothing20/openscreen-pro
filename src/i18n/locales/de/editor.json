@@ -41,6 +41,7 @@
 	"recording": {
 		"failedCameraAccess": "Der Kamerazugriff konnte nicht angefragt werden.",
 		"cameraBlocked": "Der Kamerazugriff ist blockiert. Aktiviere ihn in den Systemeinstellungen, um die Webcam zu nutzen.",
+		"markerAdded": "Markierung hinzugefügt",
 		"systemAudioUnavailable": "Systemton nicht verfügbar. Die Aufnahme läuft ohne Systemton.",
 		"microphoneDenied": "Mikrofonzugriff verweigert. Die Aufnahme läuft ohne Ton weiter.",
 		"cameraDenied": "Kamerazugriff verweigert. Die Aufnahme läuft ohne Webcam weiter.",

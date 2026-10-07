@@ -14,6 +14,7 @@
 		"microphone": "Mikrofon: nahrává váš hlas",
 		"camera": "Kamera: nahrává vás jako samostatnou vrstvu, kterou můžete v editoru přesouvat",
 		"openStudio": "Otevřít Studio: editor vašich nahrávek",
+		"addMarker": "Přidat značku (Ctrl+Alt+M)",
 		"openNotes": "Otevřít poznámky: text ke čtení během nahrávání",
 		"openNotesPlaceholder": "Pište poznámky zde...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "Již nezobrazovat"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "Průhlednost oznámení",
+		"noticeOpacityHigh": "Neprůhledné",
+		"noticeOpacityMedium": "Poloprůhledné",
+		"noticeOpacityLow": "Slabé",
 		"title": "Nastavení zařízení",
 		"close": "Zavřít",
 		"micLevel": "Úroveň vstupu",

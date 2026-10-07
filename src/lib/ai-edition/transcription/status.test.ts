@@ -358,6 +358,7 @@ const base = {
 	annotations: [],
 	zoomRanges: [],
 	audioTracks: [],
+	markers: [],
 	legacyEditor: null,
 };
 

@@ -16,6 +16,7 @@ import { EditorDialogsProvider } from "./contexts/EditorDialogsContext";
 import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { loadAllCustomFonts } from "./lib/customFonts";
+import { MARKER_TOAST_OFFSET_PX } from "./lib/markerToast";
 import { registerTextFontFaces } from "./lib/textFonts";
 
 const VideoEditorEntry = lazy(() =>
@@ -169,7 +170,11 @@ export default function App() {
 	return (
 		<TooltipProvider>
 			{showNotes ? <NotesWindow /> : content}
-			<Toaster />
+			{/* The HUD hugs the bottom edge of the screen, where sonner's default bottom-right
+			    corner is exactly the control bar the user watches while recording. Lifting
+			    every notice the HUD raises into the space its window already reserves above
+			    the bar keeps that bar readable; every other window keeps the default. */}
+			<Toaster offset={windowType === "hud-overlay" ? MARKER_TOAST_OFFSET_PX : undefined} />
 		</TooltipProvider>
 	);
 }

@@ -41,6 +41,7 @@
 	"recording": {
 		"failedCameraAccess": "Failed to request camera access.",
 		"cameraBlocked": "Camera access is blocked. Enable it in system settings to use the webcam.",
+		"markerAdded": "Marker added",
 		"systemAudioUnavailable": "System audio not available. Recording without system audio.",
 		"microphoneDenied": "Microphone access denied. Recording will continue without audio.",
 		"cameraDenied": "Camera access denied. Recording will continue without webcam.",

@@ -14,6 +14,7 @@
 		"microphone": "Microfono: registra la tua voce",
 		"camera": "Fotocamera: ti registra come livello separato che puoi spostare nell'editor",
 		"openStudio": "Apri Studio: l'editor per le tue registrazioni",
+		"addMarker": "Aggiungi un segnalibro (Ctrl+Alt+M)",
 		"openNotes": "Apri note: testo da leggere durante la registrazione",
 		"openNotesPlaceholder": "Scrivi le tue note qui...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "Non mostrare più"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "Opacità degli avvisi",
+		"noticeOpacityHigh": "Opaco",
+		"noticeOpacityMedium": "Semitrasparente",
+		"noticeOpacityLow": "Tenue",
 		"title": "Impostazioni dispositivi",
 		"close": "Chiudi",
 		"micLevel": "Livello di ingresso",

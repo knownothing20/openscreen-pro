@@ -14,6 +14,7 @@
 		"microphone": "麥克風：錄製語音",
 		"camera": "攝影機：錄製為獨立圖層，可在編輯器中移動",
 		"openStudio": "開啟工作室：錄製內容的編輯器",
+		"addMarker": "新增標記（Ctrl+Alt+M）",
 		"openNotes": "開啟筆記：錄製時閱讀的文字",
 		"openNotesPlaceholder": "在此輸入筆記...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "不再顯示"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "提示透明度",
+		"noticeOpacityHigh": "不透明",
+		"noticeOpacityMedium": "半透明",
+		"noticeOpacityLow": "很淡",
 		"title": "裝置設定",
 		"close": "關閉",
 		"micLevel": "輸入音量",

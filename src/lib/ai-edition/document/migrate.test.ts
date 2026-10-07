@@ -653,6 +653,7 @@ describe("dropping trims anchored to audio", () => {
 			annotations: [],
 			zoomRanges: [],
 			audioTracks: [],
+			markers: [],
 			legacyEditor: null,
 		};
 	}
@@ -778,6 +779,7 @@ describe("repairing inverted transcript timings", () => {
 			annotations: [],
 			zoomRanges: [],
 			audioTracks: [],
+			markers: [],
 			legacyEditor: null,
 		};
 	}

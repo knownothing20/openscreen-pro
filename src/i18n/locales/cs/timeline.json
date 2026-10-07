@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "Přejít na značku v {{time}}",
+		"edit": "Přejmenovat značku",
+		"delete": "Smazat značku",
+		"labelPlaceholder": "Popisek značky"
+	},
 	"buttons": {
 		"addZoom": "Přidat přiblížení v aktuálním čase",
 		"autoFocusAll": "Automatické zaostření všech přiblížení",

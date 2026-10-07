@@ -5,6 +5,7 @@ import type { CameraDevice } from "../../hooks/useCameraDevices";
 import { useCameraPreviewStream } from "../../hooks/useCameraPreviewStream";
 import type { MicrophoneDevice } from "../../hooks/useMicrophoneDevices";
 import { WEBCAM_QUALITY_IDS, type WebcamQualityId } from "../../hooks/webcamCaptureTarget";
+import { MARKER_TOAST_OPACITY_LEVELS } from "../../lib/markerToast";
 import { Tooltip } from "../ui/tooltip";
 import styles from "./LaunchWindow.module.css";
 
@@ -29,6 +30,11 @@ export interface HudDeviceSettingsLabels {
 	checkingForUpdates: string;
 	cameraQuality: string;
 	cameraQualityOptions: Record<WebcamQualityId, string>;
+	/** The HUD's transient notices ("Marker added") — how much they intrude on what the
+	 *  user is recording. `noticeOpacityOptions` is aligned with
+	 *  `MARKER_TOAST_OPACITY_LEVELS`, most opaque first. */
+	noticeOpacity: string;
+	noticeOpacityOptions: string[];
 }
 
 /** Segmented input-level bar, driven by the live analyser. */
@@ -102,6 +108,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	checkingForUpdates,
 	cameraQuality,
 	onSelectCameraQuality,
+	noticeOpacity,
+	onSelectNoticeOpacity,
 	onSelectMic,
 	onSelectCamera,
 	onCheckForUpdates,
@@ -124,6 +132,9 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	checkingForUpdates: boolean;
 	cameraQuality: WebcamQualityId;
 	onSelectCameraQuality: (quality: WebcamQualityId) => void;
+	/** Current notice opacity (0.2–1), one of `MARKER_TOAST_OPACITY_LEVELS`. */
+	noticeOpacity: number;
+	onSelectNoticeOpacity: (value: number) => void;
 	onSelectMic: (device: MicrophoneDevice) => void;
 	onSelectCamera: (device: CameraDevice) => void;
 	onCheckForUpdates: () => void;
@@ -265,6 +276,28 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 			    update; see electron/install-channel.ts. */}
 			{versionLabel ? (
 				<>
+					{/* The HUD's own transient notices. Last of the working blocks and above About,
+			    because it is the only setting here that is not about a device — the notices
+			    sit over whatever is being recorded, so how solid they are is a recording
+			    decision, and this is the only settings surface the HUD has. */}
+					<div className={styles.hudMenuSectionLabel}>{labels.noticeOpacity}</div>
+					{MARKER_TOAST_OPACITY_LEVELS.map((level, index) => {
+						const isActive = Math.abs(level - noticeOpacity) < 0.01;
+						return (
+							<button
+								key={level}
+								type="button"
+								role="menuitemradio"
+								aria-checked={isActive}
+								data-testid={`notice-opacity-${level}`}
+								onClick={() => onSelectNoticeOpacity(level)}
+								className={`${styles.languageMenuItem} ${isActive ? styles.languageMenuItemActive : ""}`}
+							>
+								<span className="truncate">{labels.noticeOpacityOptions[index]}</span>
+								{isActive ? <Check size={11} className="text-white/85" /> : null}
+							</button>
+						);
+					})}
 					<div className={styles.hudMenuSectionLabel}>{labels.about}</div>
 					<div className={styles.hudModalAboutRow}>
 						<span className={styles.hudModalVersion}>{versionLabel}</span>

@@ -14,6 +14,7 @@
 		"microphone": "Mikrofon: nimmt deine Stimme auf",
 		"camera": "Kamera: nimmt dich als getrennte Ebene auf, die du im Editor verschieben kannst",
 		"openStudio": "Studio öffnen: der Editor für deine Aufnahmen",
+		"addMarker": "Markierung hinzufügen (Ctrl+Alt+M)",
 		"openNotes": "Notizen öffnen: Text zum Ablesen während der Aufnahme",
 		"openNotesPlaceholder": "Hier Notizen schreiben…",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "Nicht mehr anzeigen"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "Deckkraft der Hinweise",
+		"noticeOpacityHigh": "Deckend",
+		"noticeOpacityMedium": "Halbtransparent",
+		"noticeOpacityLow": "Dezent",
 		"title": "Geräteeinstellungen",
 		"close": "Schließen",
 		"micLevel": "Eingangspegel",

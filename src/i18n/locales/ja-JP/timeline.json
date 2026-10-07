@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "{{time}} のマーカーへ移動",
+		"edit": "マーカーの名前を変更",
+		"delete": "マーカーを削除",
+		"labelPlaceholder": "マーカーのラベル"
+	},
 	"buttons": {
 		"addZoom": "現在の再生位置にズームを追加",
 		"autoFocusAll": "すべてのズームでオートフォーカス",

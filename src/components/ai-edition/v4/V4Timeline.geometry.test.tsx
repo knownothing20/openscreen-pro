@@ -122,6 +122,9 @@ function renderTimeline(
 		zoomRegions: [],
 		trimRanges: [],
 		hasEditRegions: true,
+		// Before the spread so a test can put markers in; every other fixed member stays
+		// after it, where a caller cannot accidentally replace it with nothing.
+		markers: [],
 		...overrides,
 		selection: null,
 		multiSelection: [],
@@ -664,6 +667,8 @@ describe("V4Timeline audio lane drag", () => {
 			multiSelection: [],
 			clipSelection: null,
 			audioTracks: tracks ?? [{ ...makeTrack(), ...trackOverrides }],
+			// Recording bookmarks: none in this fixture, which is about audio geometry.
+			markers: [],
 			// The lane reads these for the amber added-word marks (#540); this fixture
 			// is about audio geometry, so it has none.
 			transcripts: [],
@@ -1033,5 +1038,39 @@ describe("V4Timeline toolbar tooltips", () => {
 		const wide = document.querySelector("[class*=lanePill]") as HTMLElement;
 		expect(wide).toHaveTextContent("toolbar.newAnnotation");
 		expect(wide).not.toHaveAttribute("title");
+	});
+});
+
+describe("V4Timeline recording markers", () => {
+	const dropped = (id: string, sourceTimeSec: number) => ({
+		id,
+		sourceTimeSec,
+		label: "",
+		createdAt: "2026-10-07T10:00:00.000Z",
+	});
+
+	it("draws one numbered flag per marker, each with its rename and delete controls", () => {
+		renderTimeline(undefined, undefined, undefined, undefined, {
+			markers: [dropped("marker_a", 3.5), dropped("marker_b", 12)],
+		});
+
+		// The flags carry the numbers the HUD badge counted while recording, in the order
+		// the markers were dropped.
+		const flags = screen.getAllByRole("button", { name: "marker.seek" });
+		expect(flags).toHaveLength(2);
+		expect(flags[0]).toHaveTextContent("1");
+		expect(flags[1]).toHaveTextContent("2");
+
+		// The controls are in the DOM for every marker even though CSS keeps them hidden
+		// until the pointer is on the flag. "Hidden" has to be a paint decision: a node
+		// that only exists while hovered is unreachable by keyboard, and the rename path
+		// would vanish with it.
+		expect(screen.getAllByRole("button", { name: "marker.edit" })).toHaveLength(2);
+		expect(screen.getAllByRole("button", { name: "marker.delete" })).toHaveLength(2);
+	});
+
+	it("leaves a take with no markers free of flags", () => {
+		renderTimeline();
+		expect(screen.queryAllByRole("button", { name: "marker.seek" })).toHaveLength(0);
 	});
 });

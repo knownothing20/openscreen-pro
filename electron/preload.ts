@@ -242,6 +242,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	) => {
 		return ipcRenderer.invoke("set-recording-state", recording, recordingId, cursorCaptureMode);
 	},
+	/**
+	 * Bookmark the take that is recording, at a second the caller read off the HUD's own
+	 * elapsed clock. The renderer owns that clock — it is the side that knows about pauses —
+	 * so main is handed the second rather than asked to compute one; it mints the id and
+	 * the timestamp itself.
+	 */
+	addRecordingMarker: (input: import("../src/lib/recordingSession").RecordingMarkerDropInput) => {
+		return ipcRenderer.invoke("add-recording-marker", input);
+	},
+	/**
+	 * The marker SHORTCUT was pressed. Global shortcuts belong to main and the timestamp
+	 * belongs to the renderer, so main relays the press here and the marker comes back
+	 * through `addRecordingMarker` — one code path with the HUD's own marker button.
+	 */
+	onRecordingMarkerRequest: (callback: () => void) => {
+		const handler = () => callback();
+		ipcRenderer.on("hud-recording-marker-request", handler);
+		return () => ipcRenderer.removeListener("hud-recording-marker-request", handler);
+	},
 	isNativeWindowsCaptureAvailable: () => {
 		return ipcRenderer.invoke("is-native-windows-capture-available");
 	},

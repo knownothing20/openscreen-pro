@@ -22,6 +22,10 @@ import {
 	trackGroupId,
 } from "../document/audioTracks";
 import { createId } from "../document/ids";
+import {
+	removeMarker as removeMarkerInDocument,
+	setMarkerLabel as setMarkerLabelInDocument,
+} from "../document/markers";
 import { resolveAspectRatioValue } from "../document/outputFormat";
 import {
 	clearEditRegions,
@@ -1086,6 +1090,31 @@ export function useTimeline() {
 		[document, selection, saveDocument],
 	);
 
+	// Recording markers. Not regions: they are points on the recording's source time, they
+	// carry no clip anchor, and no clip edit rewrites them (see `document/markers.ts`). So
+	// they get their own two writers rather than a `RegionKind` — a kind would have pulled
+	// them into every region pass, including the one that PRUNES regions whose footage was
+	// trimmed away, and a marker has to survive that.
+	const removeMarker = useCallback(
+		async (id: string) => {
+			if (!document) return;
+			await saveDocument(removeMarkerInDocument(document, id), { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	const setMarkerLabel = useCallback(
+		async (id: string, label: string) => {
+			if (!document) return;
+			const next = setMarkerLabelInDocument(document, id, label);
+			// An unchanged label hands back the very document the store holds; saving that
+			// would push an undo step for an edit that did not happen.
+			if (next === document) return;
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
 	// F2.7 — batch removal for multi-selection: one document save (one undo
 	// snapshot) regardless of how many regions are selected.
 	const removeRegions = useCallback(
@@ -1634,6 +1663,11 @@ export function useTimeline() {
 		annotationRegions: (document?.annotations ?? []) as unknown as AnnotationRegion[],
 		speedRegions,
 		cameraFullscreenRegions,
+		// Recording bookmarks. Kept as the stored markers, not the visible ones: which of
+		// them the current clip layout shows is a question the timeline answers per render
+		// (`visibleMarkersFor`), so a trim that hides one is undone by the next render
+		// rather than by a write.
+		markers: document?.markers ?? [],
 		clips: document?.timeline.clips ?? [],
 		assets: document?.assets ?? [],
 		// The timeline marks where the user has ADDED words — text with no audio behind it.
@@ -1651,6 +1685,8 @@ export function useTimeline() {
 		addSpeed,
 		addCameraFullscreen,
 		removeRegion,
+		removeMarker,
+		setMarkerLabel,
 		removeRegions,
 		hasEditRegions,
 		clearTimeline,

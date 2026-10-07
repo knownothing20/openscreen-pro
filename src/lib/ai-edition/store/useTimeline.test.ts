@@ -123,6 +123,7 @@ const sampleDoc: AxcutDocument = {
 	annotations: [],
 	zoomRanges: [],
 	audioTracks: [],
+	markers: [],
 	legacyEditor: null,
 };
 

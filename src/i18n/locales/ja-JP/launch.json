@@ -14,6 +14,7 @@
 		"microphone": "マイク：声を録音します",
 		"camera": "カメラ：自分の映像を別レイヤーとして録画し、エディターで動かせます",
 		"openStudio": "スタジオを開く：録画を編集するエディター",
+		"addMarker": "マーカーを追加（Ctrl+Alt+M）",
 		"openNotes": "ノートを開く：録画中に読むテキスト",
 		"openNotesPlaceholder": "ここにメモを入力...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "今後表示しない"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "通知の不透明度",
+		"noticeOpacityHigh": "不透明",
+		"noticeOpacityMedium": "半透明",
+		"noticeOpacityLow": "薄い",
 		"title": "デバイス設定",
 		"close": "閉じる",
 		"micLevel": "入力レベル",

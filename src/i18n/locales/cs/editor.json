@@ -41,6 +41,7 @@
 	"recording": {
 		"failedCameraAccess": "Nepodařilo se požádat o přístup ke kameře.",
 		"cameraBlocked": "Přístup ke kameře je zablokován. Povolte ho v nastavení systému pro použití webkamery.",
+		"markerAdded": "Značka přidána",
 		"systemAudioUnavailable": "Systémový zvuk není dostupný. Nahrávání probíhá bez systémového zvuku.",
 		"microphoneDenied": "Přístup k mikrofonu odepřen. Nahrávání bude pokračovat bez zvuku.",
 		"cameraDenied": "Přístup ke kameře odepřen. Nahrávání bude pokračovat bez webkamery.",

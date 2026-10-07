@@ -14,6 +14,7 @@
 		"microphone": "Mikrofon: sesinizi kaydeder",
 		"camera": "Kamera: sizi düzenleyicide taşıyabileceğiniz ayrı bir katman olarak kaydeder",
 		"openStudio": "Stüdyoyu aç: kayıtlarınızın düzenleyicisi",
+		"addMarker": "İşaret ekle (Ctrl+Alt+M)",
 		"openNotes": "Notları aç: kayıt sırasında okuyacağınız metin",
 		"openNotesPlaceholder": "Notlarınızı buraya yazın...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "Bir daha gösterme"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "Bildirim opaklığı",
+		"noticeOpacityHigh": "Opak",
+		"noticeOpacityMedium": "Yarı saydam",
+		"noticeOpacityLow": "Soluk",
 		"title": "Cihaz ayarları",
 		"close": "Kapat",
 		"micLevel": "Giriş seviyesi",

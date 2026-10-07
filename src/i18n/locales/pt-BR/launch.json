@@ -14,6 +14,7 @@
 		"microphone": "Microfone: grava sua voz",
 		"camera": "Câmera: grava você em uma camada separada que pode ser movida no editor",
 		"openStudio": "Abrir Studio: o editor das suas gravações",
+		"addMarker": "Adicionar uma marcação (Ctrl+Alt+M)",
 		"openNotes": "Abrir notas: texto para ler durante a gravação",
 		"openNotesPlaceholder": "Escreva suas notas aqui...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "Não mostrar novamente"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "Opacidade dos avisos",
+		"noticeOpacityHigh": "Opaco",
+		"noticeOpacityMedium": "Translúcido",
+		"noticeOpacityLow": "Tênue",
 		"title": "Configurações de dispositivos",
 		"close": "Fechar",
 		"micLevel": "Nível de entrada",

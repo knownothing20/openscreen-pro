@@ -14,6 +14,7 @@
 		"microphone": "마이크: 내 목소리를 녹음합니다",
 		"camera": "카메라: 내 모습을 별도 레이어로 녹화하며 편집기에서 옮길 수 있습니다",
 		"openStudio": "스튜디오 열기: 녹화를 위한 편집기",
+		"addMarker": "마커 추가 (Ctrl+Alt+M)",
 		"openNotes": "노트 열기: 녹화 중 읽을 텍스트",
 		"openNotesPlaceholder": "여기에 메모를 입력하세요...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "다시 표시하지 않음"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "알림 불투명도",
+		"noticeOpacityHigh": "불투명",
+		"noticeOpacityMedium": "반투명",
+		"noticeOpacityLow": "흐리게",
 		"title": "장치 설정",
 		"close": "닫기",
 		"micLevel": "입력 레벨",

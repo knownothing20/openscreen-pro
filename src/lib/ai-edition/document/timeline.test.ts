@@ -60,6 +60,7 @@ function makeDoc(overrides: Partial<AxcutDocument> = {}): AxcutDocument {
 		annotations: [],
 		zoomRanges: [],
 		audioTracks: [],
+		markers: [],
 		legacyEditor: null,
 		...overrides,
 	};

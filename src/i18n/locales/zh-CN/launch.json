@@ -14,6 +14,7 @@
 		"microphone": "麦克风：录制语音",
 		"camera": "摄像头：录制为单独图层，可在编辑器中移动",
 		"openStudio": "打开工作室：录制内容的编辑器",
+		"addMarker": "添加标记（Ctrl+Alt+M）",
 		"openNotes": "打开笔记：录制时阅读的文字",
 		"openNotesPlaceholder": "在此输入笔记...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "不再提示"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "提示透明度",
+		"noticeOpacityHigh": "不透明",
+		"noticeOpacityMedium": "半透明",
+		"noticeOpacityLow": "很淡",
 		"title": "设备设置",
 		"close": "关闭",
 		"micLevel": "输入音量",

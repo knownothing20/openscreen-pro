@@ -19,11 +19,16 @@ import {
 	systemPreferences,
 } from "electron";
 import { DEFAULT_WEBCAM_QUALITY, type WebcamQualityId } from "../../src/hooks/webcamCaptureTarget";
+// The marker's shape and id format have ONE author — the document layer the editor writes
+// them with — so main mints the same marker the editor would rather than growing a second
+// definition that could drift. Type-only imports there keep this to `document/ids` at runtime.
+import { createMarker } from "../../src/lib/ai-edition/document/markers";
 import {
 	type AxcutDocument,
 	isAxcutDocumentFile,
 	parseDocumentFile,
 } from "../../src/lib/ai-edition/schema";
+import { DEFAULT_MARKER_TOAST_OPACITY } from "../../src/lib/markerToast";
 import {
 	type NativeLinuxRecordingRequest,
 	portalCursorMode,
@@ -40,6 +45,7 @@ import {
 	normalizeRecordingSession,
 	type ProjectMedia,
 	type RecordedVideoAssetInput,
+	type RecordingMarkerInput,
 	type RecordingSession,
 	type StoreRecordedSessionInput,
 } from "../../src/lib/recordingSession";
@@ -664,6 +670,8 @@ export interface RecordingPrefs {
 	hideDesktopIcons: boolean;
 	/** Whether a fresh take gets automatic zooms on import. Persisted; defaults on. */
 	autoZoomEnabled: boolean;
+	/** How opaque the HUD's transient notices are, 0.2–1. See `app-settings.ts`. */
+	markerToastOpacity: number;
 }
 const defaultRecordingPrefs: RecordingPrefs = {
 	micEnabled: false,
@@ -677,6 +685,7 @@ const defaultRecordingPrefs: RecordingPrefs = {
 	cursorCaptureMode: "editable-overlay",
 	hideDesktopIcons: false,
 	autoZoomEnabled: true,
+	markerToastOpacity: DEFAULT_MARKER_TOAST_OPACITY,
 };
 
 // Cached source from the user's pick. Used by setDisplayMediaRequestHandler in main.ts for cursor-free capture.
@@ -1732,6 +1741,45 @@ function waitForNativeMacCaptureStart(proc: ChildProcessWithoutNullStreams) {
 function setCurrentRecordingSessionState(session: RecordingSession | null) {
 	currentRecordingSession = session;
 	currentVideoPath = session?.screenVideoPath ?? null;
+}
+
+// ─── Recording markers ──────────────────────────────────────────────────────
+//
+// Bookmarks dropped with the HUD's marker button or its shortcut while a take runs. They
+// are held here — not in a session — because the session does not exist yet: the HUD is
+// recording, and the object the editor imports is only built when the take stops. Each of
+// the four stop paths spreads `takePendingRecordingMarkers()` into that object, which is
+// also what its `.session.json` is written from, so the markers ride along to the editor
+// without a second channel to keep in step.
+//
+// They live in MAIN rather than in the HUD renderer for the same reason the session does:
+// the HUD closes as the editor opens, so renderer memory would not survive the hand-off.
+let pendingRecordingMarkers: RecordingMarkerInput[] = [];
+
+/** The second a marker was dropped at, or null when the renderer sent something unusable.
+ *  Read through the same rules the session normalizer applies, so a marker that survives
+ *  a round-trip through `.session.json` is the same one that was accepted here. */
+function readMarkerSecond(input: unknown): number | null {
+	const raw = (input ?? {}) as { sourceTimeSec?: unknown };
+	if (typeof raw.sourceTimeSec !== "number" || !Number.isFinite(raw.sourceTimeSec)) return null;
+	return Math.max(0, raw.sourceTimeSec);
+}
+
+/** Forget the markers of a take that never produced a session (cancelled, or restarted
+ *  before it stopped) so the NEXT take cannot inherit bookmarks that were not its own. */
+function clearPendingRecordingMarkers() {
+	pendingRecordingMarkers = [];
+}
+
+/**
+ * The markers the finished take owns. Taking CLEARS the list: a take owns its markers
+ * exactly once, and a list left behind would be handed to whatever records next.
+ */
+function takePendingRecordingMarkers(): RecordingMarkerInput[] | undefined {
+	if (pendingRecordingMarkers.length === 0) return undefined;
+	const markers = pendingRecordingMarkers;
+	pendingRecordingMarkers = [];
+	return markers;
 }
 
 function getSessionManifestPathForVideo(videoPath: string) {
@@ -3475,9 +3523,21 @@ export function registerIpcHandlers(
 					webcamVideoPath = undefined;
 				}
 			}
+			const markers = takePendingRecordingMarkers();
 			const session: RecordingSession = webcamVideoPath
-				? { screenVideoPath, webcamVideoPath, createdAt: recordingId, cursorCaptureMode }
-				: { screenVideoPath, createdAt: recordingId, cursorCaptureMode };
+				? {
+						screenVideoPath,
+						webcamVideoPath,
+						createdAt: recordingId,
+						cursorCaptureMode,
+						...(markers ? { markers } : {}),
+					}
+				: {
+						screenVideoPath,
+						createdAt: recordingId,
+						cursorCaptureMode,
+						...(markers ? { markers } : {}),
+					};
 			setCurrentRecordingSessionState(session);
 			currentProjectPath = null;
 
@@ -3635,10 +3695,12 @@ export function registerIpcHandlers(
 				);
 			}
 
+			const markers = takePendingRecordingMarkers();
 			const session: RecordingSession = {
 				screenVideoPath,
 				createdAt: recordingId,
 				cursorCaptureMode,
+				...(markers ? { markers } : {}),
 			};
 			setCurrentRecordingSessionState(session);
 			currentProjectPath = null;
@@ -3763,12 +3825,14 @@ export function registerIpcHandlers(
 				const webcamOffsetMs = Number.isFinite(payload.webcamOffsetMs)
 					? payload.webcamOffsetMs
 					: undefined;
+				const markers = takePendingRecordingMarkers();
 				const session: RecordingSession = {
 					screenVideoPath,
 					webcamVideoPath,
 					createdAt,
 					...(webcamOffsetMs !== undefined ? { webcamOffsetMs } : {}),
 					...(cursorCaptureMode ? { cursorCaptureMode } : {}),
+					...(markers ? { markers } : {}),
 				};
 				setCurrentRecordingSessionState(session);
 				currentProjectPath = null;
@@ -3907,6 +3971,7 @@ export function registerIpcHandlers(
 			webcamVideoPath && Number.isFinite(payload.webcamOffsetMs)
 				? payload.webcamOffsetMs
 				: undefined;
+		const markers = takePendingRecordingMarkers();
 		const session: RecordingSession = webcamVideoPath
 			? {
 					screenVideoPath,
@@ -3914,8 +3979,14 @@ export function registerIpcHandlers(
 					createdAt,
 					...(webcamOffsetMs !== undefined ? { webcamOffsetMs } : {}),
 					...(cursorCaptureMode ? { cursorCaptureMode } : {}),
+					...(markers ? { markers } : {}),
 				}
-			: { screenVideoPath, createdAt, ...(cursorCaptureMode ? { cursorCaptureMode } : {}) };
+			: {
+					screenVideoPath,
+					createdAt,
+					...(cursorCaptureMode ? { cursorCaptureMode } : {}),
+					...(markers ? { markers } : {}),
+				};
 		// Sidecar BEFORE the session is published, as the three native stop paths already
 		// do it. Publishing first opens a window where `getCurrentRecordingSession` hands
 		// the editor a take whose `.cursor.json` is not on disk yet, and the editor's
@@ -3997,12 +4068,43 @@ export function registerIpcHandlers(
 				await stopCursorRecording();
 			}
 
+			// A take starts here, and a take starts with no bookmarks. Cleared only on the
+			// way IN: the stop paths take the list when they build the session, and clearing
+			// on the way out would wipe the markers between the stop and that build.
+			if (recording) {
+				clearPendingRecordingMarkers();
+			}
+
 			const source = selectedSource || { name: "Screen" };
 			if (onRecordingStateChange) {
 				onRecordingStateChange(recording, source.name);
 			}
 		},
 	);
+
+	/**
+	 * Drop a bookmark on the take that is recording right now. The renderer reads its own
+	 * pause-aware elapsed clock and sends the second; this side mints the id and the
+	 * timestamp, so the marker's shape has exactly one author (`document/markers.ts`).
+	 *
+	 * Nothing here refuses when no take is running — the HUD only offers the control while
+	 * it records, and a stale press is better kept than silently dropped.
+	 */
+	ipcMain.handle("add-recording-marker", (_, input: unknown) => {
+		const sourceTimeSec = readMarkerSecond(input);
+		if (sourceTimeSec === null) {
+			return { success: false as const, count: pendingRecordingMarkers.length };
+		}
+		const raw = (input ?? {}) as { label?: unknown };
+		const marker: RecordingMarkerInput = {
+			...createMarker({ sourceTimeSec }),
+			...(typeof raw.label === "string" ? { label: raw.label } : {}),
+		};
+		pendingRecordingMarkers = [...pendingRecordingMarkers, marker].sort(
+			(a, b) => a.sourceTimeSec - b.sourceTimeSec,
+		);
+		return { success: true as const, count: pendingRecordingMarkers.length };
+	});
 
 	ipcMain.handle("get-cursor-telemetry", async (_, videoPath?: string) => {
 		const targetVideoPath = resolveApprovedVideoPath(

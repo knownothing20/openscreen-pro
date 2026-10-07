@@ -90,6 +90,7 @@ function makeDocument(): AxcutDocument {
 		annotations: [],
 		zoomRanges: [],
 		audioTracks: [],
+		markers: [],
 		legacyEditor: null,
 	};
 }

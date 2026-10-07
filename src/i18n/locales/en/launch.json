@@ -14,6 +14,7 @@
 		"microphone": "Microphone: records your voice",
 		"camera": "Camera: records you as a separate layer you can move in the editor",
 		"openStudio": "Open Studio: the editor for your recordings",
+		"addMarker": "Add a marker (Ctrl+Alt+M)",
 		"openNotes": "Open Notes: text to read while you record",
 		"openNotesPlaceholder": "Take notes here...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "Don't show again"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "Notice opacity",
+		"noticeOpacityHigh": "Solid",
+		"noticeOpacityMedium": "Translucent",
+		"noticeOpacityLow": "Faint",
 		"title": "Device settings",
 		"close": "Close",
 		"micLevel": "Input level",

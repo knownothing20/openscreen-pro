@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "跳轉到標記 {{time}}",
+		"edit": "重新命名標記",
+		"delete": "刪除標記",
+		"labelPlaceholder": "標記備註"
+	},
 	"buttons": {
 		"addZoom": "在目前時間新增縮放",
 		"autoFocusAll": "所有縮放的自動對焦",

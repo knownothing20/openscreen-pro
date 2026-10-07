@@ -14,6 +14,7 @@
 		"microphone": "Микрофон: записывает ваш голос",
 		"camera": "Камера: записывает вас отдельным слоем, который можно двигать в редакторе",
 		"openStudio": "Открыть студию: редактор ваших записей",
+		"addMarker": "Добавить метку (Ctrl+Alt+M)",
 		"openNotes": "Открыть заметки: текст для чтения во время записи",
 		"openNotesPlaceholder": "Пишите заметки здесь...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "Больше не показывать"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "Непрозрачность уведомлений",
+		"noticeOpacityHigh": "Плотный",
+		"noticeOpacityMedium": "Полупрозрачный",
+		"noticeOpacityLow": "Бледный",
 		"title": "Настройки устройств",
 		"close": "Закрыть",
 		"micLevel": "Уровень входа",

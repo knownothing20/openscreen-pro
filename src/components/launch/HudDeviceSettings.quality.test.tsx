@@ -18,6 +18,8 @@ const labels: HudDeviceSettingsLabels = {
 	microphone: "Microphone",
 	camera: "Camera",
 	micLevel: "Input level",
+	noticeOpacity: "Notice opacity",
+	noticeOpacityOptions: ["Solid", "Translucent", "Faint"],
 	micHint: "Speak to check",
 	noMicrophones: "No microphone found",
 	searching: "Searching...",
@@ -55,6 +57,8 @@ function renderPanel(overrides: Partial<Parameters<typeof HudDeviceSettings>[0]>
 				checkingForUpdates={false}
 				cameraQuality="1440p"
 				onSelectCameraQuality={onSelectCameraQuality}
+				noticeOpacity={0.72}
+				onSelectNoticeOpacity={vi.fn()}
 				onSelectMic={vi.fn()}
 				onSelectCamera={vi.fn()}
 				onCheckForUpdates={vi.fn()}

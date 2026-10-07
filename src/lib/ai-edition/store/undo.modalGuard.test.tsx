@@ -36,6 +36,7 @@ function doc(title: string): AxcutDocument {
 		annotations: [],
 		zoomRanges: [],
 		audioTracks: [],
+		markers: [],
 		legacyEditor: null,
 	};
 }

@@ -44,7 +44,9 @@ import { buildEditMenuSubmenu, type EditorUndoRedoChannel, routeEditorUndoRedo }
 import {
 	loadAndRegisterGlobalShortcut,
 	registerOpenAppShortcut,
+	registerRecordingMarkerShortcut,
 	unregisterAllGlobalShortcuts,
+	unregisterRecordingMarkerShortcut,
 } from "./globalShortcut";
 import { mainT, setMainLocale } from "./i18n";
 import {
@@ -1391,6 +1393,20 @@ appReady?.then(async () => {
 			// `canOfferUpdateCheck()` now answers "not mid-take" too, and the app/Help menus are
 			// built once at startup — without this they keep offering the check during a take.
 			setupApplicationMenu();
+			// The marker chord lives exactly as long as a take does. Its press is RELAYED to
+			// the HUD rather than stamped here: the pause-aware elapsed clock lives in that
+			// renderer, so main has no way to know which second the user meant. The HUD then
+			// files the marker through the same call its own button uses.
+			if (recording) {
+				registerRecordingMarkerShortcut(() => {
+					const hud = mainWindow;
+					if (hud && !hud.isDestroyed()) {
+						hud.webContents.send("hud-recording-marker-request");
+					}
+				});
+			} else {
+				unregisterRecordingMarkerShortcut();
+			}
 			if (!recording) {
 				showMainWindow();
 			}

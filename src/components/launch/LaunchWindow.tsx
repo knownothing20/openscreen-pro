@@ -25,6 +25,7 @@ import {
 	HudLanguageButton,
 	HudLanguageMenu,
 	HudLayoutProvider,
+	HudMarkerButton,
 	HudMicButton,
 	HudNotesButton,
 	HudNotice,
@@ -124,6 +125,10 @@ export function LaunchWindow() {
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
 		recordingPrefsLoaded,
+		dropRecordingMarker,
+		markerCount,
+		markerToastOpacity,
+		setMarkerToastOpacity,
 	} = useScreenRecorder();
 
 	// Choosing a device and switching one on are deliberately separate concerns.
@@ -1091,6 +1096,13 @@ export function LaunchWindow() {
 				"1440p": t("webcam.quality1440p"),
 				"2160p": t("webcam.quality2160p"),
 			},
+			noticeOpacity: t("deviceSettings.noticeOpacity"),
+			// Aligned with MARKER_TOAST_OPACITY_LEVELS, most opaque first.
+			noticeOpacityOptions: [
+				t("deviceSettings.noticeOpacityHigh"),
+				t("deviceSettings.noticeOpacityMedium"),
+				t("deviceSettings.noticeOpacityLow"),
+			],
 		}),
 		[t, tCommon],
 	);
@@ -1247,6 +1259,15 @@ export function LaunchWindow() {
 						)}
 
 						{recording && (
+							<HudMarkerButton
+								disabled={saving}
+								label={t("tooltips.addMarker")}
+								count={markerCount}
+								onClick={() => void dropRecordingMarker()}
+							/>
+						)}
+
+						{recording && (
 							<HudRecordingControls
 								vertical={isVertical}
 								paused={paused}
@@ -1322,6 +1343,8 @@ export function LaunchWindow() {
 								checkingForUpdates={isCheckingForUpdates}
 								cameraQuality={webcamQuality}
 								onSelectCameraQuality={handleSelectCameraQuality}
+								noticeOpacity={markerToastOpacity}
+								onSelectNoticeOpacity={(value) => void setMarkerToastOpacity(value)}
 								onSelectMic={handleSelectMicDevice}
 								onSelectCamera={handleSelectCameraDevice}
 								onCheckForUpdates={handleCheckForUpdates}

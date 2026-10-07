@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "Aller au repère à {{time}}",
+		"edit": "Renommer le repère",
+		"delete": "Supprimer le repère",
+		"labelPlaceholder": "Libellé du repère"
+	},
 	"buttons": {
 		"addZoom": "Ajouter un zoom à l'instant actuel",
 		"autoFocusAll": "Mise au point auto pour tous les zooms",

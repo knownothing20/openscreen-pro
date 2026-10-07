@@ -39,6 +39,7 @@
 	"recording": {
 		"failedCameraAccess": "Échec de la demande d'accès à la caméra.",
 		"cameraBlocked": "L'accès à la caméra est bloqué. Activez-le dans les paramètres système pour utiliser la webcam.",
+		"markerAdded": "Repère ajouté",
 		"systemAudioUnavailable": "Audio système non disponible. Enregistrement sans audio système.",
 		"microphoneDenied": "Accès au microphone refusé. L'enregistrement continuera sans audio.",
 		"cameraDenied": "Accès à la caméra refusé. L'enregistrement continuera sans webcam.",

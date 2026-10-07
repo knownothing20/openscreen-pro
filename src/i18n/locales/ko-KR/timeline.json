@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "{{time}} 마커로 이동",
+		"edit": "마커 이름 바꾸기",
+		"delete": "마커 삭제",
+		"labelPlaceholder": "마커 라벨"
+	},
 	"buttons": {
 		"addZoom": "현재 시점에 줌 추가",
 		"autoFocusAll": "모든 줌에 자동 초점",

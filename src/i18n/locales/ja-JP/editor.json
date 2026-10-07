@@ -41,6 +41,7 @@
 	"recording": {
 		"failedCameraAccess": "カメラのアクセス要求に失敗しました。",
 		"cameraBlocked": "カメラのアクセスがブロックされています。システム設定で有効にして、ウェブカメラを使用してください。",
+		"markerAdded": "マーカーを追加しました",
 		"systemAudioUnavailable": "システム音声を利用できません。システム音声なしで録画します。",
 		"microphoneDenied": "マイクへのアクセスが拒否されました。音声なしで録画を続行します。",
 		"cameraDenied": "カメラのアクセスが拒否されました。ウェブカメラなしで録画を続行します。",

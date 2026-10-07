@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { BrowserWindow } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_MARKER_TOAST_OPACITY } from "../../src/lib/markerToast";
 import type { RecordingPrefs } from "./handlers";
 import { registerRecordingPrefsHandlers } from "./recordingPrefs";
 
@@ -24,6 +25,7 @@ const defaults: RecordingPrefs = {
 	cursorCaptureMode: "editable-overlay",
 	hideDesktopIcons: false,
 	autoZoomEnabled: true,
+	markerToastOpacity: DEFAULT_MARKER_TOAST_OPACITY,
 };
 let dir: string;
 beforeEach(() => {

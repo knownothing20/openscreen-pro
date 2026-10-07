@@ -45,6 +45,7 @@ import {
 } from "@/lib/ai-edition/document/audioTracks";
 import { createId } from "@/lib/ai-edition/document/ids";
 import { isGeneratedAssetId } from "@/lib/ai-edition/document/insertion";
+import { visibleMarkersFor } from "@/lib/ai-edition/document/markers";
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutAudioTrack, AxcutClip } from "@/lib/ai-edition/schema";
 import { audioGainScalar } from "@/lib/ai-edition/store/editorSettings";
@@ -711,6 +712,30 @@ export function V4Timeline({
 	/** Stored raw seconds → a percentage of the expanded ruler. */
 	const pctAt = pctOf;
 	const showLanes = variant === "edit";
+
+	// Recording markers, at the ruler second the current clip layout draws them at. A
+	// marker whose second has been trimmed away is simply absent from this list — the
+	// stored marker is untouched, so undoing the trim brings the tick straight back.
+	const markers = useMemo(() => visibleMarkersFor(tl.markers, tl.clips), [tl.markers, tl.clips]);
+	// Each marker's number, in SOURCE order — the order they were dropped in, which is the
+	// order the HUD counted them in. Numbering by ruler position instead would renumber
+	// every flag the moment a clip is moved, and "flag 2" would stop meaning the second one
+	// the user dropped.
+	const markerNumbers = useMemo(
+		() => new Map(tl.markers.map((marker, index) => [marker.id, index + 1])),
+		[tl.markers],
+	);
+	// Which marker is having its label typed right now. One at a time: the input is inline
+	// on the ruler, and two open editors would fight over the same row of pixels.
+	const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
+	// A marker can disappear while its label is open — the clip under it gets trimmed, or
+	// the user undoes the recording import. Closing the editor then is what stops the input
+	// from writing a label to a marker that is no longer on screen.
+	useEffect(() => {
+		if (editingMarkerId && !markers.some((entry) => entry.marker.id === editingMarkerId)) {
+			setEditingMarkerId(null);
+		}
+	}, [editingMarkerId, markers]);
 
 	// The visible fraction of the timeline, and what one second is worth on screen
 	// at that zoom. Every screen-space rule below — ruler step, pill affordances,
@@ -2118,6 +2143,107 @@ export function V4Timeline({
 
 				<div ref={tracksRef} className={styles.tlTracks} onPointerDown={startScrub}>
 					<div ref={canvasRef} className={styles.tlCanvas} style={canvasStyle}>
+						{/* Recording markers. A thin tick per bookmark, drawn over the lanes at
+						    the ruler second the current clip layout puts it at, so a reorder or
+						    a trim moves the tick with its footage instead of leaving it where it
+						    was dropped. The tick seeks (the whole reason for dropping one is
+						    "come back to here"); the label and delete controls appear on hover,
+						    because a marker is small and the lane is busy. */}
+						{markers.length > 0 ? (
+							<div className={styles.tlMarkers}>
+								{markers.map(({ marker, rawTimeSec }) => (
+									<div
+										key={marker.id}
+										className={styles.tlMarker}
+										style={{ left: `${pctOf(rawTimeSec)}%` }}
+										// The lane below is a scrub surface: without this, pressing a
+										// marker would also scrub the playhead to wherever the pointer
+										// landed, which on a 2px tick is a coin toss between the marker's
+										// own second and its neighbour's.
+										onPointerDown={(event) => event.stopPropagation()}
+									>
+										{editingMarkerId === marker.id ? (
+											<input
+												className={styles.tlMarkerInput}
+												defaultValue={marker.label}
+												placeholder={t("marker.labelPlaceholder")}
+												// Focus is the response to the click that opened this editor,
+												// not a grab for it: the field only exists while the user is
+												// renaming, and it commits on blur like every other inline edit.
+												autoFocus
+												onBlur={(event) => {
+													setEditingMarkerId(null);
+													void tl.setMarkerLabel(marker.id, event.currentTarget.value.trim());
+												}}
+												onKeyDown={(event) => {
+													if (event.key === "Enter") {
+														event.currentTarget.blur();
+													} else if (event.key === "Escape") {
+														// Put the stored label back before blurring, so the
+														// commit that follows is a no-op the store skips.
+														event.currentTarget.value = marker.label;
+														event.currentTarget.blur();
+													}
+												}}
+											/>
+										) : (
+											<>
+												{/* The pole is decoration; the FLAG is the seek target. A 2px
+												    line is not a realistic thing to hit, and making both
+												    clickable would put two buttons with the same label in
+												    the tab order. */}
+												<span aria-hidden className={styles.tlMarkerPole} />
+												{/* Flag and controls in ONE row: the row's box grows to hold
+												    the controls, so the pointer never leaves the marker on its
+												    way from the flag to the pencil. Hung off a zero-width
+												    parent instead — the first cut — they vanished mid-approach,
+												    and the pencil was clipped away entirely near the timeline's
+												    left edge. */}
+												<div className={styles.tlMarkerRow}>
+													<button
+														type="button"
+														className={styles.tlMarkerFlag}
+														// The RULER second, not the marker's own source second: after
+														// a trim the two differ, and the one the user can see and
+														// click is the one on screen.
+														aria-label={t("marker.seek", {
+															time: formatSec(rawTimeSec),
+														})}
+														title={
+															marker.label
+																? `${formatSec(rawTimeSec)} · ${marker.label}`
+																: formatSec(rawTimeSec)
+														}
+														onClick={() => setCurrentTime(rawTimeSec)}
+													>
+														{markerNumbers.get(marker.id) ?? 1}
+													</button>
+													<button
+														type="button"
+														className={styles.tlMarkerAction}
+														aria-label={t("marker.edit")}
+														title={t("marker.edit")}
+														onClick={() => setEditingMarkerId(marker.id)}
+													>
+														<Pencil size={10} />
+													</button>
+													<button
+														type="button"
+														className={styles.tlMarkerAction}
+														aria-label={t("marker.delete")}
+														title={t("marker.delete")}
+														onClick={() => void tl.removeMarker(marker.id)}
+													>
+														<Trash2 size={10} />
+													</button>
+												</div>
+											</>
+										)}
+									</div>
+								))}
+							</div>
+						) : null}
+
 						{snapPct !== null ? (
 							<div aria-hidden className={styles.tlSnapGuide} style={{ left: `${snapPct}%` }} />
 						) : null}

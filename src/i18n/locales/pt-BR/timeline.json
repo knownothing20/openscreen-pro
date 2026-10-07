@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "Ir para a marcação em {{time}}",
+		"edit": "Renomear marcação",
+		"delete": "Excluir marcação",
+		"labelPlaceholder": "Rótulo da marcação"
+	},
 	"buttons": {
 		"addZoom": "Adicionar um zoom no momento atual",
 		"autoFocusAll": "Foco automático para todos os zooms",

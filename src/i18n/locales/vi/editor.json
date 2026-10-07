@@ -41,6 +41,7 @@
 	"recording": {
 		"failedCameraAccess": "Yêu cầu quyền truy cập máy ảnh thất bại.",
 		"cameraBlocked": "Quyền truy cập máy ảnh bị chặn. Hãy bật nó trong cài đặt hệ thống để sử dụng webcam.",
+		"markerAdded": "Đã thêm dấu mốc",
 		"systemAudioUnavailable": "Âm thanh hệ thống không khả dụng. Ghi hình không có âm thanh hệ thống.",
 		"microphoneDenied": "Quyền truy cập micro bị từ chối. Sẽ tiếp tục ghi hình không có âm thanh.",
 		"cameraDenied": "Quyền truy cập máy ảnh bị từ chối. Sẽ tiếp tục ghi hình không có webcam.",

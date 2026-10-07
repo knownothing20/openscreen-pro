@@ -16,6 +16,7 @@
 
 import type { CursorTelemetryPoint } from "@/components/video-editor/types";
 import { createId } from "@/lib/ai-edition/document/ids";
+import { bindMarkersToAsset, markersFromSession } from "@/lib/ai-edition/document/markers";
 import { clipAwaitsProbedDuration } from "@/lib/ai-edition/document/timeline";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import {
@@ -341,7 +342,29 @@ export async function importPendingRecording(
 
 	const label = screenPath.split(/[\\/]/).pop() || "Recording";
 	await useProjectStore.getState().createProject(`Recording ${new Date().toLocaleString()}`);
-	await useProjectStore.getState().addAsset(screenPath, label);
+	const asset = await useProjectStore.getState().addAsset(screenPath, label);
+	// Bookmarks dropped while the take was running ride on the session, and this is where
+	// they become part of the project: bound to the asset the recording just became, so the
+	// timeline can place them. `history: false` for the same reason the timeline seed below
+	// uses it — the user made no edit here, the editor is building them a project — and the
+	// alternative is a first Ctrl+Z that deletes their own markers.
+	const sessionMarkers = result.success ? result.session?.markers : undefined;
+	if (asset && sessionMarkers && sessionMarkers.length > 0) {
+		const current = useProjectStore.getState().document;
+		if (current) {
+			const fallbackCreatedAt = new Date(
+				result.success && result.session ? result.session.createdAt : Date.now(),
+			).toISOString();
+			const next = bindMarkersToAsset(
+				current,
+				asset.id,
+				markersFromSession(sessionMarkers, fallbackCreatedAt),
+			);
+			if (next !== current) {
+				await useProjectStore.getState().saveDocument(next, { history: false });
+			}
+		}
+	}
 	// Mark before the video element can fire `loadedmetadata`. The asset path is
 	// already on the document; waiting until the 60s seed finished let the first
 	// metadata pass consume nothing and the second never arrive.

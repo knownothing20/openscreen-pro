@@ -1,4 +1,4 @@
-import { Check, Languages, NotepadText, Settings } from "lucide-react";
+import { Check, Flag, Languages, NotepadText, Settings } from "lucide-react";
 import { createContext, memo, type ReactElement, useContext, useRef, useState } from "react";
 import { formatTimePadded } from "../../utils/timeUtils";
 import { Button } from "../ui/button";
@@ -491,6 +491,52 @@ export const HudNotesButton = memo(function HudNotesButton({
 				onClick={onClick}
 			>
 				<NotepadText size={ICON_SIZE} />
+			</button>
+		</HudTooltip>
+	);
+});
+
+/**
+ * Drops a bookmark on the take in progress. Rendered only while recording, because a
+ * marker is a note about a moment that is still being recorded — there is nothing to
+ * bookmark otherwise. Enabled while paused on purpose: the pause is often exactly the
+ * moment worth marking.
+ */
+export const HudMarkerButton = memo(function HudMarkerButton({
+	disabled,
+	label,
+	count,
+	onClick,
+}: {
+	disabled: boolean;
+	label: string;
+	/** How many markers the take in progress holds. Zero draws no badge: until there is
+	 *  something to count, the button should read as "drop one" and nothing else. */
+	count: number;
+	onClick: () => void;
+}) {
+	return (
+		<HudTooltip content={label}>
+			<button
+				type="button"
+				aria-label={count > 0 ? `${label} (${count})` : label}
+				disabled={disabled}
+				className={`${hudIconBtnClasses} relative`}
+				onClick={onClick}
+			>
+				<Flag size={ICON_SIZE} />
+				{count > 0 ? (
+					<span
+						aria-hidden
+						// The count is in the aria-label above, so the badge itself is decoration
+						// for the eye: it answers "did that press land?" without the user having to
+						// read the toast, which is exactly what they asked for after clicking into
+						// the void a few times.
+						className="-top-1 -right-1 absolute min-w-[15px] rounded-full bg-[var(--accent)] px-[3px] text-center font-semibold text-[9px] text-[var(--accent-on)] leading-[15px]"
+					>
+						{count > 99 ? "99+" : count}
+					</span>
+				) : null}
 			</button>
 		</HudTooltip>
 	);

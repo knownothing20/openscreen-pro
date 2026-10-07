@@ -2172,3 +2172,120 @@
 	border-radius: 999px;
 	background: var(--danger);
 }
+
+/* ── Recording markers ──────────────────────────────────────────────────────
+   A bookmark is a POINT on the recording, not a span of it, so it is a thin
+   tick rather than a pill: there is no duration to show and nothing to drag.
+   The layer itself is click-through — the lanes underneath must keep taking
+   clicks — and only the tick and its two hover controls take the pointer back.
+   The height stops where the snap guide stops, so a marker never draws over
+   the nav band below the lanes. */
+.tlMarkers {
+	position: absolute;
+	top: 0;
+	bottom: 66px;
+	left: 0;
+	right: 0;
+	pointer-events: none;
+	z-index: 13;
+}
+
+.tlMarker {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 0;
+}
+
+/* The pole: 2px of accent centred on the marker's own second — `left: -1px` on a
+   zero-width parent, so the line sits ON the time rather than beside it. Decoration and a
+   position readout; the FLAG above it is what takes the click. */
+.tlMarkerPole {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: -1px;
+	width: 2px;
+	border-radius: 1px;
+	background: var(--accent);
+	box-shadow: 0 0 4px color-mix(in oklch, var(--accent) 55%, transparent);
+}
+
+/* Flag and controls are ONE flex row anchored on the pole. That is what keeps the hover
+   alive on the way from the flag to the pencil: the row's own box grows to include the
+   controls, so the pointer never leaves the marker. The first cut hung them off the
+   zero-width parent instead, and they vanished mid-approach — and the pencil, sitting to
+   the LEFT of the pole, was clipped away entirely near the timeline's left edge. */
+.tlMarkerRow {
+	position: absolute;
+	top: 0;
+	left: -1px;
+	display: flex;
+	align-items: flex-start;
+	gap: 3px;
+	pointer-events: auto;
+}
+
+/* A bookmark ribbon on a mast. The notch cut out of the bottom is what reads as a flag at
+   this size — a plain rounded tag reads as a label, which is exactly how the first
+   numbered head was mistaken for one. The number ties the mark back to the count the HUD
+   showed while the user was dropping them. */
+.tlMarkerFlag {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 17px;
+	height: 20px;
+	padding: 0 4px 6px;
+	border: 0;
+	background: var(--accent);
+	color: var(--accent-on);
+	font: 600 10px var(--font-body);
+	font-variant-numeric: tabular-nums;
+	cursor: pointer;
+	clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
+}
+
+.tlMarkerFlag:hover {
+	background: color-mix(in oklch, var(--accent) 80%, var(--fg));
+}
+
+.tlMarkerAction {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	width: 17px;
+	height: 17px;
+	padding: 0;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--surface-1);
+	color: var(--muted);
+	cursor: pointer;
+}
+
+/* `:focus-within` as well as hover: the controls are the only way to rename or remove a
+   marker, and a keyboard user reaches the flag without ever hovering it. */
+.tlMarker:hover .tlMarkerAction,
+.tlMarker:focus-within .tlMarkerAction {
+	display: flex;
+}
+
+.tlMarkerAction:hover {
+	color: var(--fg);
+}
+
+.tlMarkerInput {
+	position: absolute;
+	top: 2px;
+	left: 4px;
+	z-index: 2;
+	width: 132px;
+	padding: 2px 6px;
+	border: 1px solid var(--border-hi);
+	border-radius: 4px;
+	background: var(--surface-1);
+	color: var(--fg);
+	font-size: 11px;
+	pointer-events: auto;
+}

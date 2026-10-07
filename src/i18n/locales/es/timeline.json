@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "Ir a la marca en {{time}}",
+		"edit": "Renombrar marca",
+		"delete": "Eliminar marca",
+		"labelPlaceholder": "Etiqueta de la marca"
+	},
 	"buttons": {
 		"addZoom": "Agregar un zoom en el momento actual",
 		"autoFocusAll": "Enfoque automático de todos los zooms",

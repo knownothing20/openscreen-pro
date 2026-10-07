@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { mixAudioTracks, nativeMicrophoneGain } from "@/lib/audioMix";
+import { clampMarkerToastOpacity, DEFAULT_MARKER_TOAST_OPACITY } from "@/lib/markerToast";
 import {
 	type NativeLinuxRecordingRequest,
 	portalOwnsSourceSelection,
@@ -98,6 +99,14 @@ type UseScreenRecorderReturn = {
 	canPauseRecording: boolean;
 	restartRecording: () => void;
 	cancelRecording: () => void;
+	/** Bookmark the take in progress at the current elapsed second. Shared by the HUD's
+	 *  marker button and the marker shortcut (relayed from main). */
+	dropRecordingMarker: () => Promise<void>;
+	/** How many markers the take in progress holds, for the badge on that button. */
+	markerCount: number;
+	markerToastOpacity: number;
+	/** Persist a new notice opacity (0.2–1) and apply it to the next notice. */
+	setMarkerToastOpacity: (value: number) => Promise<void>;
 	microphoneEnabled: boolean;
 	setMicrophoneEnabled: (enabled: boolean) => void;
 	microphoneDeviceId: string | undefined;
@@ -277,6 +286,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [paused, setPaused] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [elapsedSeconds, setElapsedSeconds] = useState(0);
+	/** How many markers the take in progress has. The count comes back from the write that
+	 *  stores each one, so it is main's list being counted, not a second tally here. */
+	const [markerCount, setMarkerCount] = useState(0);
+	/** How opaque the marker notice is drawn. Seeded with the shared default so a notice
+	 *  fired before the prefs arrive is painted the same way as one fired after. */
+	const [markerToastOpacity, setMarkerToastOpacity] = useState(DEFAULT_MARKER_TOAST_OPACITY);
 	const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
 	const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | undefined>(undefined);
 	const [microphoneDeviceName, setMicrophoneDeviceName] = useState<string | undefined>(undefined);
@@ -309,6 +324,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			camQuality?: WebcamQualityId | null;
 			systemAudioEnabled: boolean;
 			cursorCaptureMode: CursorCaptureMode;
+			/** Absent in a snapshot from a build that predates the setting; the clamp
+			 *  answers that with the default rather than with a transparent notice. */
+			markerToastOpacity?: number | null;
 		}) => {
 			if (cancelled) return;
 			// Not applied where a take cannot record the microphone (#700): it would ask
@@ -327,6 +345,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			setWebcamQuality(webcamQualityFrom(prefs.camQuality));
 			setSystemAudioEnabled(prefs.systemAudioEnabled);
 			setCursorCaptureMode(prefs.cursorCaptureMode);
+			setMarkerToastOpacity(clampMarkerToastOpacity(prefs.markerToastOpacity));
 			setRecordingPrefsLoaded(true);
 		};
 		const stop = window.electronAPI?.onRecordingPrefsChanged?.((prefs) => {
@@ -2431,6 +2450,61 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setSoftwareEncoderFallbackNoticeVisible(false);
 	};
 
+	/**
+	 * Bookmark the take that is recording, at the second the HUD's clock reads right now.
+	 *
+	 * One path for both ways in: the marker button calls this directly, and the global
+	 * shortcut reaches it through `onRecordingMarkerRequest` — main owns the chord but this
+	 * hook owns the pause-aware clock, so the press is relayed here rather than stamped
+	 * there. The timestamp is deliberately the same `getRecordingDurationMs` the take's
+	 * final duration comes from, so a marker lands where the editor will draw it.
+	 */
+	const dropRecordingMarker = useCallback(async () => {
+		const result = await window.electronAPI?.addRecordingMarker?.({
+			sourceTimeSec: getRecordingDurationMs() / 1000,
+		});
+		if (!result?.success) return;
+		// Main's own count, not a tally kept here: the two would drift the moment a press
+		// failed to store, and the badge would then promise a marker that is not there.
+		setMarkerCount(result.count);
+		// Two things about this notice are deliberate. It floats ABOVE the bar instead of
+		// in sonner's default bottom-right corner — that lift is the Toaster's `offset` in
+		// the HUD window, not a per-toast option, because it has to apply to every notice
+		// the HUD raises, not just this one. And it is translucent, because the HUD hovers
+		// over whatever is being recorded — a solid card is both in the way and in the
+		// shot. How translucent is a preference, in the HUD's settings dialog.
+		toast.success(tRef.current("recording.markerAdded"), {
+			position: "bottom-right",
+			style: {
+				background: `color-mix(in oklch, var(--surface-hi) ${Math.round(
+					markerToastOpacity * 100,
+				)}%, transparent)`,
+				backdropFilter: "blur(6px)",
+			},
+		});
+	}, [getRecordingDurationMs, markerToastOpacity]);
+
+	/** A take starts with no markers and ends with none shown: main clears its list on the
+	 *  way in (see `set-recording-state`), so the badge has to clear with it or the next
+	 *  take opens on the last one's number. */
+	useEffect(() => {
+		setMarkerCount(0);
+	}, [recording]);
+
+	/** Persisted immediately rather than at the end of the take: the point of the control
+	 *  is to try a level and see it, and a preference that only applies next time cannot be
+	 *  tried at all. */
+	const updateMarkerToastOpacity = useCallback(async (value: number) => {
+		setMarkerToastOpacity(value);
+		await window.electronAPI?.setRecordingPrefs?.({ markerToastOpacity: value });
+	}, []);
+
+	useEffect(() => {
+		return window.electronAPI?.onRecordingMarkerRequest?.(() => {
+			void dropRecordingMarker();
+		});
+	}, [dropRecordingMarker]);
+
 	return {
 		recording,
 		paused,
@@ -2442,6 +2516,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		canPauseRecording,
 		restartRecording,
 		cancelRecording,
+		dropRecordingMarker,
+		markerCount,
+		markerToastOpacity,
+		setMarkerToastOpacity: updateMarkerToastOpacity,
 		microphoneEnabled,
 		setMicrophoneEnabled,
 		microphoneDeviceId,

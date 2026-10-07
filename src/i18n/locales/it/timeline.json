@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "Vai al segnalibro a {{time}}",
+		"edit": "Rinomina segnalibro",
+		"delete": "Elimina segnalibro",
+		"labelPlaceholder": "Etichetta"
+	},
 	"buttons": {
 		"addZoom": "Aggiungi uno zoom nel momento attuale",
 		"autoFocusAll": "Messa a fuoco auto per tutti gli zoom",

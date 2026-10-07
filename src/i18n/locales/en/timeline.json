@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "Jump to marker at {{time}}",
+		"edit": "Rename marker",
+		"delete": "Delete marker",
+		"labelPlaceholder": "Marker label"
+	},
 	"buttons": {
 		"addZoom": "Add a zoom at the current time",
 		"autoFocusAll": "Auto-Focus for all zooms",

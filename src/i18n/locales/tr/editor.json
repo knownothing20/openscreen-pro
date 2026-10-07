@@ -33,6 +33,7 @@
 	"recording": {
 		"failedCameraAccess": "Kamera erişimi istenemedi.",
 		"cameraBlocked": "Kamera erişimi engellendi. Kamerayı kullanmak için sistem ayarlarından izin verin.",
+		"markerAdded": "İşaret eklendi",
 		"systemAudioUnavailable": "Sistem sesi kullanılamıyor. Sistem sesi olmadan kaydediliyor.",
 		"microphoneDenied": "Mikrofon erişimi reddedildi. Kayıt ses olmadan devam edecek.",
 		"cameraDenied": "Kamera erişimi reddedildi. Kayıt kamera olmadan devam edecek.",

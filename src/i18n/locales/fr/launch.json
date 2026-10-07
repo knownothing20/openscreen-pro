@@ -14,6 +14,7 @@
 		"microphone": "Microphone : enregistre votre voix",
 		"camera": "Caméra : vous enregistre sur un calque séparé, déplaçable dans l'éditeur",
 		"openStudio": "Ouvrir le Studio : l'éditeur de vos enregistrements",
+		"addMarker": "Ajouter un repère (Ctrl+Alt+M)",
 		"openNotes": "Ouvrir les notes : texte à lire pendant l'enregistrement",
 		"openNotesPlaceholder": "Prenez des notes ici...",
 		"notesToolbar": {
@@ -88,6 +89,10 @@
 		"dontShowAgain": "Ne plus afficher"
 	},
 	"deviceSettings": {
+		"noticeOpacity": "Opacité des notifications",
+		"noticeOpacityHigh": "Opaque",
+		"noticeOpacityMedium": "Semi-transparent",
+		"noticeOpacityLow": "Discret",
 		"title": "Paramètres des périphériques",
 		"close": "Fermer",
 		"micLevel": "Niveau d'entrée",

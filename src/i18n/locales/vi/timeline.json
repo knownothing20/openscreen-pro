@@ -1,4 +1,10 @@
 {
+	"marker": {
+		"seek": "Đi tới dấu mốc tại {{time}}",
+		"edit": "Đổi tên dấu mốc",
+		"delete": "Xóa dấu mốc",
+		"labelPlaceholder": "Nhãn dấu mốc"
+	},
 	"buttons": {
 		"addZoom": "Thêm thu phóng tại thời điểm hiện tại",
 		"autoFocusAll": "Lấy nét tự động cho mọi thu phóng",

@@ -605,6 +605,32 @@ export const audioTrackSchema = endGteStart(
 // Round-trip through the migration must be lossless for now.
 export const legacyEditorSchema = z.object({}).passthrough().nullable().default(null);
 
+/**
+ * A bookmark the user drops WHILE RECORDING, anchored to the recording's source time.
+ *
+ * Source time is the one coordinate that survives a trim, a reorder and a retime, so a
+ * marker keeps pointing at the moment it was dropped even after the footage around it
+ * moves. That is the same reasoning as `ClipAnchored` regions, taken one step further: a
+ * marker is a POINT on the asset, not a span acting on a clip, so it carries no `clipId`
+ * and no clip edit can destroy it. It is deliberately NOT part of the region collections
+ * (`mapAllRegionCollections`), because `rederiveRegionMs` DROPS a region whose whole
+ * source window was trimmed away — and a marker has to come back when that trim is
+ * undone. Whether a marker is on screen right now is decided at READ time, by
+ * `visibleMarkers` in `document/markers.ts`.
+ *
+ * `assetId` is optional: a marker is born during recording, before the editor has minted
+ * the asset it will live on, and the import binds it (`bindMarkersToAsset`). A marker
+ * whose asset left the project stays in the document rather than invalidating it, and
+ * simply has nothing to map through.
+ */
+export const recordingMarkerSchema = z.object({
+	id: z.string().min(1),
+	assetId: z.string().min(1).optional(),
+	sourceTimeSec: z.number().nonnegative(),
+	label: z.string().default(""),
+	createdAt: isoDateSchema,
+});
+
 const documentSchemaShape = z.object({
 	schemaVersion: z.literal(axcutSchemaVersion),
 	project: z.object({
@@ -630,6 +656,10 @@ const documentSchemaShape = z.object({
 	// Imported audio tracks (issue #350). Defaulted so every document written
 	// before this loads unchanged; an older build simply strips the key on save.
 	audioTracks: z.array(audioTrackSchema).default([]),
+	// Recording bookmarks. Defaulted on the same terms as `audioTracks` above, and for
+	// the same reason: no `schemaVersion` bump is owed, because a document written
+	// before markers existed simply reads as "no markers" and stays valid.
+	markers: z.array(recordingMarkerSchema).default([]),
 	legacyEditor: legacyEditorSchema.nullable().default(null),
 });
 
@@ -1262,6 +1292,7 @@ export type AxcutAnnotationRegion = z.infer<typeof annotationRegionSchema>;
 export type AxcutZoomRegion = z.infer<typeof zoomRegionSchema>;
 export type AxcutCameraTrack = z.infer<typeof cameraTrackSchema>;
 export type AxcutAudioTrack = z.infer<typeof audioTrackSchema>;
+export type AxcutRecordingMarker = z.infer<typeof recordingMarkerSchema>;
 export type AxcutLegacyEditor = z.infer<typeof legacyEditorSchema>;
 export type AxcutDocument = z.infer<typeof documentSchema>;
 export type AxcutDocumentInput = z.input<typeof documentSchema>;
