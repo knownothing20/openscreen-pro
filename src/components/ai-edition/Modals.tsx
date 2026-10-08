@@ -134,6 +134,36 @@ export function OpenProjectModal({
 	useEffect(() => {
 		if (!open) setConfirmId(null);
 	}, [open]);
+	// Keyboard navigation. The footer has promised "↑↓ to navigate · Enter to open" since
+	// this dialog was written and nothing ever implemented it — the list was mouse-only, so
+	// the hint was a lie and a user who trusted it concluded the dialog was broken. The
+	// cursor is deliberately separate from  below: that one marks the
+	// project already open, this one marks where the keyboard is.
+	const [cursor, setCursor] = useState(0);
+	const listRef = useRef<HTMLDivElement | null>(null);
+	// A filtered list is a different list, so the cursor goes back to the top of it.
+	useEffect(() => {
+		setCursor(0);
+	}, [query]);
+	useEffect(() => {
+		if (open) listRef.current?.focus();
+	}, [open]);
+	const openAtCursor = () => {
+		const project = filtered[cursor];
+		if (!project) return;
+		onSelect(project.id);
+		onClose();
+	};
+	const onListKeyDown = (event: React.KeyboardEvent) => {
+		if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+			event.preventDefault();
+			const step = event.key === "ArrowDown" ? 1 : -1;
+			setCursor((current) => Math.min(filtered.length - 1, Math.max(0, current + step)));
+		} else if (event.key === "Enter") {
+			event.preventDefault();
+			openAtCursor();
+		}
+	};
 	const filtered = projects.filter((p) => p.title.toLowerCase().includes(query.toLowerCase()));
 	return (
 		<ModalShell
@@ -167,15 +197,22 @@ export function OpenProjectModal({
 					overflowY: "auto",
 					scrollbarWidth: "thin",
 					scrollbarColor: "var(--border-hi) transparent",
+					// Focusable so the arrow keys have somewhere to land: the dialog focuses
+					// this list on open, and the outline is suppressed because the cursor row
+					// already shows where the keyboard is.
+					outline: "none",
 				}}
+				ref={listRef}
+				tabIndex={0}
+				onKeyDown={onListKeyDown}
 			>
 				{filtered.length === 0 ? (
 					<p style={{ color: "var(--muted)", fontSize: 12, padding: 16, textAlign: "center" }}>
 						{t("openProjectDialog.noMatches", { query })}
 					</p>
 				) : (
-					filtered.map((p) => {
-						const isActive = p.id === activeProjectId;
+					filtered.map((p, index) => {
+						const isActive = p.id === activeProjectId || index === cursor;
 						if (p.id === confirmId) {
 							return (
 								<div
