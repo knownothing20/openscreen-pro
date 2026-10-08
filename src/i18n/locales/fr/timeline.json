@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "Mouvement de caméra",
+		"positionX": "Position horizontale",
+		"positionY": "Position verticale",
+		"size": "Taille",
+		"roundness": "Arrondi des coins",
+		"opacity": "Opacité",
+		"toPip": "Retour à l’incrustation",
+		"toFullscreen": "Plein écran",
+		"easing": "Adoucissement"
+	},
 	"marker": {
 		"seek": "Aller au repère à {{time}}",
 		"edit": "Renommer le repère",

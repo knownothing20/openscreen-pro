@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "Movimento camera",
+		"positionX": "Posizione orizzontale",
+		"positionY": "Posizione verticale",
+		"size": "Dimensione",
+		"roundness": "Arrotondamento angoli",
+		"opacity": "Opacità",
+		"toPip": "Torna a picture-in-picture",
+		"toFullscreen": "Schermo intero",
+		"easing": "Curva"
+	},
 	"marker": {
 		"seek": "Vai al segnalibro a {{time}}",
 		"edit": "Rinomina segnalibro",

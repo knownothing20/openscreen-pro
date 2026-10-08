@@ -33,6 +33,11 @@ import {
 	type ZoomFocus,
 } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
+import { applyCameraMotionToRect } from "@/lib/ai-edition/cameraMotion/rect";
+import {
+	type CameraMotionRegion,
+	resolveCameraMotionWinner,
+} from "@/lib/ai-edition/cameraMotion/resolve";
 import {
 	isFormatFillActive,
 	resolveAspectRatioValue,
@@ -51,7 +56,6 @@ import { resolveActiveCameraTrack } from "@/lib/ai-edition/timeline/camera";
 import type { SpeedRegion } from "@/lib/ai-edition/timeline/speed";
 import { locateVirtualPosition } from "@/lib/ai-edition/timeline/virtual-preview";
 import {
-	computeCameraFullscreenRect,
 	computeCompositeLayout,
 	paddedContentSize,
 	resolveWebcamLayoutPreset,
@@ -60,7 +64,6 @@ import {
 import { webcamAnchorAt } from "@/lib/projectDefaults";
 import { wallpaperStyle } from "@/lib/wallpaper";
 import { getCssClipPath } from "@/lib/webcamMaskShapes";
-import { computeCameraFullscreenProgress } from "@/lib/zoomMath/cameraFullscreenUtils";
 import { webcamBoxSourceSize } from "@/native/sceneDescription";
 import {
 	getWebcamNativeSize,
@@ -86,6 +89,8 @@ interface PreviewCanvasProps {
 	zoomRegions?: AxcutZoomRegion[];
 	speedRegions?: SpeedRegion[];
 	cameraFullscreenRegions?: CameraFullscreenRegion[];
+	/** Camera Motion regions: where the camera picture travels to, and when. */
+	cameraMotionRegions?: CameraMotionRegion[];
 	trimRanges?: AxcutTrimRange[];
 	/** Relayed to `VirtualPreview` so a clip carrying added words plays their extensions. */
 	transcripts?: AxcutTranscript[];
@@ -311,29 +316,45 @@ export function PreviewCanvas(props: PreviewCanvasProps) {
 		settings.frame,
 	]);
 
-	// Full Camera: during a cameraFullscreen region the webcam takes the whole
-	// frame and eases back. Same `computeCameraFullscreenRect` call as both
-	// exporters and the native compositor, so all four animate identically.
-	const cameraFullscreenProgress = useMemo(
+	// Camera Motion: where the camera picture travels to, and when. One resolution feeds
+	// this and the exporter both — legacy Full Camera regions are folded in by the
+	// resolver, so a project upgraded from the old field animates on exactly the envelope
+	// it used to, and a new Camera Motion region is the same code path with a different
+	// target.
+	const cameraMotion = useMemo(
 		() =>
-			computeCameraFullscreenProgress(
-				props.cameraFullscreenRegions ?? [],
-				Math.round(props.currentTimeSec * 1000),
-				props.speedRegions,
-			),
-		[props.cameraFullscreenRegions, props.currentTimeSec, props.speedRegions],
+			resolveCameraMotionWinner({
+				regions: props.cameraMotionRegions ?? [],
+				legacyRegions: props.cameraFullscreenRegions ?? [],
+				timeMs: Math.round(props.currentTimeSec * 1000),
+				speedRegions: props.speedRegions,
+				aspects: {
+					cameraAspectRatio:
+						webcamSourceSize.height > 0 ? webcamSourceSize.width / webcamSourceSize.height : 4 / 3,
+					canvasAspectRatio: frameSize.width / frameSize.height,
+				},
+			}),
+		[
+			props.cameraMotionRegions,
+			props.cameraFullscreenRegions,
+			props.currentTimeSec,
+			props.speedRegions,
+			webcamSourceSize,
+			frameSize,
+		],
 	);
 	const effectiveLayout = useMemo<WebcamCompositeLayout | null>(() => {
-		if (!layout?.webcamRect || cameraFullscreenProgress <= 0) return layout;
+		if (!layout?.webcamRect || !cameraMotion) return layout;
 		return {
 			...layout,
-			webcamRect: computeCameraFullscreenRect(
+			webcamRect: applyCameraMotionToRect(
 				layout.webcamRect,
+				cameraMotion.target,
+				cameraMotion.progress,
 				frameSize,
-				cameraFullscreenProgress,
 			),
 		};
-	}, [layout, cameraFullscreenProgress, frameSize]);
+	}, [layout, cameraMotion, frameSize]);
 
 	// The stage hosting the interactive overlays is the CONTENT rect: the compositor draws the
 	// frame around it (grown outward, or laid out beside the camera in a block layout), so every

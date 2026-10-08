@@ -16,6 +16,7 @@ import {
 	type LucideIcon,
 	Maximize2,
 	MousePointer2,
+	Move,
 	Pencil,
 	Scissors,
 	SlidersHorizontal,
@@ -52,6 +53,11 @@ import {
 	type AnnotationTextAnimation,
 	TEXT_ANIMATION_VALUES,
 } from "@/lib/ai-edition/annotations/textAnimation";
+import {
+	CAMERA_MOTION_EASINGS,
+	type CameraMotionEasing,
+} from "@/lib/ai-edition/cameraMotion/easing";
+import { CAMERA_MOTION_LIMITS } from "@/lib/ai-edition/cameraMotion/presets";
 import { resolveAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
 import type { AxcutAnnotationRegion, AxcutClip } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
@@ -1276,6 +1282,135 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 					tc("actions.close"),
 				)}
 				<div style={bodyStyle}>
+					<button type="button" onClick={deleteAndClose} className={PANE_BUTTON}>
+						<Trash2 size={16} style={{ color: "var(--danger)" }} />
+						{te("inspector.deleteRegion")}
+					</button>
+				</div>
+			</div>
+		);
+	}
+
+	// Camera Motion. Deliberately plain controls — a range input and a native select —
+	// because the first version's job is to be reliable and to prove the model, not to be
+	// pretty; the custom controls the zoom pane has can come once the fields stop moving.
+	// Every edit goes through one store call, which is what keeps undo to one step per
+	// gesture and keeps the region's other fields from being rebuilt.
+	if (selection.kind === "cameraMotion") {
+		const region = tl.cameraMotionRegions.find((r) => r.id === selection.id);
+		if (!region) return null;
+		const target = region.target;
+		const isFullscreen = target.layout === "fullscreen";
+		const rowStyle = { display: "grid", gap: 4, fontSize: 12 } as const;
+		const number = (value: number) => Number(value.toFixed(3));
+		return (
+			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+				{paneHeader(<Move size={16} />, tt("cameraMotion.title"), onClose, tc("actions.close"))}
+				<div style={bodyStyle}>
+					<label style={rowStyle}>
+						<span>{tt("cameraMotion.positionX")}</span>
+						<input
+							type="range"
+							min={0}
+							max={1}
+							step={0.01}
+							value={target.position.x}
+							onChange={(event) =>
+								void tl.setCameraMotionTarget(region.id, {
+									position: { ...target.position, x: number(Number(event.target.value)) },
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("cameraMotion.positionY")}</span>
+						<input
+							type="range"
+							min={0}
+							max={1}
+							step={0.01}
+							value={target.position.y}
+							onChange={(event) =>
+								void tl.setCameraMotionTarget(region.id, {
+									position: { ...target.position, y: number(Number(event.target.value)) },
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("cameraMotion.size")}</span>
+						<input
+							type="range"
+							min={CAMERA_MOTION_LIMITS.sizeMin}
+							max={CAMERA_MOTION_LIMITS.sizeMax}
+							step={0.01}
+							value={target.size}
+							onChange={(event) =>
+								void tl.setCameraMotionTarget(region.id, {
+									size: number(Number(event.target.value)),
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("cameraMotion.roundness")}</span>
+						<input
+							type="range"
+							min={0}
+							max={1}
+							step={0.01}
+							value={target.roundness}
+							onChange={(event) =>
+								void tl.setCameraMotionTarget(region.id, {
+									roundness: number(Number(event.target.value)),
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("cameraMotion.opacity")}</span>
+						<input
+							type="range"
+							min={0}
+							max={1}
+							step={0.01}
+							value={target.opacity}
+							onChange={(event) =>
+								void tl.setCameraMotionTarget(region.id, {
+									opacity: number(Number(event.target.value)),
+								})
+							}
+						/>
+					</label>
+					<button
+						type="button"
+						onClick={() =>
+							void tl.setCameraMotionTarget(region.id, {
+								layout: isFullscreen ? "shape" : "fullscreen",
+							})
+						}
+						className={PANE_BUTTON}
+					>
+						<Maximize2 size={16} />
+						{isFullscreen ? tt("cameraMotion.toPip") : tt("cameraMotion.toFullscreen")}
+					</button>
+					<label style={rowStyle}>
+						<span>{tt("cameraMotion.easing")}</span>
+						<select
+							value={region.timing.easing}
+							onChange={(event) =>
+								void tl.setCameraMotionTiming(region.id, {
+									easing: event.target.value as CameraMotionEasing,
+								})
+							}
+						>
+							{CAMERA_MOTION_EASINGS.map((easing) => (
+								<option key={easing} value={easing}>
+									{easing}
+								</option>
+							))}
+						</select>
+					</label>
 					<button type="button" onClick={deleteAndClose} className={PANE_BUTTON}>
 						<Trash2 size={16} style={{ color: "var(--danger)" }} />
 						{te("inspector.deleteRegion")}

@@ -30,6 +30,7 @@
 pub mod audio;
 pub mod audio_jobs;
 pub mod camera;
+pub mod camera_motion;
 pub mod config;
 pub mod cursor;
 pub mod cursor_sdf;

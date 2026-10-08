@@ -89,6 +89,9 @@ function modifierIds(document: AxcutDocument, kind: ModifierKind): string[] {
 			return document.zoomRanges.map((region) => region.id);
 		case "annotation":
 			return document.annotations.map((region) => region.id);
+		case "cameraMotion":
+			// The general form of the Full Camera span: an id list like any other modifier.
+			return document.cameraMotionRegions.map((region) => region.id);
 		case "speed":
 			return ((legacy.speedRegions as Array<{ id: string }> | undefined) ?? []).map(
 				(region) => region.id,

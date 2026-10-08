@@ -59,6 +59,7 @@ function makeDoc(): AxcutDocument {
 		zoomRanges: [],
 		audioTracks: [],
 		markers: [],
+		cameraMotionRegions: [],
 		legacyEditor: null,
 	};
 }

@@ -125,6 +125,7 @@ function renderTimeline(
 		// Before the spread so a test can put markers in; every other fixed member stays
 		// after it, where a caller cannot accidentally replace it with nothing.
 		markers: [],
+		cameraMotionRegions: [],
 		...overrides,
 		selection: null,
 		multiSelection: [],
@@ -669,6 +670,7 @@ describe("V4Timeline audio lane drag", () => {
 			audioTracks: tracks ?? [{ ...makeTrack(), ...trackOverrides }],
 			// Recording bookmarks: none in this fixture, which is about audio geometry.
 			markers: [],
+			cameraMotionRegions: [],
 			// The lane reads these for the amber added-word marks (#540); this fixture
 			// is about audio geometry, so it has none.
 			transcripts: [],

@@ -359,6 +359,7 @@ const base = {
 	zoomRanges: [],
 	audioTracks: [],
 	markers: [],
+	cameraMotionRegions: [],
 	legacyEditor: null,
 };
 

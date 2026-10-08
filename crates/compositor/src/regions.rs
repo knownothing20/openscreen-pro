@@ -299,7 +299,7 @@ fn sample_cubic_bezier_derivative(a1: f32, a2: f32, t: f32) -> f32 {
 }
 
 /// Port direct de `cubicBezier` (TS) : Newton-Raphson puis bissection de repli.
-fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
+pub(crate) fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
     let target_x = clamp01(t);
     let mut solved_t = target_x;
     for _ in 0..8 {
@@ -328,7 +328,7 @@ fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
 }
 
 /// Port de `easeOutScreenStudio` (TS) : cubic-bezier(0.16, 1, 0.3, 1).
-fn ease_out_screen_studio(t: f32) -> f32 {
+pub(crate) fn ease_out_screen_studio(t: f32) -> f32 {
     cubic_bezier(0.16, 1.0, 0.3, 1.0, t)
 }
 
@@ -347,7 +347,7 @@ fn scale_lerp(a: f32, b: f32, t: f32) -> f32 {
 /// Montée d'un ressort critique (sans rebond), ramenée pile sur [0, 1] à la fin de la fenêtre :
 /// vitesse nulle au départ, donc pas d'à-coup, et arrivée amortie. L'ancienne courbe du zoom
 /// (cubic-bezier(0.16, 1, 0.3, 1)) partait à pleine vitesse dès la première frame.
-fn ease_spring(t: f32) -> f32 {
+pub(crate) fn ease_spring(t: f32) -> f32 {
     let x = SPRING_OMEGA_T * clamp01(t);
     let end = 1.0 - (1.0 + SPRING_OMEGA_T) * (-SPRING_OMEGA_T).exp();
     (1.0 - (1.0 + x) * (-x).exp()) / end
@@ -969,7 +969,7 @@ pub fn zoom_state_in(
 /// `endSec`. Fenêtres bornées à la moitié de la durée de la région pour que les régions courtes
 /// s'animent pleinement sans déborder. Fenêtres mesurées à l'écran, comme celles du zoom
 /// (`ScreenClock`). Le rect et la bulle y appliquent chacun leur courbe.
-fn camera_fullscreen_region_phase(
+pub(crate) fn camera_fullscreen_region_phase(
     region: &SceneCameraFullscreenRegion,
     t: f32,
     clock: &ScreenClock,
@@ -1550,7 +1550,7 @@ pub fn square_to_quad(c: &[(f32, f32); 4], u: f32, v: f32) -> (f32, f32) {
     ((c[0].0 as f64 + x) as f32, (c[0].1 as f64 + y) as f32)
 }
 
-fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+pub(crate) fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     let u = clamp01((x - e0) / (e1 - e0));
     u * u * (3.0 - 2.0 * u)
 }

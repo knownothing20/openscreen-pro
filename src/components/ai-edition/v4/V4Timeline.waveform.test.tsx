@@ -127,6 +127,7 @@ function renderBars(atGainDb: number): string[] {
 		clipSelection: null,
 		audioTracks: [],
 		markers: [],
+		cameraMotionRegions: [],
 		selectedAudioTrackId: null,
 		selectAudioTrack: vi.fn(),
 		clearSelection: vi.fn(),

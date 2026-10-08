@@ -15,6 +15,11 @@ import { useScopedT } from "@/contexts/I18nContext";
 import { DEFAULT_TEXT_PLATE } from "../annotations/background";
 import { fitTextBox } from "../annotations/placement";
 import {
+	CAMERA_MOTION_FULLSCREEN_TARGET,
+	DEFAULT_CAMERA_MOTION_TIMING,
+} from "../cameraMotion/presets";
+import type { CameraMotionRegionTiming, CameraMotionTarget } from "../cameraMotion/resolve";
+import {
 	collapseTracksToPills,
 	patchAudioTrack,
 	placeAudioTrackInDocument,
@@ -541,6 +546,115 @@ export function useTimeline() {
 	// entry points — the toolbar and the `C` shortcut — and any future one are covered
 	// by construction. `hasAnyClipWithCamera` is the consolidated answer to "does this
 	// project have a camera at all", used the same way by the Layout pane.
+	// Camera Motion: the general form of the span above. Same gate and the same anchoring,
+	// but the region carries where the camera goes and how it eases, and it is stored in
+	// `cameraMotionRegions` — a first-class field with a schema behind it — rather than in
+	// the legacy passthrough. The C shortcut creates one of these with the fullscreen
+	// preset, which is what "Add Full Camera" has always meant; an existing
+	// `cameraFullscreenRegions` entry keeps its own field and animates exactly as before
+	// (see `cameraMotion/legacyTiming.ts`), so nothing is migrated behind the user's back.
+	const addCameraMotion = useCallback(
+		async (
+			durationSec = DEFAULT_NEW_REGION_SEC,
+			target: CameraMotionTarget = CAMERA_MOTION_FULLSCREEN_TARGET,
+		) => {
+			if (!document) return;
+			if (!hasAnyClipWithCamera(document.assets, document.timeline.clips)) return;
+			const timeMs = Math.round(playheadSec() * 1000);
+			const endMs = timeMs + Math.round(durationSec * 1000);
+			const next: AxcutDocument = {
+				...document,
+				cameraMotionRegions: [
+					...(document.cameraMotionRegions ?? []),
+					...anchorRegionsWithDerivedMs(
+						[
+							{
+								id: createId("cammotion"),
+								startMs: timeMs,
+								endMs,
+								timing: DEFAULT_CAMERA_MOTION_TIMING,
+								target,
+							},
+						],
+						document.timeline.clips,
+						() => createId("cammotion"),
+					),
+				],
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	/** Move or resize a camera move. Same commit-on-pointerup contract as the other
+	 *  regions: the drag paints locally and lands here once. */
+	const updateCameraMotionSpan = useCallback(
+		async (id: string, startMs: number, endMs: number) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				cameraMotionRegions: replacePillSpan(
+					document.cameraMotionRegions ?? [],
+					id,
+					finiteMs(startMs),
+					finiteMs(endMs),
+					document.timeline.clips,
+					() => createId("cammotion"),
+				),
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	/** Delete a camera move. The region goes; the footage is untouched, and undo brings the
+	 *  whole thing back because it is one document write like every other edit. */
+	const removeCameraMotion = useCallback(
+		async (id: string) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				cameraMotionRegions: (document.cameraMotionRegions ?? []).filter(
+					(region) => region.id !== id,
+				),
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	/** Edit where the camera goes. Only the named fields move: the Inspector sends one
+	 *  control at a time, and rebuilding the whole target would silently reset whatever the
+	 *  control did not mention. */
+	const setCameraMotionTarget = useCallback(
+		async (id: string, patch: Partial<CameraMotionTarget>) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				cameraMotionRegions: (document.cameraMotionRegions ?? []).map((region) =>
+					region.id === id ? { ...region, target: { ...region.target, ...patch } } : region,
+				),
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	/** Edit how the move is timed. Separate from the target for the same reason. */
+	const setCameraMotionTiming = useCallback(
+		async (id: string, patch: Partial<CameraMotionRegionTiming>) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				cameraMotionRegions: (document.cameraMotionRegions ?? []).map((region) =>
+					region.id === id ? { ...region, timing: { ...region.timing, ...patch } } : region,
+				),
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
 	const addCameraFullscreen = useCallback(
 		async (durationSec = DEFAULT_NEW_REGION_SEC) => {
 			if (!document) return;
@@ -1663,6 +1777,10 @@ export function useTimeline() {
 		annotationRegions: (document?.annotations ?? []) as unknown as AnnotationRegion[],
 		speedRegions,
 		cameraFullscreenRegions,
+		// Camera Motion regions. Read straight off the document: unlike the legacy list
+		// above, nothing in this store writes them yet — the C shortcut and the Inspector
+		// are the next slice.
+		cameraMotionRegions: document?.cameraMotionRegions ?? [],
 		// Recording bookmarks. Kept as the stored markers, not the visible ones: which of
 		// them the current clip layout shows is a question the timeline answers per render
 		// (`visibleMarkersFor`), so a trim that hides one is undone by the next render
@@ -1683,6 +1801,11 @@ export function useTimeline() {
 		addTrim,
 		addAnnotation,
 		addSpeed,
+		addCameraMotion,
+		updateCameraMotionSpan,
+		removeCameraMotion,
+		setCameraMotionTarget,
+		setCameraMotionTiming,
 		addCameraFullscreen,
 		removeRegion,
 		removeMarker,

@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "Pohyb kamery",
+		"positionX": "Vodorovná poloha",
+		"positionY": "Svislá poloha",
+		"size": "Velikost",
+		"roundness": "Zaoblení rohů",
+		"opacity": "Průhlednost",
+		"toPip": "Zpět na obraz v obraze",
+		"toFullscreen": "Na celou obrazovku",
+		"easing": "Zplynulení"
+	},
 	"marker": {
 		"seek": "Přejít na značku v {{time}}",
 		"edit": "Přejmenovat značku",

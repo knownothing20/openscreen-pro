@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CameraFullscreenRegion, ZoomFocus } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
+import type { CameraMotionRegion } from "@/lib/ai-edition/cameraMotion/resolve";
 import type {
 	AxcutAnnotationRegion,
 	AxcutAudioTrack,
@@ -38,6 +39,8 @@ interface PreviewProps {
 	zoomRegions?: AxcutZoomRegion[];
 	speedRegions?: SpeedRegion[];
 	cameraFullscreenRegions?: CameraFullscreenRegion[];
+	/** Camera Motion regions: where the camera picture travels to, and when. */
+	cameraMotionRegions?: CameraMotionRegion[];
 	trimRanges?: AxcutTrimRange[];
 	transcripts?: AxcutTranscript[];
 	selectedZoomRegionId?: string | null;
@@ -73,6 +76,7 @@ export function Preview({
 	zoomRegions,
 	speedRegions,
 	cameraFullscreenRegions,
+	cameraMotionRegions,
 	trimRanges,
 	transcripts,
 	selectedZoomRegionId,
@@ -216,6 +220,7 @@ export function Preview({
 						zoomRegions={zoomRegions}
 						speedRegions={speedRegions}
 						cameraFullscreenRegions={cameraFullscreenRegions}
+						cameraMotionRegions={cameraMotionRegions}
 						trimRanges={trimRanges}
 						transcripts={transcripts}
 						selectedZoomRegionId={selectedZoomRegionId}

@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "Kamera hareketi",
+		"positionX": "Yatay konum",
+		"positionY": "Dikey konum",
+		"size": "Boyut",
+		"roundness": "Köşe yuvarlaklığı",
+		"opacity": "Opaklık",
+		"toPip": "Resim içinde resme dön",
+		"toFullscreen": "Tam ekran",
+		"easing": "Yumuşatma"
+	},
 	"marker": {
 		"seek": "{{time}} işaretine git",
 		"edit": "İşareti yeniden adlandır",

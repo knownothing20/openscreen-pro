@@ -591,7 +591,7 @@ const AudioLanePill = memo(function AudioLanePill({
 
 interface LanePill {
 	id: string;
-	kind: "annotation" | "speed" | "trim" | "zoom" | "cameraFullscreen";
+	kind: "annotation" | "speed" | "trim" | "zoom" | "cameraFullscreen" | "cameraMotion";
 	start: number;
 	end: number;
 	label: string;
@@ -782,6 +782,25 @@ export function V4Timeline({
 			start: p.start,
 			end: p.end,
 			label: "Full Camera",
+			sourceIds: p.ids,
+		}),
+	);
+	// Camera Motion regions. They share the Full Camera lane: the two are the same
+	// thing at different levels of detail, and a second lane holding near-identical
+	// pills would be two places to look for one answer. A region authored with the
+	// fullscreen preset keeps the name the button that made it has.
+	const cameraMotionPills: LanePill[] = coalesceRegionsForRuler(tl.cameraMotionRegions).map(
+		(p) => ({
+			id: p.ids[0],
+			kind: "cameraMotion",
+			start: p.start,
+			end: p.end,
+			label:
+				p.ids.length === 1 &&
+				p.ids[0] === tl.cameraMotionRegions.find((r) => r.id === p.ids[0])?.id &&
+				tl.cameraMotionRegions.find((r) => r.id === p.ids[0])?.target.layout === "fullscreen"
+					? "Full Camera"
+					: "Camera Motion",
 			sourceIds: p.ids,
 		}),
 	);
@@ -1012,6 +1031,8 @@ export function V4Timeline({
 					await tl.updateAnnotationSpan(pill.id, s * 1000, en * 1000);
 				else if (pill.kind === "cameraFullscreen")
 					await tl.updateCameraFullscreenSpan(pill.id, s * 1000, en * 1000);
+				else if (pill.kind === "cameraMotion")
+					await tl.updateCameraMotionSpan(pill.id, s * 1000, en * 1000);
 				else {
 					// Trims are stored in source-time per asset but manipulated on the
 					// timeline like every other pill. Ventilate the new span across the
@@ -1439,7 +1460,7 @@ export function V4Timeline({
 				? styles.laneSpeed
 				: kind === "trim"
 					? styles.laneTrim
-					: kind === "cameraFullscreen"
+					: kind === "cameraFullscreen" || kind === "cameraMotion"
 						? styles.laneCameraFullscreen
 						: styles.laneZoom;
 	const pillIcon = (kind: LanePill["kind"]) =>
@@ -2043,7 +2064,7 @@ export function V4Timeline({
 										type="button"
 										className={styles.tlToolBtn}
 										aria-label={t("buttons.addCameraFullscreen")}
-										onClick={() => void tl.addCameraFullscreen(newRegionDurationSec())}
+										onClick={() => void tl.addCameraMotion(newRegionDurationSec())}
 									>
 										<Maximize2 size={16} />
 									</button>
@@ -2286,7 +2307,7 @@ export function V4Timeline({
 									    that `addCameraFullscreen` now refuses (#353). The toolbar button is
 									    already disabled; this keeps the lane from contradicting it. */}
 									{renderPills(
-										cameraFullscreenPills,
+										[...cameraFullscreenPills, ...cameraMotionPills],
 										hasAnyCamera
 											? t("hints.pressCameraFullscreen", {
 													key: formatBinding(shortcuts.addCameraFullscreen, isMac),

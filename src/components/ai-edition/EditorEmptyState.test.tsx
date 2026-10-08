@@ -55,6 +55,7 @@ const sampleDoc = vi.hoisted(
 		zoomRanges: [],
 		audioTracks: [],
 		markers: [],
+		cameraMotionRegions: [],
 		legacyEditor: null,
 	}),
 );

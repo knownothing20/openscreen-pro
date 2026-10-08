@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "Movimento da câmera",
+		"positionX": "Posição horizontal",
+		"positionY": "Posição vertical",
+		"size": "Tamanho",
+		"roundness": "Arredondamento dos cantos",
+		"opacity": "Opacidade",
+		"toPip": "Voltar para picture-in-picture",
+		"toFullscreen": "Tela cheia",
+		"easing": "Suavização"
+	},
 	"marker": {
 		"seek": "Ir para a marcação em {{time}}",
 		"edit": "Renomear marcação",

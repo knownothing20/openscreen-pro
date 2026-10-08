@@ -1204,7 +1204,16 @@ export function NewEditorShell() {
 					? tl.annotationRegions
 					: sel.kind === "speed"
 						? tl.speedRegions
-						: tl.cameraFullscreenRegions;
+						: sel.kind === "cameraMotion"
+							? tl.cameraMotionRegions
+							: tl.cameraFullscreenRegions;
+		if (sel.kind === "cameraMotion") {
+			// Copying a camera move is not wired yet: the clipboard snapshot does not carry
+			// this kind, and a copy that pastes nothing is worse than no copy. Refusing here
+			// keeps the toast honest — the shortcut will simply do nothing until the
+			// clipboard learns the kind, which is the next step.
+			return;
+		}
 		const region = (source as Array<{ id: string }>).find((r) => r.id === sel.id);
 		if (!region) return;
 		copyRegion({ kind: sel.kind, region: region as unknown as Record<string, unknown> });
@@ -1386,7 +1395,7 @@ export function NewEditorShell() {
 			}
 			if (matchesShortcut(e, shortcuts.addCameraFullscreen, isMac)) {
 				e.preventDefault();
-				void tl.addCameraFullscreen(newRegionDurationSec());
+				void tl.addCameraMotion(newRegionDurationSec());
 				return;
 			}
 
@@ -1618,6 +1627,7 @@ export function NewEditorShell() {
 									zoomRegions={tl.zoomRegions}
 									speedRegions={tl.speedRegions}
 									cameraFullscreenRegions={tl.cameraFullscreenRegions}
+									cameraMotionRegions={tl.cameraMotionRegions}
 									trimRanges={tl.trimRanges}
 									selectedZoomRegionId={tl.selection?.kind === "zoom" ? tl.selection.id : null}
 									onZoomFocusChange={tl.updateZoomFocusLive}

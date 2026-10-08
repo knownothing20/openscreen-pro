@@ -37,6 +37,7 @@ function doc(title: string): AxcutDocument {
 		zoomRanges: [],
 		audioTracks: [],
 		markers: [],
+		cameraMotionRegions: [],
 		legacyEditor: null,
 	};
 }

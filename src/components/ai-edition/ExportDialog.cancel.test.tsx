@@ -68,6 +68,7 @@ const DOC: AxcutDocument = {
 	zoomRanges: [],
 	audioTracks: [],
 	markers: [],
+	cameraMotionRegions: [],
 	legacyEditor: null,
 };
 const STATS: CompositorExportGifResult = {

@@ -36,7 +36,14 @@ import { createId } from "./ids";
  *  exist" has exactly one definition. `trim` is a source-time cut; the rest are pill-merged
  *  effects (zoom / speed / annotation / camera-fullscreen). Clips are removed via
  *  {@link removeClip}, not here — deleting a clip reflows the whole timeline. */
-export type RegionKind = "zoom" | "trim" | "annotation" | "speed" | "cameraFullscreen" | "audio";
+export type RegionKind =
+	| "zoom"
+	| "trim"
+	| "annotation"
+	| "speed"
+	| "cameraFullscreen"
+	| "cameraMotion"
+	| "audio";
 
 /** Length a clip is given before its media has been probed. Lives here, in the pure
  *  document layer, because that layer decides which clips are still waiting for a real
@@ -1120,6 +1127,12 @@ export function removeRegion(document: AxcutDocument, kind: RegionKind, id: stri
 			);
 			return { ...document, legacyEditor: { ...legacy, cameraFullscreenRegions: prev } };
 		}
+		case "cameraMotion": {
+			return {
+				...document,
+				cameraMotionRegions: document.cameraMotionRegions.filter((region) => region.id !== id),
+			};
+		}
 		default: {
 			// ponytail: exhaustive — TS errors here if a new RegionKind is added.
 			const exhaustive: never = kind;
@@ -1152,6 +1165,10 @@ const EDIT_REGIONS: Record<
 > = {
 	zoom: { count: (d) => d.zoomRanges.length, clear: (d) => ({ ...d, zoomRanges: [] }) },
 	annotation: { count: (d) => d.annotations.length, clear: (d) => ({ ...d, annotations: [] }) },
+	cameraMotion: {
+		count: (d) => d.cameraMotionRegions.length,
+		clear: (d) => ({ ...d, cameraMotionRegions: [] }),
+	},
 	trim: {
 		count: (d) => d.timeline.trimRanges.length,
 		clear: (d) => ({ ...d, timeline: { ...d.timeline, trimRanges: [] } }),

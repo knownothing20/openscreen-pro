@@ -21,6 +21,7 @@ import { clampToBound } from "../../projectDefaults";
 // Cycle-safe: `document/ids` only pulls `uuid`, and `timeline/timelineMap`'s
 // transitive value-imports (region-ventilation, virtual-preview) import from this
 // module TYPE-ONLY, so requiring them here never re-enters schema at runtime.
+import { parseCameraMotionRegions } from "../cameraMotion/parse";
 import { createId } from "../document/ids";
 import { anchorRegionsWithDerivedMs } from "../timeline/timelineMap";
 
@@ -660,6 +661,14 @@ const documentSchemaShape = z.object({
 	// the same reason: no `schemaVersion` bump is owed, because a document written
 	// before markers existed simply reads as "no markers" and stays valid.
 	markers: z.array(recordingMarkerSchema).default([]),
+	// Camera Motion regions: where the camera picture travels to, and when. Read through a
+	// repairing parser rather than a zod object, because the requirement here is repair —
+	// a region whose size was hand-edited out of range must not take the project with it.
+	// Defaulted on the same terms as `markers`, so an older document reads as "no camera
+	// moves" and stays valid without a version bump. Legacy `cameraFullscreenRegions` are
+	// NOT migrated into this list: they keep their own field and are folded in at
+	// evaluation time (see `cameraMotion/legacyTiming.ts`).
+	cameraMotionRegions: z.array(z.unknown()).default([]).transform(parseCameraMotionRegions),
 	legacyEditor: legacyEditorSchema.nullable().default(null),
 });
 

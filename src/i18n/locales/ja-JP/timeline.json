@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "カメラの動き",
+		"positionX": "水平位置",
+		"positionY": "垂直位置",
+		"size": "サイズ",
+		"roundness": "角の丸み",
+		"opacity": "不透明度",
+		"toPip": "ピクチャインピクチャに戻す",
+		"toFullscreen": "全画面にする",
+		"easing": "イージング"
+	},
 	"marker": {
 		"seek": "{{time}} のマーカーへ移動",
 		"edit": "マーカーの名前を変更",

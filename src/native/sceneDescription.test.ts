@@ -102,6 +102,7 @@ function makeDoc(
 		// Markers are editorial, never rendered: the scene description has no field for them,
 		// and this fixture carries an empty list so the document type stays satisfied.
 		markers: [],
+		cameraMotionRegions: [],
 		legacyEditor: overrides.legacyEditor ?? null,
 	};
 }

@@ -539,6 +539,95 @@ pub struct SceneCameraFullscreenRegion {
     pub end_sec: f64,
 }
 
+/// Une zone "Camera Motion" de la timeline : la caméra se déplace et/ou change de forme vers une
+/// cible pendant cette fenêtre.
+///
+/// Contrairement à `SceneCameraFullscreenRegion`, la cible voyage DÉJÀ RÉSOLUE — des nombres
+/// continus, pas la forme discrète que l'auteur a choisie. C'est délibéré : la correspondance
+/// forme → (aspect, coin) doit vivre à un seul endroit (TS, `cameraMotion/resolve.ts`), sinon
+/// les deux implémentations dérivent. Le natif ne fait que l'enveloppe temporelle et le lerp de
+/// rect, comme il le faisait déjà pour Full Camera.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneCameraMotionRegion {
+    /// Index du clip dont les temps source portent cette région (voir `SceneZoomRegion`).
+    #[serde(default)]
+    pub clip_index: Option<usize>,
+    pub start_sec: f64,
+    pub end_sec: f64,
+    /// La cible, en nombres continus (voir `SceneCameraMotionTarget`).
+    #[serde(default)]
+    pub target: SceneCameraMotionTarget,
+    /// Fenêtre d'arrivée, en secondes. Bornée à la moitié de la région au moment de l'évaluation,
+    /// pas ici, pour qu'une région redimensionnée reçoive la borne qu'elle aurait eue.
+    #[serde(default = "default_camera_motion_lead_in_sec")]
+    pub lead_in_sec: f32,
+    /// Fenêtre de retour, en secondes (même borne).
+    #[serde(default = "default_camera_motion_return_sec")]
+    pub return_sec: f32,
+    /// Nom de courbe : `linear` / `quadratic` / `cubic` / `quintic` / `spring` / `screenStudio`.
+    /// Un nom inconnu (ou absent) retombe sur `cubic`, le même défaut que `parse.ts` (TS).
+    #[serde(default)]
+    pub easing: String,
+}
+
+fn default_camera_motion_lead_in_sec() -> f32 {
+    0.6
+}
+
+fn default_camera_motion_return_sec() -> f32 {
+    0.9
+}
+
+/// La cible d'un mouvement de caméra, telle que l'app l'a résolue.
+///
+/// `position` est le CENTRE de l'image caméra (0..1 du canvas), `size` sa largeur en fraction du
+/// canvas, `aspect_ratio` sa largeur/hauteur, `corner_fraction` le rayon de coin en fraction du
+/// petit côté (0 = coins francs, 0.5 = cercle plein), `fullscreen_progress` la part du chemin
+/// vers le plein cadre et `opacity` l'opacité (0..1). Miroir de `CameraMotionSample` (TS).
+///
+/// Les défauts ne servent qu'aux payloads abîmés : l'app envoie toujours les sept champs.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneCameraMotionTarget {
+    #[serde(default = "default_camera_position")]
+    pub position_x: f32,
+    #[serde(default = "default_camera_position")]
+    pub position_y: f32,
+    #[serde(default = "default_camera_size")]
+    pub size: f32,
+    #[serde(default = "default_camera_size")]
+    pub aspect_ratio: f32,
+    #[serde(default)]
+    pub corner_fraction: f32,
+    #[serde(default)]
+    pub fullscreen_progress: f32,
+    #[serde(default = "default_camera_size")]
+    pub opacity: f32,
+}
+
+fn default_camera_position() -> f32 {
+    0.5
+}
+
+fn default_camera_size() -> f32 {
+    1.0
+}
+
+impl Default for SceneCameraMotionTarget {
+    fn default() -> Self {
+        Self {
+            position_x: 0.5,
+            position_y: 0.5,
+            size: 1.0,
+            aspect_ratio: 1.0,
+            corner_fraction: 0.0,
+            fullscreen_progress: 0.0,
+            opacity: 1.0,
+        }
+    }
+}
+
 /// Rendu du curseur.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -730,6 +819,10 @@ pub struct Scene {
     /// `#[serde(default)]` : champ ajouté après coup, absent des JSON de test existants.
     #[serde(default)]
     pub camera_fullscreen_regions: Vec<SceneCameraFullscreenRegion>,
+    /// Zones "Camera Motion" (déplacement/forme de la caméra). `#[serde(default)]` : champ ajouté
+    /// après coup, absent des JSON écrits avant, et de tout projet sans mouvement de caméra.
+    #[serde(default)]
+    pub camera_motion_regions: Vec<SceneCameraMotionRegion>,
     pub cursor: SceneCursor,
     /// Global audio finishing. Default keeps old scene payloads bit-for-bit compatible.
     #[serde(default)]
@@ -786,6 +879,9 @@ impl Scene {
             belongs(region.clip_index, region.start_sec, region.end_sec)
         });
         scene.camera_fullscreen_regions.retain(|region| {
+            belongs(region.clip_index, region.start_sec, region.end_sec)
+        });
+        scene.camera_motion_regions.retain(|region| {
             belongs(region.clip_index, region.start_sec, region.end_sec)
         });
         scene.annotations.retain(|annotation| {

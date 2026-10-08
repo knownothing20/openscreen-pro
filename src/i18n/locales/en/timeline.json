@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "Camera motion",
+		"positionX": "Horizontal position",
+		"positionY": "Vertical position",
+		"size": "Size",
+		"roundness": "Corner roundness",
+		"opacity": "Opacity",
+		"toPip": "Back to picture-in-picture",
+		"toFullscreen": "Go fullscreen",
+		"easing": "Easing"
+	},
 	"marker": {
 		"seek": "Jump to marker at {{time}}",
 		"edit": "Rename marker",

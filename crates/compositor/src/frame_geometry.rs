@@ -2982,9 +2982,13 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // dans le même référentiel source que le PTS du décodeur écran.
         let empty_zoom: Vec<crate::scene::SceneZoomRegion> = Vec::new();
         let empty_cam: Vec<crate::scene::SceneCameraFullscreenRegion> = Vec::new();
+        let empty_cam_motion: Vec<crate::scene::SceneCameraMotionRegion> = Vec::new();
         let zoom_regions = scene.map(|s| &s.zoom_regions).unwrap_or(&empty_zoom);
         let cam_regions =
             scene.map(|s| &s.camera_fullscreen_regions).unwrap_or(&empty_cam);
+        let cam_motion_regions = scene
+            .map(|s| &s.camera_motion_regions)
+            .unwrap_or(&empty_cam_motion);
         let webcam_reactive = scene.map(|s| s.layout.webcam_reactive_zoom).unwrap_or(false);
         let source_t = input.timeline_t_override.unwrap_or(frame / FPS);
         // Les transitions se mesurent à l'écran (`ScreenClock`), la frame précédente aussi : une
@@ -3053,14 +3057,31 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             zoom_aim_prev = zs_p.aim;
             zoom_orbit_prev = zs_p.orbit;
         }
-        // Full Camera ignore le rétrécissement réactif de la webcam (design web : mélanger
-        // "rétrécit pour le zoom" et "grandit en plein cadre" dans la même frame n'a pas de sens).
-        let cam_progress =
-            crate::regions::camera_fullscreen_progress_at(cam_regions, source_t, &clock);
-        let cam_progress_prev =
-            crate::regions::camera_fullscreen_progress_at(cam_regions, source_t_prev, &clock);
-        let shape_fade =
-            crate::regions::camera_fullscreen_shape_at(cam_regions, source_t, &clock);
+        // Full Camera ET Camera Motion ignorent le rétrécissement réactif de la webcam (design
+        // web : mélanger "rétrécit pour le zoom" et "part vers une cible" dans la même frame n'a
+        // pas de sens). Les deux familles sont évaluées dans la MÊME arène — une région Full
+        // Camera est un mouvement vers le plein cadre —, donc une seule animation à la fois, la
+        // plus avancée, qu'elle vienne de la timeline ou d'un projet ancien.
+        let canvas_aspect = if rh > 0.0 { rw / rh } else { 1.0 };
+        let cam_sample = crate::camera_motion::camera_motion_sample_at(
+            cam_motion_regions,
+            cam_regions,
+            source_t,
+            &clock,
+            canvas_aspect,
+        );
+        let cam_sample_prev = crate::camera_motion::camera_motion_sample_at(
+            cam_motion_regions,
+            cam_regions,
+            source_t_prev,
+            &clock,
+            canvas_aspect,
+        );
+        let cam_progress = cam_sample.map(|s| s.progress).unwrap_or(0.0);
+        let cam_progress_prev = cam_sample_prev.map(|s| s.progress).unwrap_or(0.0);
+        // Ce qui reste de la bulle (1 = entière, 0 = plein cadre net) : le masque et l'ombre s'y
+        // accrochent. Sans mouvement, 1 — la bulle entière, comme avant.
+        let shape_fade = cam_sample.map(|s| s.shape_fade()).unwrap_or(1.0);
         // rétrécissement réactif : la webcam garde 70 % de sa taille pendant un zoom actif, quel
         // que soit son niveau (elle suivait 1/zoom, et rétrécissait donc d'autant plus que le zoom
         // était profond : ×0,6 au zoom maximal). L'enveloppe est celle de la région : elle descend
@@ -3345,25 +3366,24 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             fit_cam_aspect(scale_corner_br(pp.webcam.dst, webcam_size_scale_prev))
         };
 
-        // Full Camera : la caméra PREND le cadre — parité `computeCameraFullscreenRect` (TS).
-        // La cible est exactement [0,0,1,1] : pas de marge, pas de padding, pas d'arrondi, et
-        // plus rien de la composition (fond, écran, ombre) derrière. Le rect change de ratio en
-        // chemin, mais `cover_crop_uv` (plus bas) dérive la coupe source du ratio RÉEL de la
-        // boîte à chaque frame : la caméra n'est donc jamais étirée pendant l'animation.
-        let fullscreen_dst = |dst: [f32; 4], progress: f32| -> [f32; 4] {
-            if progress <= 0.0 {
-                return dst;
-            }
-            let lerp = |a: f32, b: f32| a + (b - a) * progress;
-            [lerp(dst[0], 0.0), lerp(dst[1], 0.0), lerp(dst[2], 1.0), lerp(dst[3], 1.0)]
-        };
-        // Petit côté de la boîte caméra AVANT que Full Camera ne la fasse grandir. C'est la
-        // référence du rayon de coin : le zoom réactif est déjà dedans (il rétrécit la boîte,
-        // donc l'arrondi suit tout seul — parité `borderRadius * reactiveFactor` côté TS), alors
-        // que Full Camera ne fait pas grossir l'arrondi, il le DISSOUT (cf. `shape_fade`).
+        // Camera Motion : la caméra part vers la boîte que décrit la cible — le plein cadre pour
+        // Full Camera (parité `computeCameraFullscreenRect`, TS), où la cible est exactement
+        // [0,0,1,1] : pas de marge, pas de padding, pas d'arrondi, et plus rien de la composition
+        // (fond, écran, ombre) derrière. Le rect change de ratio en chemin, mais `cover_crop_uv`
+        // (plus bas) dérive la coupe source du ratio RÉEL de la boîte à chaque frame : la caméra
+        // n'est donc jamais étirée pendant l'animation.
+        //
+        // Petit côté de la boîte caméra AVANT que le mouvement ne la déplace. C'est la référence
+        // du rayon de coin : le zoom réactif est déjà dedans (il rétrécit la boîte, donc l'arrondi
+        // suit tout seul — parité `borderRadius * reactiveFactor` côté TS), alors que le mouvement
+        // ne fait pas grossir l'arrondi, il le DISSOUT (cf. `camera_motion_radius`).
         let w_nominal_min = (w_dst[2] * rw).min(w_dst[3] * rh);
-        w_dst = fullscreen_dst(w_dst, cam_progress);
-        w_dst_prev = fullscreen_dst(w_dst_prev, cam_progress_prev);
+        w_dst = cam_sample
+            .map(|sample| crate::camera_motion::camera_motion_dst(w_dst, &sample))
+            .unwrap_or(w_dst);
+        w_dst_prev = cam_sample_prev
+            .map(|sample| crate::camera_motion::camera_motion_dst(w_dst_prev, &sample))
+            .unwrap_or(w_dst_prev);
 
         // Aucun contre-étirement ici : le render target porte la géométrie de sortie, rien n'est
         // étiré après coup, donc aucun rect n'est rétréci pour compenser.
@@ -3455,13 +3475,8 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // était une SECONDE, indépendante — fraction différente (0.12 vs 0.06 côté web) et sans
         // bornes — donc écran et caméra ne pouvaient pas s'accorder.
         let app_webcam_radius_frac = scene.and_then(|s| s.layout.webcam_radius_frac);
-        // Full Camera dissout la forme en prenant le cadre : le rayon fond vers 0, donc le cercle
-        // devient un rect à coins de plus en plus francs puis un plein cadre net — aucun masque
-        // ne survit au plein écran. Il fond sur sa propre courbe, en retard sur le rect
-        // (`camera_fullscreen_shape_at`). `computeCameraFullscreenRect` (TS) le lerpe encore
-        // avec le progrès, mais ce rayon-là n'habille qu'une `<video>` cachée.
-        let w_radius = shape_fade
-            * w_nominal_min
+        // Le rayon de la bulle au repos — le point de départ du mouvement, et son point de retour.
+        let base_radius = w_nominal_min
             * match app_webcam_radius_frac {
                 Some(f) => f,
                 // Fallback (payload sans fraction, fixture/bench) : l'ancienne table, keyée sur la
@@ -3473,6 +3488,27 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
                     _ => 0.12,
                 },
             };
+        // Un mouvement dissout la forme en la menant à sa cible : vers le plein cadre le rayon fond
+        // vers 0, donc le cercle devient un rect à coins de plus en plus francs puis un plein cadre
+        // net — aucun masque ne survit au plein écran. La cible décrit son propre rayon
+        // (`cornerFraction × petit côté de SA boîte`, comme `cameraMotionTargetRect` côté TS), et la
+        // courbe de fusion est celle de `camera_motion_radius` : dissolution TARDIVE vers le plein
+        // cadre (le rect fait l'essentiel du chemin au premier tiers de la montée), progrès vers une
+        // forme. Avec une cible plein cadre ceci rend exactement `shape_fade * base_radius` — le
+        // rayon Full Camera d'avant, à l'octet près. Sans mouvement, la bulle garde son rayon.
+        let dest_radius = cam_sample
+            .map(|sample| {
+                let width_px = sample.target_box[2] * rw;
+                let height_px = sample.target_box[3] * rh;
+                sample.corner_fraction * width_px.min(height_px)
+            })
+            .unwrap_or(0.0);
+        let w_radius = match cam_sample {
+            Some(sample) => {
+                crate::camera_motion::camera_motion_radius(base_radius, dest_radius, &sample)
+            }
+            None => base_radius,
+        };
 
     FrameGeometry {
         scene_preset,

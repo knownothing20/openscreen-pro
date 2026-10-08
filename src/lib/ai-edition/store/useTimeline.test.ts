@@ -124,6 +124,7 @@ const sampleDoc: AxcutDocument = {
 	zoomRanges: [],
 	audioTracks: [],
 	markers: [],
+	cameraMotionRegions: [],
 	legacyEditor: null,
 };
 
@@ -750,6 +751,7 @@ describe("useTimeline.clearTimeline", () => {
 		annotation: (tl) => tl.addAnnotation(),
 		speed: (tl) => tl.addSpeed(),
 		cameraFullscreen: (tl) => tl.addCameraFullscreen(),
+		cameraMotion: (tl) => tl.addCameraMotion(),
 	};
 	const editKinds = Object.keys(addOf) as EditKind[];
 
@@ -761,6 +763,7 @@ describe("useTimeline.clearTimeline", () => {
 			annotation: doc?.annotations.length ?? 0,
 			speed: doc ? readSpeedRegions(doc).length : 0,
 			cameraFullscreen: legacy.cameraFullscreenRegions?.length ?? 0,
+			cameraMotion: doc?.cameraMotionRegions.length ?? 0,
 		};
 	};
 	const noRegions: Record<EditKind, number> = {
@@ -769,6 +772,7 @@ describe("useTimeline.clearTimeline", () => {
 		annotation: 0,
 		speed: 0,
 		cameraFullscreen: 0,
+		cameraMotion: 0,
 	};
 
 	// A project holding everything that is NOT an edit: two clips, a webcam, an imported
@@ -928,6 +932,7 @@ describe("useTimeline.clearTimeline", () => {
 			annotation: 1,
 			speed: 1,
 			cameraFullscreen: 1,
+			cameraMotion: 1,
 		});
 
 		await act(async () => {
@@ -967,6 +972,7 @@ describe("useTimeline.clearTimeline", () => {
 			annotation: 1,
 			speed: 1,
 			cameraFullscreen: 1,
+			cameraMotion: 1,
 		});
 
 		act(() => {

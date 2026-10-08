@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "Movimiento de cámara",
+		"positionX": "Posición horizontal",
+		"positionY": "Posición vertical",
+		"size": "Tamaño",
+		"roundness": "Redondeo de esquinas",
+		"opacity": "Opacidad",
+		"toPip": "Volver a imagen en imagen",
+		"toFullscreen": "Pantalla completa",
+		"easing": "Suavizado"
+	},
 	"marker": {
 		"seek": "Ir a la marca en {{time}}",
 		"edit": "Renombrar marca",

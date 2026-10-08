@@ -24,6 +24,7 @@ import type {
 } from "@/components/video-editor/types";
 import { DEFAULT_CROP_REGION, getZoomScale } from "@/components/video-editor/types";
 import { annotationFontSizeFraction } from "@/lib/ai-edition/annotationScale";
+import { resolveCameraMotionTarget } from "@/lib/ai-edition/cameraMotion/resolve";
 import {
 	captionCuesToTextRegions,
 	deriveCaptionCues,
@@ -120,6 +121,36 @@ export interface SceneZoomRegion {
 }
 
 /** A "Full Camera" timeline region (from `legacyEditor.cameraFullscreenRegions`). Times in seconds. */
+/** A Camera Motion region, projected to source time.
+ *
+ * The destination travels RESOLVED — continuous numbers rather than the authored shape — so
+ * the compositor mirrors only the envelope and the rect lerp it already has, and the
+ * shape → (aspect, corner) mapping stays in one place (). Two
+ * implementations of that mapping is exactly the drift this wire format is shaped to avoid.
+ *
+ * The envelope travels as // rather than a progress number
+ * because the compositor evaluates per frame, at its own frame times. */
+export interface SceneCameraMotionRegion {
+	startSec: number;
+	endSec: number;
+	/** See . */
+	clipIndex?: number;
+	/** See . */
+	underTrim?: boolean;
+	target: {
+		positionX: number;
+		positionY: number;
+		size: number;
+		aspectRatio: number;
+		cornerFraction: number;
+		fullscreenProgress: number;
+		opacity: number;
+	};
+	leadInSec: number;
+	returnSec: number;
+	easing: string;
+}
+
 export interface SceneCameraFullscreenRegion {
 	startSec: number;
 	endSec: number;
@@ -472,6 +503,7 @@ export interface SceneDescription {
 	 * source-time span after `projectRegionsToSourceTime`). Empty when none set.
 	 */
 	cameraFullscreenRegions: SceneCameraFullscreenRegion[];
+	cameraMotionRegions: SceneCameraMotionRegion[];
 	/**
 	 * Speed regions projected onto each clip's source time (one entry per
 	 * source-time span after `projectRegionsToSourceTime`). Empty when none set.
@@ -1043,6 +1075,13 @@ export function buildSceneDescription(
 		document.timeline.clips,
 		() => createId("camfull"),
 	);
+
+	const projectedCameraMotionRegions = projectRegionsToSource(
+		document.cameraMotionRegions ?? [],
+		visibleClips,
+		document.timeline.clips,
+		() => createId("cammotion"),
+	);
 	// Speed regions carry an extra `speed` field the standard `rangeSchema` does not, so we
 	// can't read from `document.timeline.speedRanges` today (see SceneDescription.speedRegions
 	// comment). The legacy web exporter reads from `legacyEditor.speedRegions`; we mirror it.
@@ -1424,6 +1463,35 @@ export function buildSceneDescription(
 			clipIndex: region.clipIndex,
 			...(region.underTrim ? { underTrim: true } : {}),
 		})),
+		cameraMotionRegions: projectedCameraMotionRegions.map((region) => {
+			const clip = document.timeline.clips[region.clipIndex ?? -1];
+			//  answers null for a clip with no camera; the scene-wide
+			// default is what the layout fell back to as well, so the aspect agrees with it.
+			const camSize = (clip ? webcamSourceSizeOf(clip) : null) ??
+				webcamSourceSize ?? { width: 4, height: 3 };
+			const sample = resolveCameraMotionTarget(region.target, {
+				cameraAspectRatio: camSize.height > 0 ? camSize.width / camSize.height : 4 / 3,
+				canvasAspectRatio: outputDims.width / outputDims.height,
+			});
+			return {
+				startSec: region.startMs / 1000,
+				endSec: region.endMs / 1000,
+				clipIndex: region.clipIndex,
+				...(region.underTrim ? { underTrim: true } : {}),
+				target: {
+					positionX: sample.position.x,
+					positionY: sample.position.y,
+					size: sample.size,
+					aspectRatio: sample.aspectRatio,
+					cornerFraction: sample.cornerFraction,
+					fullscreenProgress: sample.fullscreenProgress,
+					opacity: sample.opacity,
+				},
+				leadInSec: region.timing.leadInSec,
+				returnSec: region.timing.returnSec,
+				easing: region.timing.easing,
+			};
+		}),
 		// Speed is the one modifier with nothing to show for itself on a parked playhead: a
 		// still frame has no rate. So the entries under a trim are dropped here rather than
 		// shipped inert — `speed_at` (regions.rs) matches on clipIndex + time with no window

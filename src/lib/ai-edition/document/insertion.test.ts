@@ -62,6 +62,7 @@ const doc = (over: Partial<AxcutDocument> = {}): AxcutDocument =>
 		zoomRanges: [],
 		audioTracks: [],
 		markers: [],
+		cameraMotionRegions: [],
 		legacyEditor: null,
 		...over,
 	}) as unknown as AxcutDocument;

@@ -61,6 +61,7 @@ function makeDoc(overrides: Partial<AxcutDocument> = {}): AxcutDocument {
 		zoomRanges: [],
 		audioTracks: [],
 		markers: [],
+		cameraMotionRegions: [],
 		legacyEditor: null,
 		...overrides,
 	};

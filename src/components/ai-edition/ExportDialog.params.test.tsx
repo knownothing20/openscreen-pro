@@ -75,6 +75,7 @@ const DOC: AxcutDocument = {
 	zoomRanges: [],
 	audioTracks: [],
 	markers: [],
+	cameraMotionRegions: [],
 	// A fixed format, so the 1080p tier is exactly 1920x1080 (Auto adds its padding border).
 	legacyEditor: { aspectRatio: "16:9" },
 };

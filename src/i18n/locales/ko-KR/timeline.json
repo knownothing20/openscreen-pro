@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "카메라 움직임",
+		"positionX": "가로 위치",
+		"positionY": "세로 위치",
+		"size": "크기",
+		"roundness": "모서리 둥글기",
+		"opacity": "불투명도",
+		"toPip": "작은 화면으로 돌아가기",
+		"toFullscreen": "전체 화면",
+		"easing": "이징"
+	},
 	"marker": {
 		"seek": "{{time}} 마커로 이동",
 		"edit": "마커 이름 바꾸기",

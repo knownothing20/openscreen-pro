@@ -297,6 +297,14 @@ const DECLARED: WritePath[] = [
 	// mistake comes back with Ctrl+Z, exactly like a region.
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeMarker", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setMarkerLabel", "save", "gesture"),
+	// Camera Motion regions. All five are the user's own gestures: the C shortcut and the
+	// toolbar button add one, a drag commits a new span, the Inspector writes the target or
+	// the timing, and delete removes it. All undoable, like every other region.
+	w("src/lib/ai-edition/store/useTimeline.ts", "addCameraMotion", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "updateCameraMotionSpan", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "removeCameraMotion", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "setCameraMotionTarget", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "setCameraMotionTiming", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "saveZoomPatch", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setTrimEntries", "save", "gesture"),
 	// The live halves of the two drags.

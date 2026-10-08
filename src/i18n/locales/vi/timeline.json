@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "Chuyển động camera",
+		"positionX": "Vị trí ngang",
+		"positionY": "Vị trí dọc",
+		"size": "Kích thước",
+		"roundness": "Bo góc",
+		"opacity": "Độ mờ",
+		"toPip": "Quay lại hình trong hình",
+		"toFullscreen": "Toàn màn hình",
+		"easing": "Làm mượt"
+	},
 	"marker": {
 		"seek": "Đi tới dấu mốc tại {{time}}",
 		"edit": "Đổi tên dấu mốc",

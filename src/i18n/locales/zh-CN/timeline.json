@@ -1,4 +1,15 @@
 {
+	"cameraMotion": {
+		"title": "摄像头运动",
+		"positionX": "水平位置",
+		"positionY": "垂直位置",
+		"size": "大小",
+		"roundness": "圆角",
+		"opacity": "不透明度",
+		"toPip": "回到画中画",
+		"toFullscreen": "切换为全屏",
+		"easing": "缓动"
+	},
 	"marker": {
 		"seek": "跳转到标记 {{time}}",
 		"edit": "重命名标记",

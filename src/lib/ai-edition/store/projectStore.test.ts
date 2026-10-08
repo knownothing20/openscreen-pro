@@ -75,6 +75,7 @@ const sampleDoc = {
 	zoomRanges: [],
 	audioTracks: [],
 	markers: [],
+	cameraMotionRegions: [],
 	legacyEditor: null,
 };
 
