@@ -1082,7 +1082,23 @@ export function NewEditorShell() {
 		// Land it at the playhead, keeping the copied length.
 		const timeMs = Math.round(useProjectStore.getState().currentTimeSec * 1000);
 		const src = snapshot.region as { startMs: number; endMs: number };
-		const prefix = snapshot.kind === "annotation" ? "ann" : snapshot.kind;
+		// A snapshot whose span is not a pair of finite numbers cannot be placed, and the
+		// schema would drop whatever we built out of it anyway. Refuse BEFORE the write and
+		// before the toast: this used to announce "Region pasted" over a save that landed
+		// nothing, which reads as a paste that silently did not happen.
+		const spanStartMs = Number(src.startMs);
+		const spanEndMs = Number(src.endMs);
+		if (!Number.isFinite(spanStartMs) || !Number.isFinite(spanEndMs)) return;
+		const spanMs = spanEndMs - spanStartMs;
+		// `cameraMotion` ids carry the same prefix `addCameraMotion` gives them, so a
+		// pasted move is indistinguishable from an authored one — nothing downstream
+		// parses the prefix, but a second convention would be a second thing to keep.
+		const prefix =
+			snapshot.kind === "annotation"
+				? "ann"
+				: snapshot.kind === "cameraMotion"
+					? "cammotion"
+					: snapshot.kind;
 
 		// Audio re-ventilates through its own anchorer, which advances each
 		// fragment's source offset — the generic one would copy the offset into
@@ -1094,7 +1110,7 @@ export function NewEditorShell() {
 				id: createId("audio"),
 				trackId: undefined,
 				startMs: timeMs,
-				endMs: timeMs + (Number(src.endMs) - Number(src.startMs)),
+				endMs: timeMs + spanMs,
 			};
 			// Pasting onto an occupied lane queues behind what is there rather than doubling
 			// the row — the same rule every other placement obeys (issue #560).
@@ -1108,7 +1124,7 @@ export function NewEditorShell() {
 			...snapshot.region,
 			id: createId(prefix),
 			startMs: timeMs,
-			endMs: timeMs + (Number(src.endMs) - Number(src.startMs)),
+			endMs: timeMs + spanMs,
 		};
 		// Anchor to the clip(s) it covers, exactly like every add* does. Pasting
 		// used to store a bare startMs/endMs, so the region survived until the
@@ -1133,6 +1149,22 @@ export function NewEditorShell() {
 				{
 					...doc,
 					annotations: [...doc.annotations, ...anchored] as typeof doc.annotations,
+				},
+				{ history: true },
+			);
+		} else if (snapshot.kind === "cameraMotion") {
+			// A camera move is a first-class document field with its own schema, not a span
+			// on `legacyEditor` — appending it to the legacy envelope would store it where
+			// nothing reads it, and would make a new move look like the legacy Full Camera
+			// span it must not quietly become. The authored target and timing ride along in
+			// the snapshot; only the id and the span are new.
+			await saveDocument(
+				{
+					...doc,
+					cameraMotionRegions: [
+						...(doc.cameraMotionRegions ?? []),
+						...anchored,
+					] as typeof doc.cameraMotionRegions,
 				},
 				{ history: true },
 			);
@@ -1207,13 +1239,6 @@ export function NewEditorShell() {
 						: sel.kind === "cameraMotion"
 							? tl.cameraMotionRegions
 							: tl.cameraFullscreenRegions;
-		if (sel.kind === "cameraMotion") {
-			// Copying a camera move is not wired yet: the clipboard snapshot does not carry
-			// this kind, and a copy that pastes nothing is worse than no copy. Refusing here
-			// keeps the toast honest — the shortcut will simply do nothing until the
-			// clipboard learns the kind, which is the next step.
-			return;
-		}
 		const region = (source as Array<{ id: string }>).find((r) => r.id === sel.id);
 		if (!region) return;
 		copyRegion({ kind: sel.kind, region: region as unknown as Record<string, unknown> });

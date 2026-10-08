@@ -164,7 +164,10 @@ const DECLARED: WritePath[] = [
 	// "Save" chosen on the way out of Ctrl+N and Ctrl+O.
 	w("src/components/ai-edition/NewEditorShell.tsx", "onKey", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "onKey", "save", "gesture"),
-	// Ctrl+V of a copied region: an audio track, zoom, annotation, or a legacy span.
+	// Ctrl+V of a copied region: an audio track, zoom, annotation, a camera move,
+	// or a legacy span. One row per branch of the paste, so a new kind cannot be
+	// added without the audit being told which write it lands.
+	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),

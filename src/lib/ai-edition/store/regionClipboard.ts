@@ -11,6 +11,12 @@ export type RegionSnapshot =
 	| { kind: "annotation"; region: Record<string, unknown> }
 	| { kind: "speed"; region: Record<string, unknown> }
 	| { kind: "cameraFullscreen"; region: Record<string, unknown> }
+	// A camera move copies its AUTHORED target (position, size, shape, roundness,
+	// opacity) plus its timing, so a paste is a second move with the same look and
+	// a new span. Kept distinct from `cameraFullscreen` on purpose: that one is the
+	// legacy span on `legacyEditor`, and a paste must not quietly migrate a new
+	// camera move down to the old format (or an old span up to the new one).
+	| { kind: "cameraMotion"; region: Record<string, unknown> }
 	// An audio track copies its whole payload (asset, gain, fades, loop) so a
 	// paste is a second placement of the same audio, like every other kind. The
 	// snapshot is the COLLAPSED pill, never a stored fragment.
