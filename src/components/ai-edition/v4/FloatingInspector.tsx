@@ -60,6 +60,7 @@ import {
 import { CAMERA_MOTION_LIMITS } from "@/lib/ai-edition/cameraMotion/presets";
 import { resolveAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
 import type { AxcutAnnotationRegion, AxcutClip } from "@/lib/ai-edition/schema";
+import { SCREEN_MOTION_LIMITS } from "@/lib/ai-edition/screenMotion/presets";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { rafCoalesce } from "@/lib/ai-edition/store/rafCoalesce";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
@@ -1400,6 +1401,144 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							value={region.timing.easing}
 							onChange={(event) =>
 								void tl.setCameraMotionTiming(region.id, {
+									easing: event.target.value as CameraMotionEasing,
+								})
+							}
+						>
+							{CAMERA_MOTION_EASINGS.map((easing) => (
+								<option key={easing} value={easing}>
+									{easing}
+								</option>
+							))}
+						</select>
+					</label>
+					<button type="button" onClick={deleteAndClose} className={PANE_BUTTON}>
+						<Trash2 size={16} style={{ color: "var(--danger)" }} />
+						{te("inspector.deleteRegion")}
+					</button>
+				</div>
+			</div>
+		);
+	}
+
+	// Screen Motion. The same plain-controls reasoning as the camera pane above, and the same
+	// one-store-call-per-edit rule that keeps undo to one step per gesture.
+	//
+	// NO perspective control, deliberately: the field is authored and transmitted but nothing
+	// renders it — the quad's perspective is `min(w, h) * PERSPECTIVE_FACTOR`, a constant. A
+	// slider with nothing behind it is worse than no slider, so it stays out until a slice
+	// gives it an effect. (Camera Motion's `opacity` is the same situation; it predates this
+	// rule.)
+	if (selection.kind === "screenMotion") {
+		const region = tl.screenMotionRegions.find((r) => r.id === selection.id);
+		if (!region) return null;
+		const target = region.target;
+		const rowStyle = { display: "grid", gap: 4, fontSize: 12 } as const;
+		const number = (value: number) => Number(value.toFixed(3));
+		const deleteAndClose = () => {
+			void tl.removeRegion("screenMotion", selection.id);
+			onClose();
+		};
+		return (
+			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+				{paneHeader(<Move size={16} />, tt("screenMotion.title"), onClose, tc("actions.close"))}
+				<div style={bodyStyle}>
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.positionX")}</span>
+						<input
+							type="range"
+							min={SCREEN_MOTION_LIMITS.positionMin}
+							max={SCREEN_MOTION_LIMITS.positionMax}
+							step={0.01}
+							value={target.position.x}
+							onChange={(event) =>
+								void tl.setScreenMotionTarget(region.id, {
+									position: { ...target.position, x: number(Number(event.target.value)) },
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.positionY")}</span>
+						<input
+							type="range"
+							min={SCREEN_MOTION_LIMITS.positionMin}
+							max={SCREEN_MOTION_LIMITS.positionMax}
+							step={0.01}
+							value={target.position.y}
+							onChange={(event) =>
+								void tl.setScreenMotionTarget(region.id, {
+									position: { ...target.position, y: number(Number(event.target.value)) },
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.scale")}</span>
+						<input
+							type="range"
+							min={SCREEN_MOTION_LIMITS.scaleMin}
+							max={SCREEN_MOTION_LIMITS.scaleMax}
+							step={0.01}
+							value={target.scale}
+							onChange={(event) =>
+								void tl.setScreenMotionTarget(region.id, {
+									scale: number(Number(event.target.value)),
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.rotationX")}</span>
+						<input
+							type="range"
+							min={SCREEN_MOTION_LIMITS.rotationMin}
+							max={SCREEN_MOTION_LIMITS.rotationMax}
+							step={1}
+							value={target.rotationX}
+							onChange={(event) =>
+								void tl.setScreenMotionTarget(region.id, {
+									rotationX: number(Number(event.target.value)),
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.rotationY")}</span>
+						<input
+							type="range"
+							min={SCREEN_MOTION_LIMITS.rotationMin}
+							max={SCREEN_MOTION_LIMITS.rotationMax}
+							step={1}
+							value={target.rotationY}
+							onChange={(event) =>
+								void tl.setScreenMotionTarget(region.id, {
+									rotationY: number(Number(event.target.value)),
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.rotationZ")}</span>
+						<input
+							type="range"
+							min={SCREEN_MOTION_LIMITS.rotationMin}
+							max={SCREEN_MOTION_LIMITS.rotationMax}
+							step={1}
+							value={target.rotationZ}
+							onChange={(event) =>
+								void tl.setScreenMotionTarget(region.id, {
+									rotationZ: number(Number(event.target.value)),
+								})
+							}
+						/>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.easing")}</span>
+						<select
+							value={region.timing.easing}
+							onChange={(event) =>
+								void tl.setScreenMotionTiming(region.id, {
 									easing: event.target.value as CameraMotionEasing,
 								})
 							}

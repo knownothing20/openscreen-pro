@@ -10,6 +10,16 @@
 		"toFullscreen": "Schermo intero",
 		"easing": "Curva"
 	},
+	"screenMotion": {
+		"title": "Movimento schermo",
+		"positionX": "Posizione orizzontale",
+		"positionY": "Posizione verticale",
+		"scale": "Scala",
+		"rotationX": "Inclinazione (X)",
+		"rotationY": "Rotazione (Y)",
+		"rotationZ": "Rollio (Z)",
+		"easing": "Curva"
+	},
 	"marker": {
 		"seek": "Vai al segnalibro a {{time}}",
 		"edit": "Rinomina segnalibro",
@@ -24,7 +34,8 @@
 		"addTrim": "Aggiungi un taglio: rimuove una parte del video nel momento attuale",
 		"addAnnotation": "Aggiungi testo, una freccia, un'immagine o una sfocatura nel momento attuale",
 		"addSpeed": "Aggiungi un cambio di velocità nel momento attuale",
-		"addCameraFullscreen": "Aggiungi Camera a schermo intero: mostra la fotocamera a schermo intero nel momento attuale"
+		"addCameraFullscreen": "Aggiungi Camera a schermo intero: mostra la fotocamera a schermo intero nel momento attuale",
+		"addScreenMotion": "Aggiungi Movimento schermo: sposta lo schermo nel momento attuale"
 	},
 	"hints": {
 		"pressZoom": "Premi {{key}} per aggiungere zoom",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "Premi {{key}} per aggiungere annotazione",
 		"pressAudio": "Premi {{audioKey}} per aggiungere audio, {{voiceoverKey}} per registrare una voce fuori campo",
 		"pressSpeed": "Premi {{key}} per aggiungere velocità",
-		"pressCameraFullscreen": "Premi {{key}} per aggiungere un segmento Camera a schermo intero"
+		"pressCameraFullscreen": "Premi {{key}} per aggiungere un segmento Camera a schermo intero",
+		"pressScreenMotion": "Premi {{key}} per aggiungere un movimento dello schermo"
 	},
 	"labels": {
 		"pan": "Panoramica",

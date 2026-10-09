@@ -516,6 +516,77 @@ describe("FloatingInspector", () => {
 			vi.unstubAllGlobals();
 		});
 	});
+
+	// The screen motion pane. What it offers is a guarantee, not a detail: `perspective` is
+	// authored and transmitted but nothing renders it (the quad's perspective is a constant),
+	// so a control for it would be a slider with nothing behind it. This pins the exact set.
+	describe("screen motion pane", () => {
+		const region = {
+			id: "sm1",
+			startMs: 0,
+			endMs: 2000,
+			timing: { leadInSec: 0.6, returnSec: 0.9, easing: "cubic" },
+			target: {
+				position: { x: 0.5, y: 0.5 },
+				scale: 1.1,
+				rotationX: 0,
+				rotationY: 0,
+				rotationZ: 0,
+				perspective: 0.65,
+			},
+		};
+
+		function renderPane(tl: Record<string, unknown>) {
+			return render(
+				<FloatingInspector
+					{...defaultProps}
+					tl={
+						{
+							selection: { kind: "screenMotion", id: "sm1" },
+							screenMotionRegions: [region],
+							setScreenMotionTarget: vi.fn(),
+							setScreenMotionTiming: vi.fn(),
+							removeRegion: vi.fn(),
+							clearSelection: vi.fn(),
+							selectedAudioTrackId: null,
+							selectAudioTrack: vi.fn(),
+							...tl,
+						} as unknown as React.ComponentProps<typeof FloatingInspector>["tl"]
+					}
+				/>,
+			);
+		}
+
+		it("offers position, scale and the three rotations — and no perspective", () => {
+			renderPane({});
+
+			expect(screen.getByText("timeline.screenMotion.title")).toBeInTheDocument();
+			for (const key of [
+				"positionX",
+				"positionY",
+				"scale",
+				"rotationX",
+				"rotationY",
+				"rotationZ",
+			]) {
+				expect(screen.getByText(`timeline.screenMotion.${key}`)).toBeInTheDocument();
+			}
+			// Exactly six sliders: adding a seventh (perspective, opacity, …) fails here.
+			expect(screen.getAllByRole("slider")).toHaveLength(6);
+			expect(screen.queryByText(/perspective/i)).toBeNull();
+		});
+
+		it("writes one field through setScreenMotionTarget, leaving the rest to the store", () => {
+			const setScreenMotionTarget = vi.fn(async () => undefined);
+			renderPane({ setScreenMotionTarget });
+
+			fireEvent.change(screen.getByText("timeline.screenMotion.rotationY").nextSibling as Element, {
+				target: { value: "30" },
+			});
+
+			expect(setScreenMotionTarget).toHaveBeenCalledWith("sm1", { rotationY: 30 });
+		});
+	});
 });
 
 describe("AnnotationSizeField", () => {

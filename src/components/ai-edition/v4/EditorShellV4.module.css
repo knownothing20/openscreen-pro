@@ -1657,6 +1657,13 @@
 .laneCameraFullscreen {
 	--_c: #a855f7;
 }
+/* Screen Motion gets its own hue rather than sharing the camera's purple: the two lanes
+   sit in the same timeline and move different things, so a shared colour would make a
+   screen move and a camera move read as the same kind of region. Cyan also reads as
+   "screen" against the camera's purple, which is the distinction that matters. */
+.laneScreenMotion {
+	--_c: #06b6d4;
+}
 /* Imported audio tracks (issue #350). A distinct pink so a BGM/voiceover track
    reads apart from the effect pills, and taller than a lane pill so the waveform
    inside it is legible. */

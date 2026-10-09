@@ -10,6 +10,10 @@ import {
 import { type RegionKind, readSpeedRegions } from "../document/timeline";
 import type { AxcutDocument } from "../schema";
 import { axcutSchemaVersion, parseDocumentFile } from "../schema";
+import {
+	DEFAULT_SCREEN_MOTION_TIMING,
+	SCREEN_MOTION_DEFAULT_TARGET,
+} from "../screenMotion/presets";
 import { useProjectStore } from "./projectStore";
 import { clearHistory, redo, undo } from "./undo";
 import { future, past } from "./undoStack";
@@ -826,6 +830,190 @@ describe("useTimeline camera motion regions", () => {
 	});
 });
 
+describe("useTimeline screen motion regions", () => {
+	const screenRegions = () => useProjectStore.getState().document?.screenMotionRegions ?? [];
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			currentTimeSec: 1,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("the bare call the N shortcut makes lands a move with the default target and timing", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion();
+		});
+
+		const regions = screenRegions();
+		expect(regions).toHaveLength(1);
+		// 2s at the playhead (currentTimeSec = 1), the shared default.
+		expect(regions[0]).toMatchObject({ startMs: 1000, endMs: 3000 });
+		expect(regions[0].target).toEqual(SCREEN_MOTION_DEFAULT_TARGET);
+		expect(regions[0].timing).toEqual(DEFAULT_SCREEN_MOTION_TIMING);
+		// The new field, not the legacy envelope — and not the camera's either.
+		expect(useProjectStore.getState().document?.legacyEditor).toBeNull();
+		expect(useProjectStore.getState().document?.cameraMotionRegions).toEqual([]);
+	});
+
+	it("takes an explicit duration and target", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion(5, {
+				...SCREEN_MOTION_DEFAULT_TARGET,
+				scale: 2.5,
+			});
+		});
+
+		const regions = screenRegions();
+		expect(regions).toHaveLength(1);
+		expect(regions[0]).toMatchObject({ startMs: 1000, endMs: 6000 });
+		expect(regions[0].target.scale).toBe(2.5);
+	});
+
+	// The deliberate asymmetry with Camera Motion: a camera move refuses to be created
+	// without a camera (#353), a screen move never has to — every project has a screen.
+	// `sampleDoc`'s only asset carries `cameraTrack: null`, so this is the no-camera case.
+	it("creates a move in a project with no camera, where a camera move would refuse", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion();
+		});
+
+		expect(screenRegions()).toHaveLength(1);
+		// And the camera's own gate still holds, so the two rules are not the same rule.
+		await act(async () => {
+			await result.current.addCameraMotion();
+		});
+		expect(useProjectStore.getState().document?.cameraMotionRegions).toEqual([]);
+	});
+
+	it("moves the span without touching the target", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion();
+		});
+		const id = screenRegions()[0].id;
+
+		await act(async () => {
+			await result.current.updateScreenMotionSpan(id, 4000, 7000);
+		});
+
+		const [region] = screenRegions();
+		expect(region).toMatchObject({ id, startMs: 4000, endMs: 7000 });
+		expect(region.target).toEqual(SCREEN_MOTION_DEFAULT_TARGET);
+	});
+
+	it("deletes only the region it names", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion();
+		});
+		await act(async () => {
+			await result.current.addScreenMotion(1);
+		});
+		const [first, second] = screenRegions();
+		expect(screenRegions()).toHaveLength(2);
+
+		await act(async () => {
+			await result.current.removeScreenMotion(first.id);
+		});
+
+		const left = screenRegions();
+		expect(left).toHaveLength(1);
+		expect(left[0].id).toBe(second.id);
+	});
+
+	it("patches one target field and leaves the others where they were", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion();
+		});
+		const id = screenRegions()[0].id;
+
+		await act(async () => {
+			await result.current.setScreenMotionTarget(id, { rotationY: 30 });
+		});
+
+		const [region] = screenRegions();
+		expect(region.target.rotationY).toBe(30);
+		// Everything the patch did not mention is untouched — the Inspector sends one control
+		// at a time, so a rebuild would silently reset the rest.
+		expect(region.target.scale).toBe(SCREEN_MOTION_DEFAULT_TARGET.scale);
+		expect(region.target.position).toEqual(SCREEN_MOTION_DEFAULT_TARGET.position);
+		expect(region.target.rotationX).toBe(SCREEN_MOTION_DEFAULT_TARGET.rotationX);
+	});
+
+	it("patches one timing field and leaves the others where they were", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion();
+		});
+		const id = screenRegions()[0].id;
+
+		await act(async () => {
+			await result.current.setScreenMotionTiming(id, { easing: "linear" });
+		});
+
+		const [region] = screenRegions();
+		expect(region.timing.easing).toBe("linear");
+		expect(region.timing.leadInSec).toBe(DEFAULT_SCREEN_MOTION_TIMING.leadInSec);
+		expect(region.timing.returnSec).toBe(DEFAULT_SCREEN_MOTION_TIMING.returnSec);
+	});
+
+	it("records a creation as one undoable edit", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion();
+		});
+		expect(screenRegions()).toHaveLength(1);
+
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(screenRegions()).toHaveLength(0);
+
+		await act(async () => {
+			expect(redo()).toBe(true);
+		});
+		expect(screenRegions()).toHaveLength(1);
+	});
+
+	it("records a deletion as one undoable edit", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion();
+		});
+		const id = screenRegions()[0].id;
+
+		await act(async () => {
+			await result.current.removeScreenMotion(id);
+		});
+		expect(screenRegions()).toHaveLength(0);
+
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(screenRegions()).toHaveLength(1);
+		expect(screenRegions()[0].id).toBe(id);
+	});
+});
+
 describe("useTimeline.addAnnotation", () => {
 	beforeEach(() => {
 		useProjectStore.getState().clear();
@@ -897,6 +1085,7 @@ describe("useTimeline.clearTimeline", () => {
 		speed: (tl) => tl.addSpeed(),
 		cameraFullscreen: (tl) => tl.addCameraFullscreen(),
 		cameraMotion: (tl) => tl.addCameraMotion(),
+		screenMotion: (tl) => tl.addScreenMotion(),
 	};
 	const editKinds = Object.keys(addOf) as EditKind[];
 
@@ -909,6 +1098,7 @@ describe("useTimeline.clearTimeline", () => {
 			speed: doc ? readSpeedRegions(doc).length : 0,
 			cameraFullscreen: legacy.cameraFullscreenRegions?.length ?? 0,
 			cameraMotion: doc?.cameraMotionRegions.length ?? 0,
+			screenMotion: doc?.screenMotionRegions.length ?? 0,
 		};
 	};
 	const noRegions: Record<EditKind, number> = {
@@ -918,6 +1108,7 @@ describe("useTimeline.clearTimeline", () => {
 		speed: 0,
 		cameraFullscreen: 0,
 		cameraMotion: 0,
+		screenMotion: 0,
 	};
 
 	// A project holding everything that is NOT an edit: two clips, a webcam, an imported
@@ -1078,6 +1269,7 @@ describe("useTimeline.clearTimeline", () => {
 			speed: 1,
 			cameraFullscreen: 1,
 			cameraMotion: 1,
+			screenMotion: 1,
 		});
 
 		await act(async () => {
@@ -1118,6 +1310,7 @@ describe("useTimeline.clearTimeline", () => {
 			speed: 1,
 			cameraFullscreen: 1,
 			cameraMotion: 1,
+			screenMotion: 1,
 		});
 
 		act(() => {

@@ -24,6 +24,7 @@
 		"addVoiceover": "Записать закадровый голос",
 		"addKeyframe": "Добавить ключевой кадр",
 		"addCameraFullscreen": "Добавить камеру на весь экран",
+		"addScreenMotion": "Добавить движение экрана",
 		"deleteSelected": "Удалить выбранное",
 		"playPause": "Воспроизведение / Пауза",
 		"copySelected": "Копировать выбранное",

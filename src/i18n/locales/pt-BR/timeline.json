@@ -10,6 +10,16 @@
 		"toFullscreen": "Tela cheia",
 		"easing": "Suavização"
 	},
+	"screenMotion": {
+		"title": "Movimento da tela",
+		"positionX": "Posição horizontal",
+		"positionY": "Posição vertical",
+		"scale": "Escala",
+		"rotationX": "Inclinação (X)",
+		"rotationY": "Rotação (Y)",
+		"rotationZ": "Rolagem (Z)",
+		"easing": "Suavização"
+	},
 	"marker": {
 		"seek": "Ir para a marcação em {{time}}",
 		"edit": "Renomear marcação",
@@ -24,7 +34,8 @@
 		"addTrim": "Adicionar um recorte: remove uma parte do vídeo no momento atual",
 		"addAnnotation": "Adicionar texto, seta, imagem ou desfoque no momento atual",
 		"addSpeed": "Adicionar uma mudança de velocidade no momento atual",
-		"addCameraFullscreen": "Adicionar Câmera em Tela Cheia: mostra a câmera em tela cheia no momento atual"
+		"addCameraFullscreen": "Adicionar Câmera em Tela Cheia: mostra a câmera em tela cheia no momento atual",
+		"addScreenMotion": "Adicionar Movimento da Tela: move a tela no momento atual"
 	},
 	"hints": {
 		"pressZoom": "Pressione {{key}} para adicionar zoom",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "Pressione {{key}} para adicionar anotação",
 		"pressAudio": "Pressione {{audioKey}} para adicionar áudio, {{voiceoverKey}} para gravar uma narração",
 		"pressSpeed": "Pressione {{key}} para adicionar velocidade",
-		"pressCameraFullscreen": "Pressione {{key}} para adicionar um segmento de Câmera em Tela Cheia"
+		"pressCameraFullscreen": "Pressione {{key}} para adicionar um segmento de Câmera em Tela Cheia",
+		"pressScreenMotion": "Pressione {{key}} para adicionar um movimento da tela"
 	},
 	"labels": {
 		"pan": "Mover",

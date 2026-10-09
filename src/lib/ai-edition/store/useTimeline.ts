@@ -47,6 +47,11 @@ import {
 	withClipsChanged,
 } from "../document/timeline";
 import type { AxcutAudioTrack, AxcutClipCropRegion, AxcutDocument } from "../schema";
+import {
+	DEFAULT_SCREEN_MOTION_TIMING,
+	SCREEN_MOTION_DEFAULT_TARGET,
+} from "../screenMotion/presets";
+import type { ScreenMotionRegionTiming, ScreenMotionTarget } from "../screenMotion/resolve";
 import { appendAutoZoomSuggestions } from "../timeline/apply-auto-zooms";
 import { hasAnyClipWithCamera } from "../timeline/camera";
 import { probeAudioDuration, probeVideoDimensions, probeVideoDuration } from "../timeline/duration";
@@ -647,6 +652,110 @@ export function useTimeline() {
 			const next: AxcutDocument = {
 				...document,
 				cameraMotionRegions: (document.cameraMotionRegions ?? []).map((region) =>
+					region.id === id ? { ...region, timing: { ...region.timing, ...patch } } : region,
+				),
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	// Screen Motion: the same shape as Camera Motion, on the other subject. It moves the
+	// SCREEN card — position, scale and tilt — which is why there is no
+	// `hasAnyClipWithCamera` gate here: a screen move needs a screen, and every project has
+	// one. `addZoom` / `addSpeed` do not gate either, for the same reason. The camera's gate
+	// exists for the opposite case — a webcam that is nowhere on the timeline, so the region
+	// could never render (see #353).
+	const addScreenMotion = useCallback(
+		async (
+			durationSec = DEFAULT_NEW_REGION_SEC,
+			target: ScreenMotionTarget = SCREEN_MOTION_DEFAULT_TARGET,
+		) => {
+			if (!document) return;
+			const timeMs = Math.round(playheadSec() * 1000);
+			const endMs = timeMs + Math.round(durationSec * 1000);
+			const next: AxcutDocument = {
+				...document,
+				screenMotionRegions: [
+					...(document.screenMotionRegions ?? []),
+					...anchorRegionsWithDerivedMs(
+						[
+							{
+								id: createId("screenmotion"),
+								startMs: timeMs,
+								endMs,
+								timing: DEFAULT_SCREEN_MOTION_TIMING,
+								target,
+							},
+						],
+						document.timeline.clips,
+						() => createId("screenmotion"),
+					),
+				],
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	/** Move or resize a screen move. Same commit-on-pointerup contract as the others. */
+	const updateScreenMotionSpan = useCallback(
+		async (id: string, startMs: number, endMs: number) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				screenMotionRegions: replacePillSpan(
+					document.screenMotionRegions ?? [],
+					id,
+					finiteMs(startMs),
+					finiteMs(endMs),
+					document.timeline.clips,
+					() => createId("screenmotion"),
+				),
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	/** Delete a screen move. The footage is untouched and undo brings it back. */
+	const removeScreenMotion = useCallback(
+		async (id: string) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				screenMotionRegions: (document.screenMotionRegions ?? []).filter(
+					(region) => region.id !== id,
+				),
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	/** Edit where the screen goes. One field at a time, like the camera's — rebuilding the
+	 *  whole target would silently reset whatever the control did not mention. */
+	const setScreenMotionTarget = useCallback(
+		async (id: string, patch: Partial<ScreenMotionTarget>) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				screenMotionRegions: (document.screenMotionRegions ?? []).map((region) =>
+					region.id === id ? { ...region, target: { ...region.target, ...patch } } : region,
+				),
+			};
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	/** Edit how the screen move is timed. Separate from the target for the same reason. */
+	const setScreenMotionTiming = useCallback(
+		async (id: string, patch: Partial<ScreenMotionRegionTiming>) => {
+			if (!document) return;
+			const next: AxcutDocument = {
+				...document,
+				screenMotionRegions: (document.screenMotionRegions ?? []).map((region) =>
 					region.id === id ? { ...region, timing: { ...region.timing, ...patch } } : region,
 				),
 			};
@@ -1777,10 +1886,12 @@ export function useTimeline() {
 		annotationRegions: (document?.annotations ?? []) as unknown as AnnotationRegion[],
 		speedRegions,
 		cameraFullscreenRegions,
-		// Camera Motion regions. Read straight off the document: unlike the legacy list
-		// above, nothing in this store writes them yet — the C shortcut and the Inspector
-		// are the next slice.
+		// Camera Motion regions. Read straight off the document, like the screen's below —
+		// both are first-class fields with a schema behind them, and the store's add /
+		// update / remove methods above are what write them.
 		cameraMotionRegions: document?.cameraMotionRegions ?? [],
+		// Screen Motion regions: the same deal on the screen card rather than the camera.
+		screenMotionRegions: document?.screenMotionRegions ?? [],
 		// Recording bookmarks. Kept as the stored markers, not the visible ones: which of
 		// them the current clip layout shows is a question the timeline answers per render
 		// (`visibleMarkersFor`), so a trim that hides one is undone by the next render
@@ -1806,6 +1917,11 @@ export function useTimeline() {
 		removeCameraMotion,
 		setCameraMotionTarget,
 		setCameraMotionTiming,
+		addScreenMotion,
+		updateScreenMotionSpan,
+		removeScreenMotion,
+		setScreenMotionTarget,
+		setScreenMotionTiming,
 		addCameraFullscreen,
 		removeRegion,
 		removeMarker,

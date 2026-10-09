@@ -24,6 +24,7 @@
 		"addVoiceover": "보이스오버 녹음",
 		"addKeyframe": "키프레임 추가",
 		"addCameraFullscreen": "전체 화면 카메라 추가",
+		"addScreenMotion": "화면 움직임 추가",
 		"deleteSelected": "선택 항목 삭제",
 		"playPause": "재생 / 일시정지",
 		"copySelected": "선택 항목 복사",

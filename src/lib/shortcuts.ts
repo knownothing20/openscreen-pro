@@ -4,6 +4,7 @@ export const SHORTCUT_ACTIONS = [
 	"addTrim",
 	"addSpeed",
 	"addCameraFullscreen",
+	"addScreenMotion",
 	"addAnnotation",
 	"addAudio",
 	"addVoiceover",
@@ -114,6 +115,10 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	addTrim: { key: "t" },
 	addSpeed: { key: "s" },
 	addCameraFullscreen: { key: "c" },
+	// `n` for the "motio**n**" in Screen Motion — the first letters are gone (`s` is
+	// Speed, `c` is Camera), and the same fallback the audio track took when `a` was
+	// Annotation. Configurable like every other action, so a rebind is one dialog away.
+	addScreenMotion: { key: "n" },
 	addAnnotation: { key: "a" },
 	addAudio: { key: "m" },
 	// Record a voiceover over the timeline from the playhead.
@@ -130,6 +135,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	addTrim: "Add Trim",
 	addSpeed: "Add Speed",
 	addCameraFullscreen: "Add Full Camera",
+	addScreenMotion: "Add Screen Motion",
 	addAnnotation: "Add Annotation",
 	addAudio: "Add Audio",
 	addVoiceover: "Record Voiceover",

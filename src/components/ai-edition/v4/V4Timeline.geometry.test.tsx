@@ -126,6 +126,7 @@ function renderTimeline(
 		// after it, where a caller cannot accidentally replace it with nothing.
 		markers: [],
 		cameraMotionRegions: [],
+		screenMotionRegions: [],
 		...overrides,
 		selection: null,
 		multiSelection: [],
@@ -319,6 +320,59 @@ describe("V4Timeline lane pills", () => {
 		// was nowhere near, the more so the longer the recording.
 		dragHandle(right, 885.5);
 		expect(tl.updateAnnotationSpan).toHaveBeenLastCalledWith("ann1", 10_000, 1_782_000);
+	});
+});
+
+describe("V4Timeline screen motion lane", () => {
+	// A screen move gets its own lane rather than sharing the camera's — the two move
+	// different subjects, and merging them would put two unrelated answers in one row. What
+	// matters here is that the pill is drawn from the screen motion array (not a neighbour's)
+	// and that a drag commits through the screen motion store call.
+	const SCREEN_MOVE = {
+		id: "screenmotion_a",
+		// 300 s of the 1800 s timeline: 150 px at this zoom, comfortably past
+		// PILL_CONTENT_MIN_PX — below it the pill draws no label at all.
+		startMs: 100_000,
+		endMs: 400_000,
+		timing: { leadInSec: 0.6, returnSec: 0.9, easing: "cubic" },
+		target: {
+			position: { x: 0.5, y: 0.5 },
+			scale: 1.1,
+			rotationX: 0,
+			rotationY: 0,
+			rotationZ: 0,
+			perspective: 0.65,
+		},
+	};
+
+	it("draws a screen move in its own lane, leaving the camera lane empty", () => {
+		renderTimeline([clip(0, TOTAL_SEC)], undefined, [NO_CAMERA_ASSET], undefined, {
+			annotationRegions: [],
+			screenMotionRegions: [SCREEN_MOVE],
+		});
+
+		expect(screen.getByText("Screen Motion")).toBeInTheDocument();
+		// The camera lane holds nothing, so neither of its labels may appear: a screen move
+		// must not have borrowed one, which is what a shared lane would have produced.
+		expect(screen.queryByText("Camera Motion")).toBeNull();
+		expect(screen.queryByText("Full Camera")).toBeNull();
+	});
+
+	it("commits a drag through updateScreenMotionSpan, not a neighbour's", () => {
+		// 90 px of a 900 px canvas is a tenth of the 1800 s timeline: 180 s.
+		const updateScreenMotionSpan = vi.fn(async () => undefined);
+		const updateCameraMotionSpan = vi.fn(async () => undefined);
+		renderTimeline([clip(0, TOTAL_SEC)], undefined, [NO_CAMERA_ASSET], undefined, {
+			annotationRegions: [],
+			screenMotionRegions: [SCREEN_MOVE],
+			updateScreenMotionSpan,
+			updateCameraMotionSpan,
+		});
+
+		dragHandle(screen.getByText("Screen Motion"), 90);
+
+		expect(updateScreenMotionSpan).toHaveBeenCalledWith("screenmotion_a", 280_000, 580_000);
+		expect(updateCameraMotionSpan).not.toHaveBeenCalled();
 	});
 });
 
@@ -671,6 +725,7 @@ describe("V4Timeline audio lane drag", () => {
 			// Recording bookmarks: none in this fixture, which is about audio geometry.
 			markers: [],
 			cameraMotionRegions: [],
+			screenMotionRegions: [],
 			// The lane reads these for the amber added-word marks (#540); this fixture
 			// is about audio geometry, so it has none.
 			transcripts: [],

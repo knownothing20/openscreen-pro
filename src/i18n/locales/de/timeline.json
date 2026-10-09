@@ -10,6 +10,16 @@
 		"toFullscreen": "Vollbild",
 		"easing": "Beschleunigung"
 	},
+	"screenMotion": {
+		"title": "Bildschirmbewegung",
+		"positionX": "Horizontale Position",
+		"positionY": "Vertikale Position",
+		"scale": "Skalierung",
+		"rotationX": "Neigung (X)",
+		"rotationY": "Drehung (Y)",
+		"rotationZ": "Rollen (Z)",
+		"easing": "Beschleunigung"
+	},
 	"marker": {
 		"seek": "Zur Markierung bei {{time}} springen",
 		"edit": "Markierung umbenennen",
@@ -24,7 +34,8 @@
 		"addTrim": "Trim hinzufügen: entfernt einen Abschnitt des Videos zum aktuellen Zeitpunkt",
 		"addAnnotation": "Text, Pfeil, Bild oder Weichzeichner zum aktuellen Zeitpunkt hinzufügen",
 		"addSpeed": "Tempowechsel zum aktuellen Zeitpunkt hinzufügen",
-		"addCameraFullscreen": "Vollbild-Kamera hinzufügen: zeigt die Kamera im Vollbild zum aktuellen Zeitpunkt"
+		"addCameraFullscreen": "Vollbild-Kamera hinzufügen: zeigt die Kamera im Vollbild zum aktuellen Zeitpunkt",
+		"addScreenMotion": "Bildschirmbewegung hinzufügen: bewegt den Bildschirm zum aktuellen Zeitpunkt"
 	},
 	"hints": {
 		"pressZoom": "Drücke {{key}}, um einen Zoom hinzuzufügen",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "Drücke {{key}}, um eine Anmerkung hinzuzufügen",
 		"pressAudio": "Drücke {{audioKey}} für Audio, {{voiceoverKey}} für ein Voiceover",
 		"pressSpeed": "Drücke {{key}}, um ein Tempo hinzuzufügen",
-		"pressCameraFullscreen": "Drücke {{key}}, um einen Vollbild-Kamera-Abschnitt hinzuzufügen"
+		"pressCameraFullscreen": "Drücke {{key}}, um einen Vollbild-Kamera-Abschnitt hinzuzufügen",
+		"pressScreenMotion": "Drücke {{key}}, um eine Bildschirmbewegung hinzuzufügen"
 	},
 	"labels": {
 		"pan": "Verschieben",

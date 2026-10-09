@@ -7,6 +7,7 @@ import {
 	Maximize2,
 	MessageSquare,
 	Mic,
+	Move,
 	Music,
 	Pencil,
 	Scissors,
@@ -591,7 +592,14 @@ const AudioLanePill = memo(function AudioLanePill({
 
 interface LanePill {
 	id: string;
-	kind: "annotation" | "speed" | "trim" | "zoom" | "cameraFullscreen" | "cameraMotion";
+	kind:
+		| "annotation"
+		| "speed"
+		| "trim"
+		| "zoom"
+		| "cameraFullscreen"
+		| "cameraMotion"
+		| "screenMotion";
 	start: number;
 	end: number;
 	label: string;
@@ -815,6 +823,21 @@ export function V4Timeline({
 		label: `${(p.member.customScale ?? ZOOM_DEPTH_SCALES[p.member.depth]).toFixed(2)}×`,
 		sourceIds: p.ids,
 	}));
+	// Screen Motion regions. They get their OWN lane, unlike the camera pair above: a screen
+	// move and a camera move are different subjects, so merging them would put two unrelated
+	// answers in one row. The lane sits next to zoom because both transform the same object —
+	// the screen card — and a screen move composes ON TOP of a zoom (the base state it eases
+	// from is the zoomed box), so the adjacency reads in composition order.
+	const screenMotionPills: LanePill[] = coalesceRegionsForRuler(tl.screenMotionRegions).map(
+		(p) => ({
+			id: p.ids[0],
+			kind: "screenMotion",
+			start: p.start,
+			end: p.end,
+			label: "Screen Motion",
+			sourceIds: p.ids,
+		}),
+	);
 
 	// trims: content-free (no per-instance text/settings), so touching rows —
 	// inevitable once a trim is ventilated across a clip boundary — are
@@ -1033,6 +1056,8 @@ export function V4Timeline({
 					await tl.updateCameraFullscreenSpan(pill.id, s * 1000, en * 1000);
 				else if (pill.kind === "cameraMotion")
 					await tl.updateCameraMotionSpan(pill.id, s * 1000, en * 1000);
+				else if (pill.kind === "screenMotion")
+					await tl.updateScreenMotionSpan(pill.id, s * 1000, en * 1000);
 				else {
 					// Trims are stored in source-time per asset but manipulated on the
 					// timeline like every other pill. Ventilate the new span across the
@@ -1462,7 +1487,9 @@ export function V4Timeline({
 					? styles.laneTrim
 					: kind === "cameraFullscreen" || kind === "cameraMotion"
 						? styles.laneCameraFullscreen
-						: styles.laneZoom;
+						: kind === "screenMotion"
+							? styles.laneScreenMotion
+							: styles.laneZoom;
 	const pillIcon = (kind: LanePill["kind"]) =>
 		kind === "annotation" ? (
 			<MessageSquare size={12} />
@@ -1472,6 +1499,8 @@ export function V4Timeline({
 			<Scissors size={12} />
 		) : kind === "cameraFullscreen" ? (
 			<Maximize2 size={12} />
+		) : kind === "screenMotion" ? (
+			<Move size={12} />
 		) : (
 			<ZoomIn size={12} />
 		);
@@ -2042,6 +2071,21 @@ export function V4Timeline({
 									<ZoomIn size={16} />
 								</button>
 							</Tooltip>
+							{/* Always available, unlike the camera's button: a screen move needs a screen,
+							    and every project has one. */}
+							<Tooltip
+								content={t("buttons.addScreenMotion")}
+								shortcut={formatBinding(shortcuts.addScreenMotion, isMac)}
+							>
+								<button
+									type="button"
+									className={styles.tlToolBtn}
+									aria-label={t("buttons.addScreenMotion")}
+									onClick={() => void tl.addScreenMotion(newRegionDurationSec())}
+								>
+									<Move size={16} />
+								</button>
+							</Tooltip>
 							{/* One name and one tip for both states: `aria-pressed` carries which one it is. */}
 							<Tooltip content={t("buttons.autoFocusAllTip")}>
 								<button
@@ -2300,6 +2344,18 @@ export function V4Timeline({
 									{renderPills(
 										zoomPills,
 										t("hints.pressZoom", { key: formatBinding(shortcuts.addZoom, isMac) }),
+									)}
+								</div>
+								{/* Its own lane, right after zoom: both transform the screen card, and a
+								    screen move composes on top of a zoom — see `screenMotionPills`. Unlike
+								    the camera lane this one has no gate to advertise: a screen move needs
+								    a screen, and every project has one. */}
+								<div className={styles.tlLane}>
+									{renderPills(
+										screenMotionPills,
+										t("hints.pressScreenMotion", {
+											key: formatBinding(shortcuts.addScreenMotion, isMac),
+										}),
 									)}
 								</div>
 								<div className={styles.tlLane}>

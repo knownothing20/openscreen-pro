@@ -1,19 +1,20 @@
 // @vitest-environment jsdom
-// Camera motion through the region clipboard.
+// Camera motion and screen motion through the region clipboard.
 //
-// `cameraMotion` is a first-class region kind, so it has to travel the same road as the
-// others: copy the SELECTED pill into `regionClipboard`, paste at the playhead, land through
-// the same anchoring every `add*` uses. These tests drive the REAL shell — real useTimeline,
-// real shortcuts, real store — because what is under test is the wiring between them; a
-// stubbed timeline would only prove the stub works.
+// `cameraMotion` and `screenMotion` are first-class region kinds, so they travel the same road
+// as the others: copy the SELECTED pill into `regionClipboard`, paste at the playhead, land
+// through the same anchoring every `add*` uses. These tests drive the REAL shell — real
+// useTimeline, real shortcuts, real store — because what is under test is the wiring between
+// them; a stubbed timeline would only prove the stub works.
 //
 // Paste reads the clipboard and nothing else, so most cases need no selection at all and go
 // through Ctrl+V alone. The two copy cases press a pill, which is what selects it on the
 // timeline (`startPillDrag` selects before it measures anything).
 //
 // What must NOT happen is just as important as what must: a camera move must not degrade into
-// the legacy `cameraFullscreen` span on the way through the clipboard, and the legacy span
-// must not be dragged up into the new model. The two formats stay separate.
+// the legacy `cameraFullscreen` span on the way through the clipboard, the legacy span must not
+// be dragged up into the new model, and a screen move must not arrive as a camera one. The
+// kinds stay separate.
 
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -70,6 +71,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { EditorDialogsProvider } from "@/contexts/EditorDialogsContext";
 import type { CameraMotionRegion } from "@/lib/ai-edition/cameraMotion/resolve";
 import { type AxcutDocument, axcutSchemaVersion } from "@/lib/ai-edition/schema";
+import type { ScreenMotionRegion } from "@/lib/ai-edition/screenMotion/resolve";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import {
 	clearRegionClipboard,
@@ -119,6 +121,22 @@ const LEGACY_FULLSCREEN_SRC = {
 	clipId: "clip_a",
 	sourceStartSec: 1,
 	sourceEndSec: 3,
+};
+
+/** The authored screen move these tests copy: the card slides right, grows, and tilts. */
+const SCREEN_MOTION_SRC: ScreenMotionRegion = {
+	id: "screenmotion_src",
+	startMs: 1000,
+	endMs: 4000,
+	timing: { leadInSec: 0.6, returnSec: 0.9, easing: "cubic" },
+	target: {
+		position: { x: 0.62, y: 0.42 },
+		scale: 1.55,
+		rotationX: 0,
+		rotationY: 32,
+		rotationZ: -8,
+		perspective: 0.65,
+	},
 };
 
 function makeDoc(overrides: Partial<AxcutDocument> = {}): AxcutDocument {
@@ -196,6 +214,7 @@ function loadDoc(doc: AxcutDocument, currentTimeSec = 5) {
 }
 
 const motionRegions = () => useProjectStore.getState().document?.cameraMotionRegions ?? [];
+const screenRegions = () => useProjectStore.getState().document?.screenMotionRegions ?? [];
 const legacyRegions = () =>
 	(
 		(useProjectStore.getState().document?.legacyEditor as {
@@ -458,5 +477,141 @@ describe("region clipboard: copying what is selected", () => {
 		// Nothing that could still point back at project A.
 		expect("clipId" in pasted).toBe(false);
 		expect("assetId" in pasted).toBe(false);
+	});
+});
+
+describe("region clipboard: pasting a screen motion", () => {
+	it("creates a new screen motion at the playhead, keeping the authored target and timing", async () => {
+		loadDoc(makeDoc({ screenMotionRegions: [SCREEN_MOTION_SRC] }), 5);
+		renderShell();
+
+		copyRegion({
+			kind: "screenMotion",
+			region: {
+				...SCREEN_MOTION_SRC,
+				target: { ...SCREEN_MOTION_SRC.target, position: { ...SCREEN_MOTION_SRC.target.position } },
+			},
+		});
+		await paste();
+
+		expect(screenRegions()).toHaveLength(2);
+		const pasted = screenRegions()[1] as unknown as ScreenMotionRegion;
+
+		// New identity, new span from the playhead, same length.
+		expect(pasted.id).not.toBe(SCREEN_MOTION_SRC.id);
+		expect(pasted.id.startsWith("screenmotion_")).toBe(true);
+		expect(pasted.startMs).toBe(5000);
+		expect(pasted.endMs).toBe(8000);
+
+		// The authored look and timing ride along untouched.
+		expect(pasted.target).toEqual(SCREEN_MOTION_SRC.target);
+		expect(pasted.timing).toEqual(SCREEN_MOTION_SRC.timing);
+	});
+
+	it("lands in the screen motion field, not the camera's and not the legacy envelope", async () => {
+		loadDoc(makeDoc(), 5);
+		renderShell();
+
+		copyRegion({ kind: "screenMotion", region: { ...SCREEN_MOTION_SRC } });
+		await paste();
+
+		expect(screenRegions()).toHaveLength(1);
+		// The three destinations are distinct, and this paste belongs to exactly one.
+		expect(motionRegions()).toHaveLength(0);
+		expect(legacyRegions()).toHaveLength(0);
+	});
+
+	it("leaves the region it was copied from alone", async () => {
+		const original = JSON.parse(JSON.stringify(SCREEN_MOTION_SRC));
+		loadDoc(makeDoc({ screenMotionRegions: [original] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "screenMotion", region: JSON.parse(JSON.stringify(original)) });
+		await paste();
+
+		const [first] = screenRegions() as unknown as ScreenMotionRegion[];
+		expect(first.id).toBe(SCREEN_MOTION_SRC.id);
+		expect(first.startMs).toBe(1000);
+		expect(first.endMs).toBe(4000);
+		expect(first.target).toEqual(SCREEN_MOTION_SRC.target);
+	});
+
+	it("refuses a malformed snapshot instead of writing half a region", async () => {
+		loadDoc(makeDoc(), 5);
+		renderShell();
+
+		// No startMs/endMs: the span cannot be computed, so nothing may be written.
+		copyRegion({ kind: "screenMotion", region: { target: { scale: 2 } } });
+		await paste();
+
+		expect(screenRegions()).toHaveLength(0);
+		expect(toastSuccess).not.toHaveBeenCalled();
+	});
+
+	it("does nothing when the clipboard is empty", async () => {
+		loadDoc(makeDoc(), 5);
+		renderShell();
+
+		await paste();
+
+		expect(screenRegions()).toHaveLength(0);
+	});
+
+	it("records a paste as one undoable edit, and redo puts it back", async () => {
+		loadDoc(makeDoc(), 5);
+		renderShell();
+
+		copyRegion({ kind: "screenMotion", region: { ...SCREEN_MOTION_SRC } });
+		await paste();
+		expect(screenRegions()).toHaveLength(1);
+
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(screenRegions()).toHaveLength(0);
+
+		await act(async () => {
+			expect(redo()).toBe(true);
+		});
+		expect(screenRegions()).toHaveLength(1);
+		expect((screenRegions()[0] as unknown as { startMs: number }).startMs).toBe(5000);
+	});
+
+	it("copies a selected screen motion with its authored target", async () => {
+		loadDoc(makeDoc({ screenMotionRegions: [SCREEN_MOTION_SRC] }), 0);
+		renderShell();
+
+		fireEvent.pointerDown(await screen.findByText("Screen Motion"));
+		await copy();
+
+		const snapshot = pasteClipboard();
+		expect(snapshot?.kind).toBe("screenMotion");
+		expect((snapshot?.region as { id: string }).id).toBe(SCREEN_MOTION_SRC.id);
+		expect((snapshot?.region as { target: unknown }).target).toEqual(SCREEN_MOTION_SRC.target);
+	});
+});
+
+describe("region clipboard: the two motion kinds stay apart", () => {
+	it("does not let a copied screen move be pasted as a camera move", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_SRC] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "screenMotion", region: { ...SCREEN_MOTION_SRC } });
+		await paste();
+
+		// The camera's region count is exactly what it was: the paste added a screen move.
+		expect(motionRegions()).toHaveLength(1);
+		expect(screenRegions()).toHaveLength(1);
+	});
+
+	it("does not let a copied camera move be pasted as a screen move", async () => {
+		loadDoc(makeDoc({ screenMotionRegions: [SCREEN_MOTION_SRC] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: { ...CAMERA_MOTION_SRC } });
+		await paste();
+
+		expect(screenRegions()).toHaveLength(1);
+		expect(motionRegions()).toHaveLength(1);
 	});
 });

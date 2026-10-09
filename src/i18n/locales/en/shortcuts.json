@@ -24,6 +24,7 @@
 		"addVoiceover": "Record Voiceover",
 		"addKeyframe": "Add Keyframe",
 		"addCameraFullscreen": "Add Full Camera",
+		"addScreenMotion": "Add Screen Motion",
 		"deleteSelected": "Delete Selected",
 		"playPause": "Play / Pause",
 		"copySelected": "Copy Selected",

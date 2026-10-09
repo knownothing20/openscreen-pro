@@ -10,6 +10,16 @@
 		"toFullscreen": "Pantalla completa",
 		"easing": "Suavizado"
 	},
+	"screenMotion": {
+		"title": "Movimiento de pantalla",
+		"positionX": "Posición horizontal",
+		"positionY": "Posición vertical",
+		"scale": "Escala",
+		"rotationX": "Inclinación (X)",
+		"rotationY": "Giro (Y)",
+		"rotationZ": "Alabeo (Z)",
+		"easing": "Suavizado"
+	},
 	"marker": {
 		"seek": "Ir a la marca en {{time}}",
 		"edit": "Renombrar marca",
@@ -24,7 +34,8 @@
 		"addTrim": "Agregar un recorte: quita una parte del video en el momento actual",
 		"addAnnotation": "Agregar texto, una flecha, una imagen o un desenfoque en el momento actual",
 		"addSpeed": "Agregar un cambio de velocidad en el momento actual",
-		"addCameraFullscreen": "Agregar Cámara a pantalla completa: muestra la cámara a pantalla completa en el momento actual"
+		"addCameraFullscreen": "Agregar Cámara a pantalla completa: muestra la cámara a pantalla completa en el momento actual",
+		"addScreenMotion": "Agregar Movimiento de pantalla: mueve la pantalla en el momento actual"
 	},
 	"hints": {
 		"pressZoom": "Presiona {{key}} para agregar zoom",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "Presiona {{key}} para agregar anotación",
 		"pressAudio": "Pulsa {{audioKey}} para añadir audio, {{voiceoverKey}} para grabar una voz en off",
 		"pressSpeed": "Presiona {{key}} para agregar velocidad",
-		"pressCameraFullscreen": "Presiona {{key}} para agregar un segmento de cámara a pantalla completa"
+		"pressCameraFullscreen": "Presiona {{key}} para agregar un segmento de cámara a pantalla completa",
+		"pressScreenMotion": "Presiona {{key}} para agregar un movimiento de pantalla"
 	},
 	"labels": {
 		"pan": "Desplazar",

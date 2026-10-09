@@ -1071,12 +1071,15 @@ export function NewEditorShell() {
 		// `cameraMotion` ids carry the same prefix `addCameraMotion` gives them, so a
 		// pasted move is indistinguishable from an authored one — nothing downstream
 		// parses the prefix, but a second convention would be a second thing to keep.
+		// `screenMotion` follows the same rule against `addScreenMotion`.
 		const prefix =
 			snapshot.kind === "annotation"
 				? "ann"
 				: snapshot.kind === "cameraMotion"
 					? "cammotion"
-					: snapshot.kind;
+					: snapshot.kind === "screenMotion"
+						? "screenmotion"
+						: snapshot.kind;
 
 		// Audio re-ventilates through its own anchorer, which advances each
 		// fragment's source offset — the generic one would copy the offset into
@@ -1143,6 +1146,21 @@ export function NewEditorShell() {
 						...(doc.cameraMotionRegions ?? []),
 						...anchored,
 					] as typeof doc.cameraMotionRegions,
+				},
+				{ history: true },
+			);
+		} else if (snapshot.kind === "screenMotion") {
+			// Same reasoning as the camera move above, on the other subject: a screen move is
+			// a first-class document field with its own schema, so it lands in
+			// `screenMotionRegions` and never in the legacy envelope. The authored target and
+			// timing ride along in the snapshot; only the id and the span are new.
+			await saveDocument(
+				{
+					...doc,
+					screenMotionRegions: [
+						...(doc.screenMotionRegions ?? []),
+						...anchored,
+					] as typeof doc.screenMotionRegions,
 				},
 				{ history: true },
 			);
@@ -1216,7 +1234,9 @@ export function NewEditorShell() {
 						? tl.speedRegions
 						: sel.kind === "cameraMotion"
 							? tl.cameraMotionRegions
-							: tl.cameraFullscreenRegions;
+							: sel.kind === "screenMotion"
+								? tl.screenMotionRegions
+								: tl.cameraFullscreenRegions;
 		const region = (source as Array<{ id: string }>).find((r) => r.id === sel.id);
 		if (!region) return;
 		copyRegion({ kind: sel.kind, region: region as unknown as Record<string, unknown> });
@@ -1399,6 +1419,11 @@ export function NewEditorShell() {
 			if (matchesShortcut(e, shortcuts.addCameraFullscreen, isMac)) {
 				e.preventDefault();
 				void tl.addCameraMotion(newRegionDurationSec());
+				return;
+			}
+			if (matchesShortcut(e, shortcuts.addScreenMotion, isMac)) {
+				e.preventDefault();
+				void tl.addScreenMotion(newRegionDurationSec());
 				return;
 			}
 

@@ -10,6 +10,16 @@
 		"toFullscreen": "Toàn màn hình",
 		"easing": "Làm mượt"
 	},
+	"screenMotion": {
+		"title": "Chuyển động màn hình",
+		"positionX": "Vị trí ngang",
+		"positionY": "Vị trí dọc",
+		"scale": "Tỉ lệ",
+		"rotationX": "Độ nghiêng (X)",
+		"rotationY": "Độ xoay (Y)",
+		"rotationZ": "Độ lăn (Z)",
+		"easing": "Làm mượt"
+	},
 	"marker": {
 		"seek": "Đi tới dấu mốc tại {{time}}",
 		"edit": "Đổi tên dấu mốc",
@@ -24,7 +34,8 @@
 		"addTrim": "Thêm cắt: xóa một đoạn video tại thời điểm hiện tại",
 		"addAnnotation": "Thêm văn bản, mũi tên, hình ảnh hoặc làm mờ tại thời điểm hiện tại",
 		"addSpeed": "Thêm thay đổi tốc độ tại thời điểm hiện tại",
-		"addCameraFullscreen": "Thêm Camera Toàn màn hình: hiển thị camera toàn màn hình tại thời điểm hiện tại"
+		"addCameraFullscreen": "Thêm Camera Toàn màn hình: hiển thị camera toàn màn hình tại thời điểm hiện tại",
+		"addScreenMotion": "Thêm Chuyển động màn hình: di chuyển màn hình tại thời điểm hiện tại"
 	},
 	"hints": {
 		"pressZoom": "Nhấn {{key}} để thêm thu phóng",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "Nhấn {{key}} để thêm chú thích",
 		"pressAudio": "Nhấn {{audioKey}} để thêm âm thanh, {{voiceoverKey}} để ghi âm lời thuyết minh",
 		"pressSpeed": "Nhấn {{key}} để thêm tốc độ",
-		"pressCameraFullscreen": "Nhấn {{key}} để thêm một đoạn Camera Toàn màn hình"
+		"pressCameraFullscreen": "Nhấn {{key}} để thêm một đoạn Camera Toàn màn hình",
+		"pressScreenMotion": "Nhấn {{key}} để thêm một chuyển động màn hình"
 	},
 	"labels": {
 		"pan": "Xoay",

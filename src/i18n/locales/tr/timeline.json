@@ -10,6 +10,16 @@
 		"toFullscreen": "Tam ekran",
 		"easing": "Yumuşatma"
 	},
+	"screenMotion": {
+		"title": "Ekran hareketi",
+		"positionX": "Yatay konum",
+		"positionY": "Dikey konum",
+		"scale": "Ölçek",
+		"rotationX": "Eğim (X)",
+		"rotationY": "Dönüş (Y)",
+		"rotationZ": "Yatış (Z)",
+		"easing": "Yumuşatma"
+	},
 	"marker": {
 		"seek": "{{time}} işaretine git",
 		"edit": "İşareti yeniden adlandır",
@@ -24,7 +34,8 @@
 		"addTrim": "Kırpma ekle: videonun bir bölümünü şu anki zamanda çıkarır",
 		"addAnnotation": "Şu anki zamanda metin, ok, resim veya bulanıklık ekle",
 		"addSpeed": "Şu anki zamanda hız değişikliği ekle",
-		"addCameraFullscreen": "Tam Ekran Kamera ekle: kamerayı şu anki zamanda tam ekran gösterir"
+		"addCameraFullscreen": "Tam Ekran Kamera ekle: kamerayı şu anki zamanda tam ekran gösterir",
+		"addScreenMotion": "Ekran Hareketi ekle: ekranı şu anki zamanda hareket ettirir"
 	},
 	"hints": {
 		"pressZoom": "Yakınlaştırma eklemek için {{key}} tuşuna basın",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "Açıklama eklemek için {{key}} tuşuna basın",
 		"pressAudio": "Ses eklemek için {{audioKey}}, seslendirme kaydetmek için {{voiceoverKey}} tuşuna basın",
 		"pressSpeed": "Hız eklemek için {{key}} tuşuna basın",
-		"pressCameraFullscreen": "Tam Ekran Kamera bölümü eklemek için {{key}} tuşuna basın"
+		"pressCameraFullscreen": "Tam Ekran Kamera bölümü eklemek için {{key}} tuşuna basın",
+		"pressScreenMotion": "Ekran hareketi eklemek için {{key}} tuşuna basın"
 	},
 	"labels": {
 		"pan": "Kaydır",

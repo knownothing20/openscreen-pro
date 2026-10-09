@@ -10,6 +10,16 @@
 		"toFullscreen": "Na celou obrazovku",
 		"easing": "Zplynulení"
 	},
+	"screenMotion": {
+		"title": "Pohyb obrazovky",
+		"positionX": "Vodorovná poloha",
+		"positionY": "Svislá poloha",
+		"scale": "Měřítko",
+		"rotationX": "Náklon (X)",
+		"rotationY": "Otočení (Y)",
+		"rotationZ": "Náklon do strany (Z)",
+		"easing": "Zplynulení"
+	},
 	"marker": {
 		"seek": "Přejít na značku v {{time}}",
 		"edit": "Přejmenovat značku",
@@ -24,7 +34,8 @@
 		"addTrim": "Přidat oříznutí: odstraní část videa v aktuálním čase",
 		"addAnnotation": "Přidat text, šipku, obrázek nebo rozmazání v aktuálním čase",
 		"addSpeed": "Přidat změnu rychlosti v aktuálním čase",
-		"addCameraFullscreen": "Přidat Celou kameru: zobrazí kameru na celou obrazovku v aktuálním čase"
+		"addCameraFullscreen": "Přidat Celou kameru: zobrazí kameru na celou obrazovku v aktuálním čase",
+		"addScreenMotion": "Přidat Pohyb obrazovky: posune obrazovku v aktuálním čase"
 	},
 	"hints": {
 		"pressZoom": "Stiskněte {{key}} pro přidání přiblížení",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "Stiskněte {{key}} pro přidání anotace",
 		"pressAudio": "Stiskněte {{audioKey}} pro přidání zvuku, {{voiceoverKey}} pro nahrání komentáře",
 		"pressSpeed": "Stiskněte {{key}} pro přidání rychlosti",
-		"pressCameraFullscreen": "Stiskněte {{key}} pro přidání segmentu celé kamery"
+		"pressCameraFullscreen": "Stiskněte {{key}} pro přidání segmentu celé kamery",
+		"pressScreenMotion": "Stiskněte {{key}} pro přidání pohybu obrazovky"
 	},
 	"labels": {
 		"pan": "Posun",

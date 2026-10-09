@@ -164,9 +164,10 @@ const DECLARED: WritePath[] = [
 	// "Save" chosen on the way out of Ctrl+N and Ctrl+O.
 	w("src/components/ai-edition/NewEditorShell.tsx", "onKey", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "onKey", "save", "gesture"),
-	// Ctrl+V of a copied region: an audio track, zoom, annotation, a camera move,
-	// or a legacy span. One row per branch of the paste, so a new kind cannot be
-	// added without the audit being told which write it lands.
+	// Ctrl+V of a copied region: an audio track, zoom, annotation, a camera move, a
+	// screen move, or a legacy span. One row per branch of the paste, so a new kind
+	// cannot be added without the audit being told which write it lands.
+	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
 	w("src/components/ai-edition/NewEditorShell.tsx", "pasteRegion", "save", "gesture"),
@@ -308,6 +309,14 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeCameraMotion", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setCameraMotionTarget", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setCameraMotionTiming", "save", "gesture"),
+	// Screen Motion regions. The same five gestures on the screen card: the N shortcut and
+	// the toolbar button add one, a drag commits a new span, the Inspector writes the target
+	// or the timing, and delete removes it.
+	w("src/lib/ai-edition/store/useTimeline.ts", "addScreenMotion", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "updateScreenMotionSpan", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "removeScreenMotion", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "setScreenMotionTarget", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "setScreenMotionTiming", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "saveZoomPatch", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setTrimEntries", "save", "gesture"),
 	// The live halves of the two drags.

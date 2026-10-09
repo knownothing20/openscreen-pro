@@ -43,6 +43,7 @@ export type RegionKind =
 	| "speed"
 	| "cameraFullscreen"
 	| "cameraMotion"
+	| "screenMotion"
 	| "audio";
 
 /** Length a clip is given before its media has been probed. Lives here, in the pure
@@ -1133,6 +1134,12 @@ export function removeRegion(document: AxcutDocument, kind: RegionKind, id: stri
 				cameraMotionRegions: document.cameraMotionRegions.filter((region) => region.id !== id),
 			};
 		}
+		case "screenMotion": {
+			return {
+				...document,
+				screenMotionRegions: document.screenMotionRegions.filter((region) => region.id !== id),
+			};
+		}
 		default: {
 			// ponytail: exhaustive — TS errors here if a new RegionKind is added.
 			const exhaustive: never = kind;
@@ -1168,6 +1175,10 @@ const EDIT_REGIONS: Record<
 	cameraMotion: {
 		count: (d) => d.cameraMotionRegions.length,
 		clear: (d) => ({ ...d, cameraMotionRegions: [] }),
+	},
+	screenMotion: {
+		count: (d) => d.screenMotionRegions.length,
+		clear: (d) => ({ ...d, screenMotionRegions: [] }),
 	},
 	trim: {
 		count: (d) => d.timeline.trimRanges.length,

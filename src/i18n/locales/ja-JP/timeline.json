@@ -10,6 +10,16 @@
 		"toFullscreen": "全画面にする",
 		"easing": "イージング"
 	},
+	"screenMotion": {
+		"title": "画面の動き",
+		"positionX": "水平位置",
+		"positionY": "垂直位置",
+		"scale": "拡大縮小",
+		"rotationX": "上下の傾き (X)",
+		"rotationY": "左右の回転 (Y)",
+		"rotationZ": "ロール (Z)",
+		"easing": "イージング"
+	},
 	"marker": {
 		"seek": "{{time}} のマーカーへ移動",
 		"edit": "マーカーの名前を変更",
@@ -24,7 +34,8 @@
 		"addTrim": "トリムを追加：現在の再生位置で動画の一部を削除します",
 		"addAnnotation": "現在の再生位置にテキスト、矢印、画像、ぼかしを追加",
 		"addSpeed": "現在の再生位置に再生速度の変更を追加",
-		"addCameraFullscreen": "フルスクリーンカメラを追加：現在の再生位置でカメラを全画面表示します"
+		"addCameraFullscreen": "フルスクリーンカメラを追加：現在の再生位置でカメラを全画面表示します",
+		"addScreenMotion": "画面の動きを追加：現在の再生位置で画面を動かします"
 	},
 	"hints": {
 		"pressZoom": "{{key}}キーを押してズームを追加",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "{{key}}キーを押して注釈を追加",
 		"pressAudio": "{{audioKey}} キーで音声を追加、{{voiceoverKey}} キーでナレーションを録音",
 		"pressSpeed": "{{key}}キーを押して再生速度を追加",
-		"pressCameraFullscreen": "{{key}}キーを押してフルスクリーンカメラのセグメントを追加"
+		"pressCameraFullscreen": "{{key}}キーを押してフルスクリーンカメラのセグメントを追加",
+		"pressScreenMotion": "{{key}}キーを押して画面の動きを追加"
 	},
 	"labels": {
 		"pan": "移動",

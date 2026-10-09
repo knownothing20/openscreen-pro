@@ -10,6 +10,16 @@
 		"toFullscreen": "Plein écran",
 		"easing": "Adoucissement"
 	},
+	"screenMotion": {
+		"title": "Mouvement d'écran",
+		"positionX": "Position horizontale",
+		"positionY": "Position verticale",
+		"scale": "Échelle",
+		"rotationX": "Inclinaison (X)",
+		"rotationY": "Rotation (Y)",
+		"rotationZ": "Roulis (Z)",
+		"easing": "Adoucissement"
+	},
 	"marker": {
 		"seek": "Aller au repère à {{time}}",
 		"edit": "Renommer le repère",
@@ -24,7 +34,8 @@
 		"addTrim": "Ajouter une coupe : retire une partie de la vidéo à l'instant actuel",
 		"addAnnotation": "Ajouter du texte, une flèche, une image ou un flou à l'instant actuel",
 		"addSpeed": "Ajouter un changement de vitesse à l'instant actuel",
-		"addCameraFullscreen": "Ajouter Caméra plein écran : affiche la caméra en plein écran à l'instant actuel"
+		"addCameraFullscreen": "Ajouter Caméra plein écran : affiche la caméra en plein écran à l'instant actuel",
+		"addScreenMotion": "Ajouter Mouvement d'écran : déplace l'écran à l'instant actuel"
 	},
 	"hints": {
 		"pressZoom": "Appuyez sur {{key}} pour ajouter un zoom",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "Appuyez sur {{key}} pour ajouter une annotation",
 		"pressAudio": "Appuyez sur {{audioKey}} pour ajouter un audio, {{voiceoverKey}} pour enregistrer une voix off",
 		"pressSpeed": "Appuyez sur {{key}} pour ajouter une vitesse",
-		"pressCameraFullscreen": "Appuyez sur {{key}} pour ajouter un segment Caméra plein écran"
+		"pressCameraFullscreen": "Appuyez sur {{key}} pour ajouter un segment Caméra plein écran",
+		"pressScreenMotion": "Appuyez sur {{key}} pour ajouter un mouvement d'écran"
 	},
 	"labels": {
 		"pan": "Panoramique",

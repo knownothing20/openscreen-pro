@@ -10,6 +10,16 @@
 		"toFullscreen": "切換為全螢幕",
 		"easing": "緩動"
 	},
+	"screenMotion": {
+		"title": "螢幕運鏡",
+		"positionX": "水平位置",
+		"positionY": "垂直位置",
+		"scale": "縮放",
+		"rotationX": "俯仰 (X)",
+		"rotationY": "偏轉 (Y)",
+		"rotationZ": "翻滾 (Z)",
+		"easing": "緩動"
+	},
 	"marker": {
 		"seek": "跳轉到標記 {{time}}",
 		"edit": "重新命名標記",
@@ -24,7 +34,8 @@
 		"addTrim": "新增剪輯：在目前時間移除一段影片",
 		"addAnnotation": "在目前時間新增文字、箭頭、圖片或模糊",
 		"addSpeed": "在目前時間新增速度變化",
-		"addCameraFullscreen": "新增全螢幕攝影機：在目前時間全螢幕顯示攝影機"
+		"addCameraFullscreen": "新增全螢幕攝影機：在目前時間全螢幕顯示攝影機",
+		"addScreenMotion": "新增螢幕運鏡：在目前時間移動螢幕"
 	},
 	"hints": {
 		"pressZoom": "按 {{key}} 新增縮放",
@@ -32,7 +43,8 @@
 		"pressAnnotation": "按 {{key}} 新增標註",
 		"pressAudio": "按 {{audioKey}} 新增音訊，按 {{voiceoverKey}} 錄製配音",
 		"pressSpeed": "按 {{key}} 新增速度",
-		"pressCameraFullscreen": "按 {{key}} 新增一個全螢幕攝影機片段"
+		"pressCameraFullscreen": "按 {{key}} 新增一個全螢幕攝影機片段",
+		"pressScreenMotion": "按 {{key}} 新增一個螢幕運鏡"
 	},
 	"labels": {
 		"pan": "平移",
