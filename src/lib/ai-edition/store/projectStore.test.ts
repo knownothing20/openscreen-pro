@@ -76,6 +76,7 @@ const sampleDoc = {
 	audioTracks: [],
 	markers: [],
 	cameraMotionRegions: [],
+	screenMotionRegions: [],
 	legacyEditor: null,
 };
 

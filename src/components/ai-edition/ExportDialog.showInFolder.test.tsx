@@ -80,6 +80,7 @@ const DOC: AxcutDocument = {
 	audioTracks: [],
 	markers: [],
 	cameraMotionRegions: [],
+	screenMotionRegions: [],
 	legacyEditor: null,
 };
 

@@ -129,6 +129,7 @@ const sampleDoc: AxcutDocument = {
 	audioTracks: [],
 	markers: [],
 	cameraMotionRegions: [],
+	screenMotionRegions: [],
 	legacyEditor: null,
 };
 

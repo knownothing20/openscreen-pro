@@ -35,6 +35,7 @@ const baseDoc: AxcutDocument = {
 	audioTracks: [],
 	markers: [],
 	cameraMotionRegions: [],
+	screenMotionRegions: [],
 	transcripts: [],
 	transcript: null,
 	legacyEditor: null,

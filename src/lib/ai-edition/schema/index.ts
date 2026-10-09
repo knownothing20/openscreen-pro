@@ -23,6 +23,7 @@ import { clampToBound } from "../../projectDefaults";
 // module TYPE-ONLY, so requiring them here never re-enters schema at runtime.
 import { parseCameraMotionRegions } from "../cameraMotion/parse";
 import { createId } from "../document/ids";
+import { parseScreenMotionRegions } from "../screenMotion/parse";
 import { anchorRegionsWithDerivedMs } from "../timeline/timelineMap";
 
 //   4. v5 — modifiers (zoom / annotation / speed / cameraFullscreen) become
@@ -669,6 +670,12 @@ const documentSchemaShape = z.object({
 	// NOT migrated into this list: they keep their own field and are folded in at
 	// evaluation time (see `cameraMotion/legacyTiming.ts`).
 	cameraMotionRegions: z.array(z.unknown()).default([]).transform(parseCameraMotionRegions),
+	// Where the SCREEN CARD goes — its own field, on the same terms as the camera's, and a
+	// sibling of it rather than a branch inside it: a screen move and a camera move are two
+	// independent tracks that can run at the same time. Defaulted, so every document written
+	// before this existed reads as "the screen stays where the project put it" and stays
+	// valid without a version bump.
+	screenMotionRegions: z.array(z.unknown()).default([]).transform(parseScreenMotionRegions),
 	legacyEditor: legacyEditorSchema.nullable().default(null),
 });
 

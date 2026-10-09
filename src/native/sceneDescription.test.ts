@@ -103,6 +103,7 @@ function makeDoc(
 		// and this fixture carries an empty list so the document type stays satisfied.
 		markers: [],
 		cameraMotionRegions: [],
+		screenMotionRegions: [],
 		legacyEditor: overrides.legacyEditor ?? null,
 	};
 }

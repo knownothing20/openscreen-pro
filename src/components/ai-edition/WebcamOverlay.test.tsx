@@ -77,6 +77,7 @@ function makeDocument(): AxcutDocument {
 		audioTracks: [],
 		markers: [],
 		cameraMotionRegions: [],
+		screenMotionRegions: [],
 		legacyEditor: null,
 	};
 }

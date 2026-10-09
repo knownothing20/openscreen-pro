@@ -360,6 +360,7 @@ const base = {
 	audioTracks: [],
 	markers: [],
 	cameraMotionRegions: [],
+	screenMotionRegions: [],
 	legacyEditor: null,
 };
 

@@ -56,6 +56,7 @@ const sampleDoc = vi.hoisted(
 		audioTracks: [],
 		markers: [],
 		cameraMotionRegions: [],
+		screenMotionRegions: [],
 		legacyEditor: null,
 	}),
 );
