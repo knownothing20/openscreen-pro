@@ -3,6 +3,10 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/contexts/I18nContext";
 import { DEFAULT_TEXT_PLATE } from "../annotations/background";
+import {
+	CAMERA_MOTION_DEFAULT_TARGET,
+	CAMERA_MOTION_FULLSCREEN_TARGET,
+} from "../cameraMotion/presets";
 import { type RegionKind, readSpeedRegions } from "../document/timeline";
 import type { AxcutDocument } from "../schema";
 import { axcutSchemaVersion, parseDocumentFile } from "../schema";
@@ -678,6 +682,146 @@ describe("useTimeline.addCameraFullscreen (camera gate)", () => {
 		expect(regions).toHaveLength(1);
 		// 2s at the playhead (currentTimeSec = 1), the shared default.
 		expect(regions[0]).toMatchObject({ startMs: 1000, endMs: 3000 });
+	});
+});
+
+// A camera move is its own document field with its own schema — not a span on
+// `legacyEditor` — so the calls that create, move and delete one are pinned here. The C
+// shortcut calls `addCameraMotion()` with no arguments, which is why that bare call is
+// the first case: it IS the shortcut's behaviour. The legacy `addCameraFullscreen` suite
+// above keeps its own, and the two must not converge.
+describe("useTimeline camera motion regions", () => {
+	const cameraAsset = {
+		...sampleDoc.assets[0],
+		cameraTrack: {
+			sourcePath: "/tmp/camera.webm",
+			startMs: 0,
+			offsetMs: 0,
+			visible: true,
+			// Dimensions filled in so the hook's backfill probe has nothing to do — an
+			// unprobed camera would fire its own `saveDocument` alongside this test's.
+			width: 1280,
+			height: 720,
+		},
+	};
+
+	const motionRegions = () => useProjectStore.getState().document?.cameraMotionRegions ?? [];
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: { ...sampleDoc, assets: [cameraAsset] },
+			currentTimeSec: 1,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("the bare call the C shortcut makes creates a fullscreen move, not a legacy span", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addCameraMotion();
+		});
+
+		const regions = motionRegions();
+		expect(regions).toHaveLength(1);
+		// 2s at the playhead (currentTimeSec = 1), the shared default.
+		expect(regions[0]).toMatchObject({ startMs: 1000, endMs: 3000 });
+		expect(regions[0].target).toEqual(CAMERA_MOTION_FULLSCREEN_TARGET);
+		// It went to the camera motion field, and nothing to the legacy envelope.
+		expect(useProjectStore.getState().document?.legacyEditor).toBeNull();
+	});
+
+	it("takes an explicit duration and target", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addCameraMotion(5, CAMERA_MOTION_DEFAULT_TARGET);
+		});
+
+		const regions = motionRegions();
+		expect(regions).toHaveLength(1);
+		expect(regions[0]).toMatchObject({ startMs: 1000, endMs: 6000 });
+		expect(regions[0].target).toEqual(CAMERA_MOTION_DEFAULT_TARGET);
+	});
+
+	it("writes nothing when no clip's asset carries a camera", async () => {
+		// sampleDoc's only asset carries `cameraTrack: null`.
+		useProjectStore.setState({ document: sampleDoc });
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addCameraMotion();
+		});
+
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
+		expect(motionRegions()).toEqual([]);
+	});
+
+	it("deletes only the region it names", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addCameraMotion();
+		});
+		await act(async () => {
+			await result.current.addCameraMotion(1);
+		});
+		const [first, second] = motionRegions();
+		expect(motionRegions()).toHaveLength(2);
+
+		await act(async () => {
+			await result.current.removeCameraMotion(first.id);
+		});
+
+		const left = motionRegions();
+		expect(left).toHaveLength(1);
+		expect(left[0].id).toBe(second.id);
+	});
+
+	it("records a creation as one undoable edit", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addCameraMotion();
+		});
+		expect(motionRegions()).toHaveLength(1);
+
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(motionRegions()).toHaveLength(0);
+
+		await act(async () => {
+			expect(redo()).toBe(true);
+		});
+		expect(motionRegions()).toHaveLength(1);
+	});
+
+	it("records a deletion as one undoable edit", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addCameraMotion();
+		});
+		const id = motionRegions()[0].id;
+
+		await act(async () => {
+			await result.current.removeCameraMotion(id);
+		});
+		expect(motionRegions()).toHaveLength(0);
+
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(motionRegions()).toHaveLength(1);
+		expect(motionRegions()[0].id).toBe(id);
 	});
 });
 
