@@ -6,8 +6,13 @@ import { type SpeedRegion, screenTimeMs } from "../timeline/speed";
  * The screen card as a renderer wants it, in the same normalized language the camera's
  * motion uses: `position` is 0..1 across the canvas (0 = flush left/top, 0.5 = centred,
  * 1 = flush right/bottom), `scale` is a MULTIPLIER on the card's own base placement
- * (1 = exactly as the project places it), the rotations are degrees and `perspective` is
- * the 3D focal strength the quad renderer already understands.
+ * (1 = exactly as the project places it), and the rotations are degrees.
+ *
+ * `perspective` is authored and carried, but NOT APPLIED — no renderer reads it. The quad's
+ * perspective is `min(width, height) × ROTATION_3D_PERSPECTIVE_FACTOR`, a constant the author
+ * cannot yet steer. It rides along so the model and the wire stay complete for the slice that
+ * gives it an effect; until then it is a knob with nothing behind it, and the Inspector must
+ * not offer it. Same status as Camera Motion's `opacity`.
  *
  * Modelled on DogSC's `ScreenMotionState`. Unlike the camera there is no discrete shape to
  * resolve — a screen move authors continuous numbers directly — so a target IS a state.

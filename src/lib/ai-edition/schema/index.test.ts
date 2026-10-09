@@ -53,6 +53,40 @@ describe("axcut-schema v8", () => {
 		expect(() => ensureDocument({ schemaVersion: 3, project: "not-an-object" })).toThrow();
 	});
 
+	it("createEmptyDocument starts with no screen motion regions", () => {
+		const doc = createEmptyDocument({ projectId: "proj_1", title: "Demo" });
+		expect(doc.screenMotionRegions).toEqual([]);
+	});
+
+	it("keeps authored screen motion, repairing out-of-range numbers instead of dropping the region", () => {
+		// Same contract as the camera's: a hand-edited file must still open, with the field
+		// put back in range. Only a region that cannot be a region is dropped.
+		const doc = documentSchema.parse({
+			...createEmptyDocument({ projectId: "proj_1", title: "Demo" }),
+			screenMotionRegions: [
+				{
+					id: "sm1",
+					startMs: 3000,
+					endMs: 9000,
+					timing: { leadInSec: 0.6, returnSec: 0.9, easing: "cubic" },
+					target: {
+						position: { x: 5, y: 0.5 },
+						scale: 1.6,
+						rotationY: 400,
+						perspective: 0.65,
+					},
+				},
+				{ startMs: 0, endMs: 1 },
+			],
+		});
+
+		expect(doc.screenMotionRegions).toHaveLength(1);
+		expect(doc.screenMotionRegions[0].target.position.x).toBe(1);
+		expect(doc.screenMotionRegions[0].target.rotationY).toBe(90);
+		expect(doc.screenMotionRegions[0].target.scale).toBeCloseTo(1.6, 6);
+		expect(doc.screenMotionRegions[0].target.perspective).toBeCloseTo(0.65, 6);
+	});
+
 	it("accepts a clip with sourceEndSec undefined (asset duration unknown at migration time)", () => {
 		const clip = clipSchema.parse({
 			id: "clip_1",

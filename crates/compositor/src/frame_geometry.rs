@@ -2989,6 +2989,10 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         let cam_motion_regions = scene
             .map(|s| &s.camera_motion_regions)
             .unwrap_or(&empty_cam_motion);
+        let empty_screen_motion: Vec<crate::scene::SceneScreenMotionRegion> = Vec::new();
+        let screen_motion_regions = scene
+            .map(|s| &s.screen_motion_regions)
+            .unwrap_or(&empty_screen_motion);
         let webcam_reactive = scene.map(|s| s.layout.webcam_reactive_zoom).unwrap_or(false);
         let source_t = input.timeline_t_override.unwrap_or(frame / FPS);
         // Les transitions se mesurent à l'écran (`ScreenClock`), la frame précédente aussi : une
@@ -3344,6 +3348,55 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             impact,
         );
         let s_dst_prev = pressed(remap_box(s_base_prev, cut_ref_prev, cut));
+
+        // Screen Motion : la carte enregistrée se déplace, grossit et s'incline. La boîte est
+        // construite en FORWARD depuis l'état DÉJÀ FONDU (position, échelle) — voir
+        // `screen_motion.rs` : rien ici ne divise par `1 − carte`.
+        //
+        // La rotation s'AJOUTE à celle du zoom au lieu de la remplacer. `screen_tilt` est le
+        // point de passage unique de l'écran, de son ombre, du curseur et du masque de flou
+        // (cf. son commentaire) : additionner ici les fait donc tous suivre, et un zoom incliné
+        // pendant qu'un mouvement d'écran tourne garde les DEUX angles au lieu d'en perdre un.
+        //
+        // `screen_sample_prev` porte sur `s_dst_prev`, la boîte de base de la frame d'avant : le
+        // flou de mouvement de l'écran suit donc le mouvement, comme celui du zoom.
+        let screen_sample = crate::screen_motion::screen_motion_sample_at(
+            screen_motion_regions,
+            source_t,
+            &clock,
+            s_dst,
+        );
+        let screen_sample_prev = crate::screen_motion::screen_motion_sample_at(
+            screen_motion_regions,
+            source_t_prev,
+            &clock,
+            s_dst_prev,
+        );
+        let s_dst = match screen_sample {
+            Some(sample) => {
+                zoom_rotation = [
+                    zoom_rotation[0] + sample.rotation[0],
+                    zoom_rotation[1] + sample.rotation[1],
+                    zoom_rotation[2] + sample.rotation[2],
+                ];
+                crate::screen_motion::screen_motion_box((sample.position, sample.scale), s_dst)
+            }
+            None => s_dst,
+        };
+        let s_dst_prev = match screen_sample_prev {
+            Some(sample) => {
+                zoom_rotation_prev = [
+                    zoom_rotation_prev[0] + sample.rotation[0],
+                    zoom_rotation_prev[1] + sample.rotation[1],
+                    zoom_rotation_prev[2] + sample.rotation[2],
+                ];
+                crate::screen_motion::screen_motion_box(
+                    (sample.position, sample.scale),
+                    s_dst_prev,
+                )
+            }
+            None => s_dst_prev,
+        };
         // le padding n'affecte QUE l'écran (la quantité de fond révélée). La webcam reste ancrée
         // en bas-droite à sa marge fixe, quelle que soit la valeur de padding (pas de scale_frame)
         // — SAUF quand l'app a résolu un placement explicite (`app_webcam_rect`, drag-to-reposition

@@ -151,6 +151,30 @@ export interface SceneCameraMotionRegion {
 	easing: string;
 }
 
+export interface SceneScreenMotionRegion {
+	startSec: number;
+	endSec: number;
+	/** See . */
+	clipIndex?: number;
+	/** See . */
+	underTrim?: boolean;
+	/** Authored numbers, sent as written. A camera move needs the app to resolve a discrete
+	 *  shape into (aspect, corner) first; a screen move has no shape to resolve, so there is
+	 *  nothing for this side to compute and nothing for the native side to re-derive. */
+	target: {
+		positionX: number;
+		positionY: number;
+		scale: number;
+		rotationX: number;
+		rotationY: number;
+		rotationZ: number;
+		perspective: number;
+	};
+	leadInSec: number;
+	returnSec: number;
+	easing: string;
+}
+
 export interface SceneCameraFullscreenRegion {
 	startSec: number;
 	endSec: number;
@@ -504,6 +528,7 @@ export interface SceneDescription {
 	 */
 	cameraFullscreenRegions: SceneCameraFullscreenRegion[];
 	cameraMotionRegions: SceneCameraMotionRegion[];
+	screenMotionRegions: SceneScreenMotionRegion[];
 	/**
 	 * Speed regions projected onto each clip's source time (one entry per
 	 * source-time span after `projectRegionsToSourceTime`). Empty when none set.
@@ -1082,6 +1107,12 @@ export function buildSceneDescription(
 		document.timeline.clips,
 		() => createId("cammotion"),
 	);
+	const projectedScreenMotionRegions = projectRegionsToSource(
+		document.screenMotionRegions ?? [],
+		visibleClips,
+		document.timeline.clips,
+		() => createId("screenmotion"),
+	);
 	// Speed regions carry an extra `speed` field the standard `rangeSchema` does not, so we
 	// can't read from `document.timeline.speedRanges` today (see SceneDescription.speedRegions
 	// comment). The legacy web exporter reads from `legacyEditor.speedRegions`; we mirror it.
@@ -1492,6 +1523,24 @@ export function buildSceneDescription(
 				easing: region.timing.easing,
 			};
 		}),
+		screenMotionRegions: projectedScreenMotionRegions.map((region) => ({
+			startSec: region.startMs / 1000,
+			endSec: region.endMs / 1000,
+			clipIndex: region.clipIndex,
+			...(region.underTrim ? { underTrim: true } : {}),
+			target: {
+				positionX: region.target.position.x,
+				positionY: region.target.position.y,
+				scale: region.target.scale,
+				rotationX: region.target.rotationX,
+				rotationY: region.target.rotationY,
+				rotationZ: region.target.rotationZ,
+				perspective: region.target.perspective,
+			},
+			leadInSec: region.timing.leadInSec,
+			returnSec: region.timing.returnSec,
+			easing: region.timing.easing,
+		})),
 		// Speed is the one modifier with nothing to show for itself on a parked playhead: a
 		// still frame has no rate. So the entries under a trim are dropped here rather than
 		// shipped inert — `speed_at` (regions.rs) matches on clipIndex + time with no window

@@ -37,7 +37,7 @@ pub const FULLSCREEN_BOX: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
 /// un fichier abîmé doit s'ouvrir, pas faire tomber la frame. Les trois béziers sont ceux de
 /// `ZoomEasingPreset` (DogSC), donc une courbe choisie dans l'une ou l'autre app veut dire la
 /// même chose.
-fn camera_motion_easing_fn(easing: &str) -> fn(f32) -> f32 {
+pub(crate) fn camera_motion_easing_fn(easing: &str) -> fn(f32) -> f32 {
     match easing {
         "linear" => |t: f32| t,
         "quadratic" => |t: f32| cubic_bezier(0.45, 0.0, 0.55, 1.0, t),
@@ -48,27 +48,34 @@ fn camera_motion_easing_fn(easing: &str) -> fn(f32) -> f32 {
     }
 }
 
-/// La phase BRUTE (0..1) de l'enveloppe, sans courbe.
+/// La phase BRUTE (0..1) d'une enveloppe de région, sans courbe.
 ///
 /// 0 à ses bornes, montée sur `lead_in_sec`, palier, descente sur `return_sec`, chaque fenêtre
 /// bornée à la moitié de la région pour qu'une région courte anime pleinement les deux. Mesurée à
 /// l'écran (`ScreenClock`), comme le zoom : un changement de vitesse étire le mouvement avec la
 /// vidéo au lieu de le faire glisser sur l'image. C'est la phase — pas le progrès — que lit la
 /// dissolution des coins.
-fn camera_motion_phase_at(
-    region: &SceneCameraMotionRegion,
+///
+/// Prend les quatre nombres plutôt qu'une région : la caméra et l'écran partagent cette
+/// enveloppe, et une seconde copie serait une seconde chose à garder en phase — deux mouvements
+/// créés coup sur coup doivent arriver au même rythme.
+pub(crate) fn region_phase_at(
+    start_sec: f64,
+    end_sec: f64,
+    lead_in_sec: f32,
+    return_sec: f32,
     t: f32,
     clock: &ScreenClock,
 ) -> f32 {
-    let start = region.start_sec as f32;
-    let end = region.end_sec as f32;
+    let start = start_sec as f32;
+    let end = end_sec as f32;
     if t <= start || t >= end {
         return 0.0;
     }
     let (start, end, t) = (clock.at(start), clock.at(end), clock.at(t));
     let half = (end - start) * 0.5;
-    let lead_in = region.lead_in_sec.max(0.0).min(half);
-    let lead_out = region.return_sec.max(0.0).min(half);
+    let lead_in = lead_in_sec.max(0.0).min(half);
+    let lead_out = return_sec.max(0.0).min(half);
     let lead_in_end = start + lead_in;
     if t < lead_in_end {
         return if lead_in > 0.0 {
@@ -86,6 +93,21 @@ fn camera_motion_phase_at(
     } else {
         0.0
     }
+}
+
+fn camera_motion_phase_at(
+    region: &SceneCameraMotionRegion,
+    t: f32,
+    clock: &ScreenClock,
+) -> f32 {
+    region_phase_at(
+        region.start_sec,
+        region.end_sec,
+        region.lead_in_sec,
+        region.return_sec,
+        t,
+        clock,
+    )
 }
 
 /// Le progrès (0..1) d'une région au temps `t`, sa courbe appliquée. Miroir de

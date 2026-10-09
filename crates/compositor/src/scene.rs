@@ -539,6 +539,89 @@ pub struct SceneCameraFullscreenRegion {
     pub end_sec: f64,
 }
 
+/// La cible d'un mouvement d'ÉCRAN, telle que l'auteur l'a écrite.
+///
+/// `position` est le centre de la carte (0..1 du canvas, 0.5 = centré), `scale` un MULTIPLICATEUR
+/// sur le placement de base du projet (1 = tel quel) et les rotations sont en degrés. Miroir de
+/// `ScreenMotionState` (TS).
+///
+/// Aucun défaut n'est « la bonne réponse » : ils ne servent qu'aux payloads abîmés, comme pour la
+/// caméra. L'app envoie toujours les sept champs.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneScreenMotionTarget {
+    #[serde(default = "default_camera_position")]
+    pub position_x: f32,
+    #[serde(default = "default_camera_position")]
+    pub position_y: f32,
+    #[serde(default = "default_camera_size")]
+    pub scale: f32,
+    #[serde(default)]
+    pub rotation_x: f32,
+    #[serde(default)]
+    pub rotation_y: f32,
+    #[serde(default)]
+    pub rotation_z: f32,
+    /// Reçu, et sans effet — pour l'instant. La perspective du quad reste
+    /// `min(largeur, hauteur) × PERSPECTIVE_FACTOR` (`regions.rs`), une constante que l'auteur ne
+    /// peut pas encore régler ; rien ici ne lit ce champ. Il est conservé pour que le contrat TS ↔
+    /// natif reste complet, et `screen_motion_sample_at` refuse délibérément de le recalculer :
+    /// produire une valeur que personne ne lit serait exactement le « champ qui existe mais qui ne
+    /// fait rien » que ce dépôt refuse. Même statut que l'`opacity` de Camera Motion.
+    #[serde(default)]
+    pub perspective: f32,
+}
+
+/// Une zone "Screen Motion" de la timeline : l'écran se déplace, grossit et s'incline vers une
+/// cible pendant cette fenêtre.
+///
+/// La cible voyage TELLE QUE L'AUTEUR L'A ÉCRITE. Contrairement à un mouvement de caméra il n'y a
+/// pas de forme discrète à traduire en nombres continus, donc il n'y a rien à résoudre — ni ici,
+/// ni en TS. Même règle que pour la caméra, appliquée un cran plus tôt : une seule implémentation
+/// de la sémantique, et elle vit en TS (`screenMotion/resolve.ts`). Le natif ne fait que
+/// l'enveloppe temporelle, le lerp en espace RECT et le décalage de la boîte.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneScreenMotionRegion {
+    /// Index du clip dont les temps source portent cette région (voir `SceneZoomRegion`).
+    #[serde(default)]
+    pub clip_index: Option<usize>,
+    pub start_sec: f64,
+    pub end_sec: f64,
+    #[serde(default)]
+    pub target: SceneScreenMotionTarget,
+    /// Fenêtre d'arrivée, en secondes. Bornée à la moitié de la région au moment de l'évaluation,
+    /// pas ici, pour qu'une région redimensionnée reçoive la borne qu'elle aurait eue. Mêmes
+    /// valeurs par défaut que la caméra : deux mouvements créés coup sur coup arrivent au même
+    /// rythme, ce qui est le but.
+    #[serde(default = "default_camera_motion_lead_in_sec")]
+    pub lead_in_sec: f32,
+    #[serde(default = "default_camera_motion_return_sec")]
+    pub return_sec: f32,
+    /// Nom de courbe : `linear` / `quadratic` / `cubic` / `quintic` / `spring` / `screenStudio`.
+    /// Un nom inconnu (ou absent) retombe sur `cubic`, le même défaut que `parse.ts` (TS).
+    #[serde(default)]
+    pub easing: String,
+}
+
+/// Le défaut est l'IDENTITÉ : la carte là où le projet l'a placée, sans rotation. Un payload
+/// abîmé doit se lire comme « aucun mouvement », pas comme un mouvement vers un endroit inventé —
+/// la caméra peut se permettre une cible pleine largeur parce que c'est ce que son propre défaut
+/// veut dire ; ici il n'y a pas d'équivalent, donc on ne bouge rien.
+impl Default for SceneScreenMotionTarget {
+    fn default() -> Self {
+        Self {
+            position_x: 0.5,
+            position_y: 0.5,
+            scale: 1.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            perspective: 0.0,
+        }
+    }
+}
+
 /// Une zone "Camera Motion" de la timeline : la caméra se déplace et/ou change de forme vers une
 /// cible pendant cette fenêtre.
 ///
@@ -823,6 +906,11 @@ pub struct Scene {
     /// après coup, absent des JSON écrits avant, et de tout projet sans mouvement de caméra.
     #[serde(default)]
     pub camera_motion_regions: Vec<SceneCameraMotionRegion>,
+    /// Zones "Screen Motion" (déplacement/échelle/inclinaison de l'écran). `#[serde(default)]` :
+    /// champ ajouté après coup, absent des JSON écrits avant, et de tout projet sans mouvement
+    /// d'écran.
+    #[serde(default)]
+    pub screen_motion_regions: Vec<SceneScreenMotionRegion>,
     pub cursor: SceneCursor,
     /// Global audio finishing. Default keeps old scene payloads bit-for-bit compatible.
     #[serde(default)]
@@ -882,6 +970,9 @@ impl Scene {
             belongs(region.clip_index, region.start_sec, region.end_sec)
         });
         scene.camera_motion_regions.retain(|region| {
+            belongs(region.clip_index, region.start_sec, region.end_sec)
+        });
+        scene.screen_motion_regions.retain(|region| {
             belongs(region.clip_index, region.start_sec, region.end_sec)
         });
         scene.annotations.retain(|annotation| {
