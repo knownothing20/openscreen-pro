@@ -378,7 +378,14 @@ export function NewEditorShell() {
 		})();
 	}, [openProjectOpen]);
 
-	// Auto-load project recording session on mount
+	// Import a recording that is waiting to be opened — the recorder's hand-off.
+	//
+	// Nothing else happens on mount. This used to fall back to opening the most recent
+	// project, which dropped the user into a project they had not chosen. The empty
+	// state already offers Load Project, record and import, so the choice is theirs.
+	// A pending recording is still imported: that hand-off is the recorder handing the
+	// editor its own output, and skipping it would land the user on an empty editor
+	// immediately after they stopped recording.
 	useEffect(() => {
 		if (initRef.current) return;
 		initRef.current = true;
@@ -387,43 +394,14 @@ export function NewEditorShell() {
 			try {
 				if (await importPendingRecording((warning) => toast.warning(warning))) {
 					toast.success("Recording added to a new project");
-					return;
 				}
 			} catch (err) {
 				toast.error("Could not auto-create project from recording", {
 					description: err instanceof Error ? err.message : String(err),
 				});
-				return;
-			}
-			// ponytail: no recording waiting — restore the user's most recent
-			// project. The browser-shim's listProjects returns the seeded
-			// `browser-shim-projects` entries, so e2e tests can land directly in a
-			// populated editor; for real Electron users this is the expected "open
-			// last project on launch" UX — and, now that the recording hand-off is
-			// consumed on import, it is also what reopening the editor after a
-			// recording lands on: the project that recording went into, settings and
-			// all, instead of a second project on the same file.
-			try {
-				const projects = await nativeBridgeClient.aiEdition.listProjects();
-				console.info("[editor] listProjects returned", projects);
-				if (projects.length > 0) {
-					console.info("[editor] auto-loading project", projects[0].id);
-					await loadProject(projects[0].id);
-					const state = useProjectStore.getState();
-					console.info(
-						"[editor] post-loadProject status=",
-						state.status,
-						"error=",
-						JSON.stringify(state.error),
-						"doc=",
-						state.document ? "loaded" : "null",
-					);
-				}
-			} catch (e) {
-				console.warn("[editor] auto-load failed", e);
 			}
 		})();
-	}, [loadProject]);
+	}, []);
 
 	// Warn on close when dirty
 	useEffect(() => {
