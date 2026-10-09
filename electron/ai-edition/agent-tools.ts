@@ -92,6 +92,9 @@ function modifierIds(document: AxcutDocument, kind: ModifierKind): string[] {
 		case "cameraMotion":
 			// The general form of the Full Camera span: an id list like any other modifier.
 			return document.cameraMotionRegions.map((region) => region.id);
+		case "screenMotion":
+			// The screen's own move — the camera's counterpart on the other subject.
+			return document.screenMotionRegions.map((region) => region.id);
 		case "speed":
 			return ((legacy.speedRegions as Array<{ id: string }> | undefined) ?? []).map(
 				(region) => region.id,
@@ -2286,10 +2289,16 @@ export function executeAgentTool(
 			else if (document.annotations.some((a) => a.id === id)) kind = "annotation";
 			else if (speedRegions.some((s) => s.id === id)) kind = "speed";
 			else if (cameraFullscreenRegions.some((c) => c.id === id)) kind = "cameraFullscreen";
+			// `modifierIds` has had a `cameraMotion` arm since camera moves landed, but this
+			// resolution never produced one — so a camera move was the one modifier the agent
+			// could not delete. Both first-class kinds are resolved here now.
+			else if (document.cameraMotionRegions.some((c) => c.id === id)) kind = "cameraMotion";
+			else if (document.screenMotionRegions.some((c) => c.id === id)) kind = "screenMotion";
 			else if (document.audioTracks.some((t) => trackGroupId(t) === id)) kind = "audio";
 			if (!kind) {
 				return failure(
-					`No zoom / speed / annotation / full-camera / audio modifier with id ${id}. ` +
+					`No zoom / speed / annotation / full-camera / camera-motion / screen-motion / ` +
+						`audio modifier with id ${id}. ` +
 						`For a trim use removeTrim; for a clip use removeClip.`,
 				);
 			}
