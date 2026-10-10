@@ -144,6 +144,17 @@ const PILL_HANDLE_OUT_PX = PILL_HANDLE_PX + PILL_MOVE_GAP_PX;
 const PILL_CONTENT_MIN_PX = 34;
 /** Edge-snap radius while dragging a pill, in screen px. */
 const PILL_SNAP_PX = 8;
+/**
+ * How far the pointer must travel before a press on a pill counts as a drag.
+ *
+ * Without it, pressing a pill to SELECT it moved the region: a click carries a pixel or
+ * two of jitter, that reached `move`, and the pointerup committed the nudge — a region
+ * shifted by a few milliseconds, a real edit on the undo stack, and no way to tell it
+ * from a deliberate move. The clip row solved the same problem with the same 4px before
+ * this did (see `startClipDrag`); a pill needed it just as much, and every kind shares
+ * this path.
+ */
+const PILL_DRAG_SLOP_PX = 4;
 // One audio pill's height, the vertical step between stacked rows, and lane padding
 // are defined in audioTracks.ts and imported above.
 // The size a newly created pill aims for (PILL_CREATE_PX) lives in
@@ -1079,7 +1090,12 @@ export function V4Timeline({
 					await tl.setTrimEntries(entries, dropIds);
 				}
 			};
+			// False until the pointer has travelled PILL_DRAG_SLOP_PX. A press that never
+			// gets there is a SELECT, not a drag — see the constant.
+			let dragging = false;
 			const move = (ev: PointerEvent) => {
+				if (!dragging && Math.abs(ev.clientX - startX) < PILL_DRAG_SLOP_PX) return;
+				dragging = true;
 				const dxSec = ((ev.clientX - startX) / r.width) * total;
 				let ns = pill.start;
 				let ne = pill.end;
@@ -1102,7 +1118,14 @@ export function V4Timeline({
 				window.removeEventListener("pointermove", move);
 				window.removeEventListener("pointerup", up);
 				const finalDrag = activePillDragRef.current;
-				if (finalDrag) {
+				// A press that never crossed the slop wrote nothing to `activePillDragRef`, and
+				// one that crossed it but rounds back to the same span is not an edit either:
+				// committing it would put a step on the undo stack that changes nothing.
+				const moved =
+					dragging &&
+					finalDrag !== null &&
+					(finalDrag.start !== pill.start || finalDrag.end !== pill.end);
+				if (moved && finalDrag) {
 					void apply(finalDrag.start, finalDrag.end).finally(() => {
 						if (activePillDragRef.current === finalDrag) {
 							activePillDragRef.current = null;

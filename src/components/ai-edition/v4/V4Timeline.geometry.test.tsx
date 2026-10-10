@@ -374,6 +374,28 @@ describe("V4Timeline screen motion lane", () => {
 		expect(updateScreenMotionSpan).toHaveBeenCalledWith("screenmotion_a", 280_000, 580_000);
 		expect(updateCameraMotionSpan).not.toHaveBeenCalled();
 	});
+
+	// The rule is the lane's, not this kind's: every pill shares `startPillDrag`. Without the
+	// slop, pressing a pill to select it moved the region — a click carries a pixel or two of
+	// jitter, that reached `move`, and the pointerup committed the nudge.
+	it("treats a press that never crosses the slop as a select, not a move", () => {
+		const updateScreenMotionSpan = vi.fn(async () => undefined);
+		const { tl } = renderTimeline([clip(0, TOTAL_SEC)], undefined, [NO_CAMERA_ASSET], undefined, {
+			annotationRegions: [],
+			screenMotionRegions: [SCREEN_MOVE],
+			updateScreenMotionSpan,
+		});
+
+		const label = screen.getByText("Screen Motion");
+		fireEvent.pointerDown(label, { clientX: 0 });
+		window.dispatchEvent(new MouseEvent("pointermove", { clientX: 2 }));
+		window.dispatchEvent(new MouseEvent("pointerup", { clientX: 2 }));
+
+		// Nothing written...
+		expect(updateScreenMotionSpan).not.toHaveBeenCalled();
+		// ...but the press still selected it, which is what a click is for.
+		expect(tl.selectRegion).toHaveBeenCalled();
+	});
 });
 
 describe("V4Timeline lane pill keyboard", () => {
