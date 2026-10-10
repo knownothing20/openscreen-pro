@@ -22,8 +22,10 @@ vi.mock("@/contexts/I18nContext", () => ({
 
 vi.mock("../RightPanes", async (importOriginal) => ({
 	AudioPane: () => <div data-testid="audio-pane">AudioPane</div>,
-	// The real row: the zoom pane's choices are read and pressed below.
+	// The real rows: the zoom pane's choices are read and pressed below, and the motion panes'
+	// sliders ARE these — stubbing the slider would stub out the very control under test.
 	ChoiceRow: (await importOriginal<typeof import("../RightPanes")>()).ChoiceRow,
+	SliderCell: (await importOriginal<typeof import("../RightPanes")>()).SliderCell,
 	AudioTrackPane: ({ onClose }: { onClose?: () => void }) => (
 		<div data-testid="audio-track-pane">
 			AudioTrackPane
@@ -36,7 +38,6 @@ vi.mock("../RightPanes", async (importOriginal) => ({
 	),
 	CursorPane: () => <div data-testid="cursor-pane">CursorPane</div>,
 	LayoutPane: () => <div data-testid="layout-pane">LayoutPane</div>,
-	SliderCell: () => <div data-testid="slider-cell">SliderCell</div>,
 	TranscriptPane: () => <div data-testid="transcript-pane">TranscriptPane</div>,
 	VideoEffectsPane: () => <div data-testid="effects-pane">VideoEffectsPane</div>,
 }));
@@ -576,15 +577,34 @@ describe("FloatingInspector", () => {
 			expect(screen.queryByText(/perspective/i)).toBeNull();
 		});
 
-		it("writes one field through setScreenMotionTarget, leaving the rest to the store", () => {
+		it("writes the drag live and commits once, so one drag is one undo step", () => {
+			const setScreenMotionTargetLive = vi.fn();
+			const commitMotionTarget = vi.fn(async () => undefined);
+			// The per-change history write. It must NOT be what a drag uses: it made one drag
+			// hundreds of Ctrl+Z steps, because `onChange` fires for every value the pointer
+			// passes through.
 			const setScreenMotionTarget = vi.fn(async () => undefined);
-			renderPane({ setScreenMotionTarget });
-
-			fireEvent.change(screen.getByText("timeline.screenMotion.rotationY").nextSibling as Element, {
-				target: { value: "30" },
+			renderPane({
+				setScreenMotionTargetLive,
+				commitMotionTarget,
+				setScreenMotionTarget,
 			});
 
-			expect(setScreenMotionTarget).toHaveBeenCalledWith("sm1", { rotationY: 30 });
+			const slider = screen.getByRole("slider", { name: "timeline.screenMotion.rotationY" });
+			fireEvent.change(slider, { target: { value: "10" } });
+			fireEvent.change(slider, { target: { value: "20" } });
+			fireEvent.change(slider, { target: { value: "30" } });
+
+			// Every value the drag passes through, written live with no history entry.
+			expect(setScreenMotionTargetLive).toHaveBeenCalledTimes(3);
+			expect(setScreenMotionTargetLive).toHaveBeenLastCalledWith("sm1", { rotationY: 30 });
+			// Nothing recorded until the pointer comes up.
+			expect(commitMotionTarget).not.toHaveBeenCalled();
+
+			fireEvent.mouseUp(slider);
+			// ONE history write for the whole gesture.
+			expect(commitMotionTarget).toHaveBeenCalledTimes(1);
+			expect(setScreenMotionTarget).not.toHaveBeenCalled();
 		});
 	});
 });

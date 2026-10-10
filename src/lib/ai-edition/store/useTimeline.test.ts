@@ -792,6 +792,35 @@ describe("useTimeline camera motion regions", () => {
 		expect(left[0].id).toBe(second.id);
 	});
 
+	// The camera half of the shared live/commit pair: the same guarantee, on the other kind,
+	// through the same `commitMotionTarget`.
+	it("records one undo step for a whole slider drag, not one per value", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addCameraMotion();
+		});
+		const id = motionRegions()[0].id;
+		const stepsBefore = past.length;
+
+		await act(async () => {
+			for (const value of [10, 20, 30]) {
+				result.current.setCameraMotionTargetLive(id, { size: value / 100 });
+			}
+		});
+		expect(motionRegions()[0].target.size).toBeCloseTo(0.3, 6);
+		expect(past).toHaveLength(stepsBefore);
+
+		await act(async () => {
+			await result.current.commitMotionTarget();
+		});
+		expect(past).toHaveLength(stepsBefore + 1);
+
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(motionRegions()[0].target.size).toBe(CAMERA_MOTION_FULLSCREEN_TARGET.size);
+	});
+
 	it("records a creation as one undoable edit", async () => {
 		const { result } = renderTimeline();
 		await act(async () => {
@@ -974,6 +1003,38 @@ describe("useTimeline screen motion regions", () => {
 		expect(region.timing.easing).toBe("linear");
 		expect(region.timing.leadInSec).toBe(DEFAULT_SCREEN_MOTION_TIMING.leadInSec);
 		expect(region.timing.returnSec).toBe(DEFAULT_SCREEN_MOTION_TIMING.returnSec);
+	});
+
+	it("records one undo step for a whole slider drag, not one per value", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addScreenMotion();
+		});
+		const id = screenRegions()[0].id;
+		const stepsBefore = past.length;
+
+		// What a drag does: a live write for every value the pointer passes through...
+		await act(async () => {
+			for (const value of [10, 20, 30]) {
+				result.current.setScreenMotionTargetLive(id, { rotationY: value });
+			}
+		});
+		expect(screenRegions()[0].target.rotationY).toBe(30);
+		// ...and none of them on the undo stack.
+		expect(past).toHaveLength(stepsBefore);
+
+		// Then one commit on release.
+		await act(async () => {
+			await result.current.commitMotionTarget();
+		});
+		expect(past).toHaveLength(stepsBefore + 1);
+
+		// One Ctrl+Z returns to the value the drag started on, not to one it passed through a
+		// millisecond earlier.
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(screenRegions()[0].target.rotationY).toBe(SCREEN_MOTION_DEFAULT_TARGET.rotationY);
 	});
 
 	it("records a creation as one undoable edit", async () => {

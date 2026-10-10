@@ -1303,86 +1303,67 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		const target = region.target;
 		const isFullscreen = target.layout === "fullscreen";
 		const rowStyle = { display: "grid", gap: 4, fontSize: 12 } as const;
-		const number = (value: number) => Number(value.toFixed(3));
+		// `SliderCell` is the app's slider: it draws the filled track from `--slider-pct` and
+		// carries the `onChange` (live) / `onCommit` (release) split. A bare
+		// `<input type="range">` inherited only the global rule, which strips the native
+		// appearance and paints a WHITE thumb — invisible on this pane's light background —
+		// and fired one history write per pointermove. Positions and sizes are shown as
+		// percentages, the same conversion the layout pane's sliders make.
+		const live = (patch: Parameters<typeof tl.setCameraMotionTargetLive>[1]) =>
+			tl.setCameraMotionTargetLive(region.id, patch);
 		return (
 			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
 				{paneHeader(<Move size={16} />, tt("cameraMotion.title"), onClose, tc("actions.close"))}
 				<div style={bodyStyle}>
-					<label style={rowStyle}>
-						<span>{tt("cameraMotion.positionX")}</span>
-						<input
-							type="range"
-							min={0}
-							max={1}
-							step={0.01}
-							value={target.position.x}
-							onChange={(event) =>
-								void tl.setCameraMotionTarget(region.id, {
-									position: { ...target.position, x: number(Number(event.target.value)) },
-								})
-							}
+					{/* `bodyStyle`'s own 16px gap would stack on `.sliderCell`'s 12px padding and leave
+					    the five rows too airy to read at once. The cells carry their own rhythm. */}
+					<div style={{ display: "grid" }}>
+						<SliderCell
+							label={tt("cameraMotion.positionX")}
+							value={Math.round(target.position.x * 100)}
+							min={CAMERA_MOTION_LIMITS.positionMin * 100}
+							max={CAMERA_MOTION_LIMITS.positionMax * 100}
+							suffix="%"
+							onChange={(next) => live({ position: { ...target.position, x: next / 100 } })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("cameraMotion.positionY")}</span>
-						<input
-							type="range"
-							min={0}
-							max={1}
-							step={0.01}
-							value={target.position.y}
-							onChange={(event) =>
-								void tl.setCameraMotionTarget(region.id, {
-									position: { ...target.position, y: number(Number(event.target.value)) },
-								})
-							}
+						<SliderCell
+							label={tt("cameraMotion.positionY")}
+							value={Math.round(target.position.y * 100)}
+							min={CAMERA_MOTION_LIMITS.positionMin * 100}
+							max={CAMERA_MOTION_LIMITS.positionMax * 100}
+							suffix="%"
+							onChange={(next) => live({ position: { ...target.position, y: next / 100 } })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("cameraMotion.size")}</span>
-						<input
-							type="range"
-							min={CAMERA_MOTION_LIMITS.sizeMin}
-							max={CAMERA_MOTION_LIMITS.sizeMax}
-							step={0.01}
-							value={target.size}
-							onChange={(event) =>
-								void tl.setCameraMotionTarget(region.id, {
-									size: number(Number(event.target.value)),
-								})
-							}
+						<SliderCell
+							label={tt("cameraMotion.size")}
+							value={Math.round(target.size * 100)}
+							min={CAMERA_MOTION_LIMITS.sizeMin * 100}
+							max={CAMERA_MOTION_LIMITS.sizeMax * 100}
+							suffix="%"
+							onChange={(next) => live({ size: next / 100 })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("cameraMotion.roundness")}</span>
-						<input
-							type="range"
-							min={0}
-							max={1}
-							step={0.01}
-							value={target.roundness}
-							onChange={(event) =>
-								void tl.setCameraMotionTarget(region.id, {
-									roundness: number(Number(event.target.value)),
-								})
-							}
+						<SliderCell
+							label={tt("cameraMotion.roundness")}
+							value={Math.round(target.roundness * 100)}
+							min={CAMERA_MOTION_LIMITS.roundnessMin * 100}
+							max={CAMERA_MOTION_LIMITS.roundnessMax * 100}
+							suffix="%"
+							onChange={(next) => live({ roundness: next / 100 })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("cameraMotion.opacity")}</span>
-						<input
-							type="range"
-							min={0}
-							max={1}
-							step={0.01}
-							value={target.opacity}
-							onChange={(event) =>
-								void tl.setCameraMotionTarget(region.id, {
-									opacity: number(Number(event.target.value)),
-								})
-							}
+						<SliderCell
+							label={tt("cameraMotion.opacity")}
+							value={Math.round(target.opacity * 100)}
+							min={CAMERA_MOTION_LIMITS.opacityMin * 100}
+							max={CAMERA_MOTION_LIMITS.opacityMax * 100}
+							suffix="%"
+							onChange={(next) => live({ opacity: next / 100 })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
+					</div>
 					<button
 						type="button"
 						onClick={() =>
@@ -1434,105 +1415,77 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		if (!region) return null;
 		const target = region.target;
 		const rowStyle = { display: "grid", gap: 4, fontSize: 12 } as const;
-		const number = (value: number) => Number(value.toFixed(3));
 		const deleteAndClose = () => {
 			void tl.removeRegion("screenMotion", selection.id);
 			onClose();
 		};
+		// Same `SliderCell` reasoning as the camera pane above: it is what draws a visible
+		// track and keeps one drag to one undo step. Scale reads as a multiplier (`×`, it
+		// multiplies the card's own placement) and the rotations in degrees.
+		const live = (patch: Parameters<typeof tl.setScreenMotionTargetLive>[1]) =>
+			tl.setScreenMotionTargetLive(region.id, patch);
 		return (
 			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
 				{paneHeader(<Move size={16} />, tt("screenMotion.title"), onClose, tc("actions.close"))}
 				<div style={bodyStyle}>
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.positionX")}</span>
-						<input
-							type="range"
-							min={SCREEN_MOTION_LIMITS.positionMin}
-							max={SCREEN_MOTION_LIMITS.positionMax}
-							step={0.01}
-							value={target.position.x}
-							onChange={(event) =>
-								void tl.setScreenMotionTarget(region.id, {
-									position: { ...target.position, x: number(Number(event.target.value)) },
-								})
-							}
+					<div style={{ display: "grid" }}>
+						<SliderCell
+							label={tt("screenMotion.positionX")}
+							value={Math.round(target.position.x * 100)}
+							min={SCREEN_MOTION_LIMITS.positionMin * 100}
+							max={SCREEN_MOTION_LIMITS.positionMax * 100}
+							suffix="%"
+							onChange={(next) => live({ position: { ...target.position, x: next / 100 } })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.positionY")}</span>
-						<input
-							type="range"
-							min={SCREEN_MOTION_LIMITS.positionMin}
-							max={SCREEN_MOTION_LIMITS.positionMax}
-							step={0.01}
-							value={target.position.y}
-							onChange={(event) =>
-								void tl.setScreenMotionTarget(region.id, {
-									position: { ...target.position, y: number(Number(event.target.value)) },
-								})
-							}
+						<SliderCell
+							label={tt("screenMotion.positionY")}
+							value={Math.round(target.position.y * 100)}
+							min={SCREEN_MOTION_LIMITS.positionMin * 100}
+							max={SCREEN_MOTION_LIMITS.positionMax * 100}
+							suffix="%"
+							onChange={(next) => live({ position: { ...target.position, y: next / 100 } })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.scale")}</span>
-						<input
-							type="range"
+						<SliderCell
+							label={tt("screenMotion.scale")}
+							value={target.scale}
 							min={SCREEN_MOTION_LIMITS.scaleMin}
 							max={SCREEN_MOTION_LIMITS.scaleMax}
-							step={0.01}
-							value={target.scale}
-							onChange={(event) =>
-								void tl.setScreenMotionTarget(region.id, {
-									scale: number(Number(event.target.value)),
-								})
-							}
+							step={0.05}
+							decimals={2}
+							suffix="×"
+							onChange={(next) => live({ scale: next })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.rotationX")}</span>
-						<input
-							type="range"
+						<SliderCell
+							label={tt("screenMotion.rotationX")}
+							value={Math.round(target.rotationX)}
 							min={SCREEN_MOTION_LIMITS.rotationMin}
 							max={SCREEN_MOTION_LIMITS.rotationMax}
-							step={1}
-							value={target.rotationX}
-							onChange={(event) =>
-								void tl.setScreenMotionTarget(region.id, {
-									rotationX: number(Number(event.target.value)),
-								})
-							}
+							suffix="°"
+							onChange={(next) => live({ rotationX: next })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.rotationY")}</span>
-						<input
-							type="range"
+						<SliderCell
+							label={tt("screenMotion.rotationY")}
+							value={Math.round(target.rotationY)}
 							min={SCREEN_MOTION_LIMITS.rotationMin}
 							max={SCREEN_MOTION_LIMITS.rotationMax}
-							step={1}
-							value={target.rotationY}
-							onChange={(event) =>
-								void tl.setScreenMotionTarget(region.id, {
-									rotationY: number(Number(event.target.value)),
-								})
-							}
+							suffix="°"
+							onChange={(next) => live({ rotationY: next })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.rotationZ")}</span>
-						<input
-							type="range"
+						<SliderCell
+							label={tt("screenMotion.rotationZ")}
+							value={Math.round(target.rotationZ)}
 							min={SCREEN_MOTION_LIMITS.rotationMin}
 							max={SCREEN_MOTION_LIMITS.rotationMax}
-							step={1}
-							value={target.rotationZ}
-							onChange={(event) =>
-								void tl.setScreenMotionTarget(region.id, {
-									rotationZ: number(Number(event.target.value)),
-								})
-							}
+							suffix="°"
+							onChange={(next) => live({ rotationZ: next })}
+							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</label>
+					</div>
 					<label style={rowStyle}>
 						<span>{tt("screenMotion.easing")}</span>
 						<select

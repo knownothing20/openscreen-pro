@@ -317,6 +317,12 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeScreenMotion", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setScreenMotionTarget", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setScreenMotionTiming", "save", "gesture"),
+	// The Inspector's motion sliders, in two halves: the live half writes every value the drag
+	// passes through WITHOUT touching history, and the commit half records the one undo step on
+	// release. Recording the live half would make a single drag hundreds of Ctrl+Z steps.
+	w("src/lib/ai-edition/store/useTimeline.ts", "setCameraMotionTargetLive", "set", "automatic"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "setScreenMotionTargetLive", "set", "automatic"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "commitMotionTarget", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "saveZoomPatch", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setTrimEntries", "save", "gesture"),
 	// The live halves of the two drags.

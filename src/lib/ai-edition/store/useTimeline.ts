@@ -165,6 +165,11 @@ export function useTimeline() {
 	} | null>(null);
 	const annotationRollbackRef = useRef<AxcutDocument | null>(null);
 	const annotationLiveRef = useRef<AxcutDocument | null>(null);
+	// The same pair for the Inspector's motion sliders. One pair, not one per kind: a slider
+	// drag is one pointer, so only one kind can be mid-drag at a time, and the live write
+	// re-seeds the pair the moment the document is not the one it produced.
+	const motionTargetRollbackRef = useRef<AxcutDocument | null>(null);
+	const motionTargetLiveRef = useRef<AxcutDocument | null>(null);
 
 	// A drag does not always end in a commit: `ZoomFocusOverlay` unmounts the moment
 	// `focusMode` flips to "auto", so `endDrag` never runs and the snapshot outlives the
@@ -179,6 +184,8 @@ export function useTimeline() {
 		zoomFocusEditRef.current = null;
 		annotationRollbackRef.current = null;
 		annotationLiveRef.current = null;
+		motionTargetRollbackRef.current = null;
+		motionTargetLiveRef.current = null;
 	}, [projectId]);
 
 	const hasDoc = document !== null && projectId !== null;
@@ -763,6 +770,63 @@ export function useTimeline() {
 		},
 		[document, saveDocument],
 	);
+
+	// The Inspector's motion sliders, in two halves. `SliderCell` calls `onChange` for every
+	// value a drag passes through and `onCommit` once on release, so the live half must not
+	// touch history: one save per pointermove made a single drag hundreds of Ctrl+Z steps, and
+	// a value recorded mid-drag is not a state anyone wants back. The commit records the ONE
+	// step, from the document the drag started on (`historyBase`) — which is why the live half
+	// remembers it. Same contract as `updateZoomFocusLive` / `commitZoomFocus`, without the
+	// zoom write queue those need.
+	//
+	// Both kinds share the pair of refs. A drag is one pointer, so only one kind can be
+	// mid-drag, and a live write whose document is not the one it produced re-seeds the pair.
+	const setCameraMotionTargetLive = useCallback(
+		(id: string, patch: Partial<CameraMotionTarget>) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			if (motionTargetLiveRef.current !== doc) motionTargetRollbackRef.current = doc;
+			const next: AxcutDocument = {
+				...doc,
+				cameraMotionRegions: (doc.cameraMotionRegions ?? []).map((region) =>
+					region.id === id ? { ...region, target: { ...region.target, ...patch } } : region,
+				),
+			};
+			setDocument(next, { history: false });
+			motionTargetLiveRef.current = next;
+		},
+		[setDocument],
+	);
+
+	const setScreenMotionTargetLive = useCallback(
+		(id: string, patch: Partial<ScreenMotionTarget>) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			if (motionTargetLiveRef.current !== doc) motionTargetRollbackRef.current = doc;
+			const next: AxcutDocument = {
+				...doc,
+				screenMotionRegions: (doc.screenMotionRegions ?? []).map((region) =>
+					region.id === id ? { ...region, target: { ...region.target, ...patch } } : region,
+				),
+			};
+			setDocument(next, { history: false });
+			motionTargetLiveRef.current = next;
+		},
+		[setDocument],
+	);
+
+	/** The commit half, shared by both kinds: one save, one undo step. */
+	const commitMotionTarget = useCallback(async () => {
+		const doc = useProjectStore.getState().document;
+		if (!doc) return;
+		// `null` when no live write happened — a click that moved nothing. There is then no
+		// state to go back to, and `null` records nothing (see `DocumentWriteOptions.historyBase`).
+		const historyBase =
+			motionTargetLiveRef.current === doc ? motionTargetRollbackRef.current : null;
+		motionTargetLiveRef.current = null;
+		motionTargetRollbackRef.current = null;
+		await saveDocument(doc, { history: true, historyBase });
+	}, [saveDocument]);
 
 	const addCameraFullscreen = useCallback(
 		async (durationSec = DEFAULT_NEW_REGION_SEC) => {
@@ -1922,6 +1986,9 @@ export function useTimeline() {
 		removeScreenMotion,
 		setScreenMotionTarget,
 		setScreenMotionTiming,
+		setCameraMotionTargetLive,
+		setScreenMotionTargetLive,
+		commitMotionTarget,
 		addCameraFullscreen,
 		removeRegion,
 		removeMarker,
