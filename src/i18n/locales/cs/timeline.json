@@ -20,6 +20,13 @@
 		"rotationZ": "Náklon do strany (Z)",
 		"easing": "Zplynulení"
 	},
+	"easingNames": {
+		"linear": "Lineární",
+		"quadratic": "Kvadratická",
+		"cubic": "Kubická",
+		"quintic": "Kvintická",
+		"spring": "Pružina"
+	},
 	"marker": {
 		"seek": "Přejít na značku v {{time}}",
 		"edit": "Přejmenovat značku",

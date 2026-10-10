@@ -20,6 +20,13 @@
 		"rotationZ": "롤 (Z)",
 		"easing": "이징"
 	},
+	"easingNames": {
+		"linear": "선형",
+		"quadratic": "2차",
+		"cubic": "3차",
+		"quintic": "5차",
+		"spring": "스프링"
+	},
 	"marker": {
 		"seek": "{{time}} 마커로 이동",
 		"edit": "마커 이름 바꾸기",

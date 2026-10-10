@@ -20,6 +20,13 @@
 		"rotationZ": "الالتفاف (Z)",
 		"easing": "التسارع"
 	},
+	"easingNames": {
+		"linear": "خطي",
+		"quadratic": "تربيعي",
+		"cubic": "تكعيبي",
+		"quintic": "خماسي",
+		"spring": "نابض"
+	},
 	"marker": {
 		"seek": "الانتقال إلى العلامة عند {{time}}",
 		"edit": "إعادة تسمية العلامة",

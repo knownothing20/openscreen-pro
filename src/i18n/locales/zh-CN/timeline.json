@@ -20,6 +20,13 @@
 		"rotationZ": "翻滚 (Z)",
 		"easing": "缓动"
 	},
+	"easingNames": {
+		"linear": "线性",
+		"quadratic": "二次",
+		"cubic": "三次",
+		"quintic": "五次",
+		"spring": "弹簧"
+	},
 	"marker": {
 		"seek": "跳转到标记 {{time}}",
 		"edit": "重命名标记",

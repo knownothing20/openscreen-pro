@@ -606,6 +606,30 @@ describe("FloatingInspector", () => {
 			expect(commitMotionTarget).toHaveBeenCalledTimes(1);
 			expect(setScreenMotionTarget).not.toHaveBeenCalled();
 		});
+
+		it("names the easing curves through the translator, not as raw enum values", () => {
+			renderPane({});
+
+			const select = screen.getByRole("combobox", { name: "timeline.screenMotion.easing" });
+			const options = Array.from(select.querySelectorAll("option"));
+			// Translated labels...
+			expect(options.map((option) => option.textContent)).toEqual([
+				"timeline.easingNames.linear",
+				"timeline.easingNames.quadratic",
+				"timeline.easingNames.cubic",
+				"timeline.easingNames.quintic",
+				"timeline.easingNames.spring",
+			]);
+			// ...over the stored enum, which must NOT move: the label is only free to be
+			// translated because the value is not.
+			expect(options.map((option) => option.value)).toEqual([
+				"linear",
+				"quadratic",
+				"cubic",
+				"quintic",
+				"spring",
+			]);
+		});
 	});
 });
 

@@ -20,6 +20,13 @@
 		"rotationZ": "Rollio (Z)",
 		"easing": "Curva"
 	},
+	"easingNames": {
+		"linear": "Lineare",
+		"quadratic": "Quadratica",
+		"cubic": "Cubica",
+		"quintic": "Quintica",
+		"spring": "Molla"
+	},
 	"marker": {
 		"seek": "Vai al segnalibro a {{time}}",
 		"edit": "Rinomina segnalibro",

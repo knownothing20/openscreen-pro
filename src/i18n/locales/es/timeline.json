@@ -20,6 +20,13 @@
 		"rotationZ": "Alabeo (Z)",
 		"easing": "Suavizado"
 	},
+	"easingNames": {
+		"linear": "Lineal",
+		"quadratic": "Cuadrática",
+		"cubic": "Cúbica",
+		"quintic": "Quíntica",
+		"spring": "Resorte"
+	},
 	"marker": {
 		"seek": "Ir a la marca en {{time}}",
 		"edit": "Renombrar marca",

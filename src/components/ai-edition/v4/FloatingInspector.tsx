@@ -1378,6 +1378,10 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 					</button>
 					<label style={rowStyle}>
 						<span>{tt("cameraMotion.easing")}</span>
+						{/* The curve names are enum values (`cubic`), and they used to be printed as
+						    the label — so a Chinese UI offered five English words. The LABEL is
+						    translated; the option's VALUE stays the stored enum, or the choice
+						    would no longer round-trip through the document. */}
 						<select
 							value={region.timing.easing}
 							onChange={(event) =>
@@ -1388,7 +1392,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 						>
 							{CAMERA_MOTION_EASINGS.map((easing) => (
 								<option key={easing} value={easing}>
-									{easing}
+									{tt(`easingNames.${easing}`)}
 								</option>
 							))}
 						</select>
@@ -1498,7 +1502,7 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 						>
 							{CAMERA_MOTION_EASINGS.map((easing) => (
 								<option key={easing} value={easing}>
-									{easing}
+									{tt(`easingNames.${easing}`)}
 								</option>
 							))}
 						</select>

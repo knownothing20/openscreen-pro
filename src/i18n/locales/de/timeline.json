@@ -20,6 +20,13 @@
 		"rotationZ": "Rollen (Z)",
 		"easing": "Beschleunigung"
 	},
+	"easingNames": {
+		"linear": "Linear",
+		"quadratic": "Quadratisch",
+		"cubic": "Kubisch",
+		"quintic": "Quintisch",
+		"spring": "Feder"
+	},
 	"marker": {
 		"seek": "Zur Markierung bei {{time}} springen",
 		"edit": "Markierung umbenennen",

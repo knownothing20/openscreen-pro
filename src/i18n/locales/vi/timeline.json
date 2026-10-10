@@ -20,6 +20,13 @@
 		"rotationZ": "Độ lăn (Z)",
 		"easing": "Làm mượt"
 	},
+	"easingNames": {
+		"linear": "Tuyến tính",
+		"quadratic": "Bậc hai",
+		"cubic": "Bậc ba",
+		"quintic": "Bậc năm",
+		"spring": "Lò xo"
+	},
 	"marker": {
 		"seek": "Đi tới dấu mốc tại {{time}}",
 		"edit": "Đổi tên dấu mốc",

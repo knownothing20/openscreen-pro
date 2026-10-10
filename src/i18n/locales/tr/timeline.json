@@ -20,6 +20,13 @@
 		"rotationZ": "Yatış (Z)",
 		"easing": "Yumuşatma"
 	},
+	"easingNames": {
+		"linear": "Doğrusal",
+		"quadratic": "İkinci derece",
+		"cubic": "Üçüncü derece",
+		"quintic": "Beşinci derece",
+		"spring": "Yay"
+	},
 	"marker": {
 		"seek": "{{time}} işaretine git",
 		"edit": "İşareti yeniden adlandır",

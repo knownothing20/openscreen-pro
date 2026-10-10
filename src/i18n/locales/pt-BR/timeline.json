@@ -20,6 +20,13 @@
 		"rotationZ": "Rolagem (Z)",
 		"easing": "Suavização"
 	},
+	"easingNames": {
+		"linear": "Linear",
+		"quadratic": "Quadrática",
+		"cubic": "Cúbica",
+		"quintic": "Quíntica",
+		"spring": "Mola"
+	},
 	"marker": {
 		"seek": "Ir para a marcação em {{time}}",
 		"edit": "Renomear marcação",

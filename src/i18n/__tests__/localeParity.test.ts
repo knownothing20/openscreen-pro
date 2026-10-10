@@ -9,6 +9,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { CAMERA_MOTION_EASINGS } from "@/lib/ai-edition/cameraMotion/easingNames";
 
 // `import.meta.url` isn't a file: URL under the test environment's transform.
 const LOCALES_DIR = resolve(process.cwd(), "src/i18n/locales");
@@ -38,5 +39,24 @@ describe("locale parity", () => {
 				.map((key) => `${namespace.replace(".json", "")}.${key}`);
 		});
 		expect(missing).toEqual([]);
+	});
+});
+
+// The Inspector builds these keys at RUNTIME — `tt(\`easingNames.${easing}\`)` — so the
+// literal-key checker in `scripts/i18n-check.mjs` cannot see them, and neither can the
+// parity test above (which only compares the files to each other). A typo would therefore
+// print the raw key in the dropdown and fail nothing. The curve list comes from the model,
+// so adding a curve without a name fails here.
+describe("motion easing names", () => {
+	it("has a `timeline.easingNames` entry for every curve the Inspector offers", () => {
+		const names = (
+			JSON.parse(readFileSync(`${LOCALES_DIR}/${REFERENCE_LOCALE}/timeline.json`, "utf8")) as {
+				easingNames?: Record<string, string>;
+			}
+		).easingNames;
+		expect(names).toBeDefined();
+		for (const easing of CAMERA_MOTION_EASINGS) {
+			expect(names?.[easing], `timeline.easingNames.${easing}`).toBeTruthy();
+		}
 	});
 });

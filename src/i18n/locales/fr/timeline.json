@@ -20,6 +20,13 @@
 		"rotationZ": "Roulis (Z)",
 		"easing": "Adoucissement"
 	},
+	"easingNames": {
+		"linear": "Linéaire",
+		"quadratic": "Quadratique",
+		"cubic": "Cubique",
+		"quintic": "Quintique",
+		"spring": "Ressort"
+	},
 	"marker": {
 		"seek": "Aller au repère à {{time}}",
 		"edit": "Renommer le repère",

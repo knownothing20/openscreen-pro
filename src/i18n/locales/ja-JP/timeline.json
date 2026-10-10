@@ -20,6 +20,13 @@
 		"rotationZ": "ロール (Z)",
 		"easing": "イージング"
 	},
+	"easingNames": {
+		"linear": "リニア",
+		"quadratic": "二次",
+		"cubic": "三次",
+		"quintic": "五次",
+		"spring": "スプリング"
+	},
 	"marker": {
 		"seek": "{{time}} のマーカーへ移動",
 		"edit": "マーカーの名前を変更",

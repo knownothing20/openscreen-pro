@@ -20,6 +20,13 @@
 		"rotationZ": "Roll (Z)",
 		"easing": "Easing"
 	},
+	"easingNames": {
+		"linear": "Linear",
+		"quadratic": "Quadratic",
+		"cubic": "Cubic",
+		"quintic": "Quintic",
+		"spring": "Spring"
+	},
 	"marker": {
 		"seek": "Jump to marker at {{time}}",
 		"edit": "Rename marker",
