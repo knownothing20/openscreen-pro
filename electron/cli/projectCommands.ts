@@ -164,6 +164,8 @@ export async function runInfoCommand(
 		trimRegions: fields.trimRegions,
 		speedRegions: fields.speedRegions,
 		annotationRegions: fields.annotationRegions,
+		cameraMotionRegions: fields.cameraMotionRegions,
+		screenMotionRegions: fields.screenMotionRegions,
 	};
 
 	if (json) {
@@ -177,6 +179,10 @@ export async function runInfoCommand(
 				`Cursor:   ${summary.cursorCaptureMode ?? "(unknown)"}`,
 				`Export:   ${summary.exportFormat ?? "?"} / ${summary.exportQuality ?? "?"} / ${summary.aspectRatio ?? "?"}`,
 				`Timeline: ${summary.zoomRegions} zooms, ${summary.trimRegions} trims, ${summary.speedRegions} speed regions, ${summary.annotationRegions} annotations`,
+				// Its own line rather than four more words on the one above: the two motion kinds
+				// are what a camera or screen move is authored into, and they were the only
+				// region kinds `info` did not report at all.
+				`Motion:   ${summary.cameraMotionRegions} camera moves, ${summary.screenMotionRegions} screen moves`,
 			].join("\n") + "\n",
 		);
 	}
@@ -197,6 +203,11 @@ interface ProjectInfoFields {
 	trimRegions: number;
 	speedRegions: number;
 	annotationRegions: number;
+	/** The two motion kinds. Counted here like every other region: `info` is the read-only
+	 *  way to check a project without opening the editor, and a kind it does not report is a
+	 *  kind you cannot check. Both were missing until screen motion landed. */
+	cameraMotionRegions: number;
+	screenMotionRegions: number;
 }
 
 const stringOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
@@ -217,6 +228,11 @@ function legacyInfoFields(data: PackedProjectData): ProjectInfoFields {
 		trimRegions: count("trimRegions"),
 		speedRegions: count("speedRegions"),
 		annotationRegions: count("annotationRegions"),
+		// A v2 packed project predates both kinds, so there is nothing to count. Reporting 0
+		// rather than omitting them keeps the two shapes of this summary identical, which is
+		// what lets a caller read either one the same way.
+		cameraMotionRegions: 0,
+		screenMotionRegions: 0,
 	};
 }
 
@@ -242,5 +258,7 @@ function documentInfoFields(doc: ReturnType<typeof parseDocumentFile>): ProjectI
 		trimRegions: doc.timeline.trimRanges.length,
 		speedRegions: Array.isArray(editor.speedRegions) ? editor.speedRegions.length : 0,
 		annotationRegions: doc.annotations.length,
+		cameraMotionRegions: doc.cameraMotionRegions.length,
+		screenMotionRegions: doc.screenMotionRegions.length,
 	};
 }

@@ -28,7 +28,13 @@ async function writeProject(relative: string, data: PackedProjectData): Promise<
  * export format a migrated v2 project left in `legacyEditor`, and a speed region where the editor
  * keeps them (`legacyEditor.speedRegions`).
  */
-async function writeDocument(relative: string, screenVideoPath: string): Promise<string> {
+async function writeDocument(
+	relative: string,
+	screenVideoPath: string,
+	/** How many of each motion kind to author in. Their shape only has to survive
+	 *  `parseScreenMotionRegions`, which repairs a region rather than rejecting it. */
+	motion: { camera?: number; screen?: number } = {},
+): Promise<string> {
 	const doc = migrateProjectDataToAxcutDocument({
 		version: PROJECT_VERSION,
 		media: { screenVideoPath },
@@ -38,9 +44,20 @@ async function writeDocument(relative: string, screenVideoPath: string): Promise
 		}),
 	});
 	const speedRegions = [{ id: "s1", startMs: 0, endMs: 500, speed: 2 }];
+	const spans = (prefix: string, n: number) =>
+		Array.from({ length: n }, (_, i) => ({
+			id: `${prefix}_${i}`,
+			startMs: i * 1000,
+			endMs: i * 1000 + 500,
+		}));
 	return make(
 		relative,
-		JSON.stringify({ ...doc, legacyEditor: { ...doc.legacyEditor, speedRegions } }),
+		JSON.stringify({
+			...doc,
+			cameraMotionRegions: spans("cammotion", motion.camera ?? 0),
+			screenMotionRegions: spans("screenmotion", motion.screen ?? 0),
+			legacyEditor: { ...doc.legacyEditor, speedRegions },
+		}),
 	);
 }
 
@@ -158,6 +175,10 @@ describe("runInfoCommand", () => {
 			trimRegions: 1,
 			speedRegions: 0,
 			annotationRegions: 0,
+			// A v2 packed project predates both kinds. Reported as 0, not omitted, so this
+			// summary and the document one are the same shape.
+			cameraMotionRegions: 0,
+			screenMotionRegions: 0,
 			exportFormat: "mp4",
 			screenVideoExists: true,
 		});
@@ -180,6 +201,42 @@ describe("a project the editor saved", () => {
 			trimRegions: 0,
 			speedRegions: 1,
 		});
+	});
+
+	it("counts both motion kinds, which it used to leave out entirely", async () => {
+		const project = await writeDocument("saved.openscreen", await make("rec/clip.mp4"), {
+			camera: 2,
+			screen: 1,
+		});
+
+		const out = recorder();
+		expect(await runInfoCommand(project, true, out.write)).toBe(0);
+		expect(JSON.parse(out.text())).toMatchObject({
+			cameraMotionRegions: 2,
+			screenMotionRegions: 1,
+		});
+	});
+
+	it("reports them as zero on a project that has neither, like every other count", async () => {
+		const project = await writeDocument("saved.openscreen", await make("rec/clip.mp4"));
+
+		const out = recorder();
+		expect(await runInfoCommand(project, true, out.write)).toBe(0);
+		expect(JSON.parse(out.text())).toMatchObject({
+			cameraMotionRegions: 0,
+			screenMotionRegions: 0,
+		});
+	});
+
+	it("prints the motion counts on a line of their own", async () => {
+		const project = await writeDocument("saved.openscreen", await make("rec/clip.mp4"), {
+			camera: 2,
+			screen: 1,
+		});
+
+		const out = recorder();
+		expect(await runInfoCommand(project, false, out.write)).toBe(0);
+		expect(out.text()).toContain("Motion:   2 camera moves, 1 screen moves");
 	});
 
 	it("is reported MISSING by info when its media is gone", async () => {
