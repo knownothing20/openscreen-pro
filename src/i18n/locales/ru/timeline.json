@@ -18,7 +18,18 @@
 		"rotationX": "Наклон (X)",
 		"rotationY": "Поворот (Y)",
 		"rotationZ": "Крен (Z)",
-		"easing": "Сглаживание"
+		"easing": "Сглаживание",
+		"focus": {
+			"title": "Фокус",
+			"shape": "Форма",
+			"angle": "Угол",
+			"size": "Чёткая зона",
+			"softness": "Размытие края",
+			"dimming": "Затемнение",
+			"target": "Центр",
+			"centerX": "Центр по горизонтали",
+			"centerY": "Центр по вертикали"
+		}
 	},
 	"easingNames": {
 		"linear": "Линейная",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "Запись здесь недоступна",
 		"saveFailed": "Не удалось сохранить запись",
 		"importFailed": "Не удалось импортировать аудиофайл"
+	},
+	"focusShapes": {
+		"radial": "Прожектор",
+		"linear": "Полоса"
+	},
+	"focusTargets": {
+		"animation": "Следовать за движением",
+		"fixed": "Фиксированная точка"
 	}
 }

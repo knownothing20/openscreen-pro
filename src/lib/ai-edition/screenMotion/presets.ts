@@ -1,4 +1,4 @@
-import type { ScreenMotionTarget } from "./resolve";
+import type { FocusEffect, ScreenMotionTarget } from "./resolve";
 
 /**
  * What a new screen move starts from: the card where it already sits, a touch larger.
@@ -52,6 +52,43 @@ export const SCREEN_MOTION_LIMITS = {
 	timingSecMax: 5,
 } as const;
 
+/**
+ * The focus effect a screen move starts with, when one is created with the effect already
+ * on it: a round pool, following the move, at DogSC's own starting numbers.
+ *
+ * `dimming` is non-zero on purpose — the point of shipping the feature is that the first
+ * one a user adds does something visible, and a spotlight at zero dimming is a control with
+ * nothing behind it.
+ */
+export const FOCUS_EFFECT_DEFAULT: FocusEffect = {
+	shape: "radial",
+	angleDegrees: 0,
+	target: "animation",
+	center: { x: 0.5, y: 0.5 },
+	size: 0.45,
+	softness: 0.5,
+	dimming: 0.18,
+};
+
+/**
+ * The ranges a stored focus effect is clamped into. Shared by the parser and the Inspector
+ * on the same terms as the motion limits above: a value the UI can produce is a value the
+ * document accepts, and a hand-edited file cannot reach the renderer out of range.
+ *
+ * `size` floors at 0.1 rather than above zero because that is DogSC's own validity bound —
+ * a pool narrower than that reads as a pixel, not as a spotlight.
+ */
+export const FOCUS_EFFECT_LIMITS = {
+	sizeMin: 0.1,
+	sizeMax: 1,
+	softnessMin: 0,
+	softnessMax: 1,
+	dimmingMin: 0,
+	dimmingMax: 1,
+	angleMin: 0,
+	angleMax: 360,
+} as const;
+
 function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value));
 }
@@ -100,4 +137,40 @@ export function clampScreenMotionTimingSec(value: unknown, fallback: number): nu
 		SCREEN_MOTION_LIMITS.timingSecMin,
 		SCREEN_MOTION_LIMITS.timingSecMax,
 	);
+}
+
+export function clampFocusEffectSize(value: unknown, fallback: number): number {
+	return clamp(finiteOr(value, fallback), FOCUS_EFFECT_LIMITS.sizeMin, FOCUS_EFFECT_LIMITS.sizeMax);
+}
+
+export function clampFocusEffectSoftness(value: unknown, fallback: number): number {
+	return clamp(
+		finiteOr(value, fallback),
+		FOCUS_EFFECT_LIMITS.softnessMin,
+		FOCUS_EFFECT_LIMITS.softnessMax,
+	);
+}
+
+export function clampFocusEffectDimming(value: unknown, fallback: number): number {
+	return clamp(
+		finiteOr(value, fallback),
+		FOCUS_EFFECT_LIMITS.dimmingMin,
+		FOCUS_EFFECT_LIMITS.dimmingMax,
+	);
+}
+
+/**
+ * An angle of the band, wrapped into [0, 360).
+ *
+ * A wrap rather than a clamp: 450 degrees and 90 degrees draw the same band, so clamping
+ * would silently turn a second turn into a stopped one. Taken from DogSC's
+ * `normalizedAngle`, including its handling of negatives (-90 reads as 270).
+ */
+export function normalizeFocusAngle(degrees: number): number {
+	const wrapped = degrees % FOCUS_EFFECT_LIMITS.angleMax;
+	return wrapped < 0 ? wrapped + FOCUS_EFFECT_LIMITS.angleMax : wrapped;
+}
+
+export function clampFocusEffectAngle(value: unknown, fallback: number): number {
+	return normalizeFocusAngle(finiteOr(value, fallback));
 }

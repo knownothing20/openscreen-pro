@@ -35,6 +35,43 @@ export interface ScreenMotionRegionTiming {
 	easing: Parameters<typeof cameraMotionEasingFn>[0];
 }
 
+/** What a focus effect draws: a round pool of light, or a directional band. */
+export type FocusEffectShape = "radial" | "linear";
+
+/** Where the pool of light sits: over the region's own move, or pinned by `center`. */
+export type FocusEffectTarget = "animation" | "fixed";
+
+/**
+ * An optional spotlight carried by a screen move: everything outside a region of the frame
+ * is dimmed, so the eye lands where the move is going.
+ *
+ * An ABSENT effect means no work, not a hidden default — the same reading DogSC gives its
+ * own, and the reason the field is optional rather than defaulted on the region.
+ *
+ * Deliberately carries NO blur. DogSC's effect also softens what it leaves outside, but this
+ * app already blurs for a different reason — the annotation `blurData`, which HIDES what it
+ * covers. Two things that look alike and mean the opposite would be a control the user has
+ * to read the docs to tell apart, so the focus effect owns dimming and leaves hiding to the
+ * privacy tool. `dimming: 0` therefore reads as "this effect is off".
+ *
+ * All coordinates are normalised 0..1. `size` is a fraction of the frame's shorter side,
+ * matching what DogSC measures against.
+ */
+export interface FocusEffect {
+	shape: FocusEffectShape;
+	/** The band's direction in degrees, 0..360. Read only by `linear`. */
+	angleDegrees: number;
+	target: FocusEffectTarget;
+	/** The pool's centre, 0..1, read only by `fixed`. */
+	center: { x: number; y: number };
+	/** How wide the clear region is, as a fraction of the shorter side. */
+	size: number;
+	/** How far the dimming bleeds into the clear region, 0..1. */
+	softness: number;
+	/** How dark the outside gets, 0..1. Zero means the effect draws nothing. */
+	dimming: number;
+}
+
 /**
  * A stored screen move.
  *
@@ -47,6 +84,12 @@ export interface ScreenMotionRegion {
 	endMs: number;
 	timing: ScreenMotionRegionTiming;
 	target: ScreenMotionTarget;
+	/**
+	 * The optional spotlight, absent on every region written before this existed and on
+	 * every region a user has not asked to focus. Defaulted rather than migrated: an older
+	 * document simply reads as "no focus", so no `schemaVersion` bump is owed.
+	 */
+	focusEffect?: FocusEffect;
 }
 
 /**

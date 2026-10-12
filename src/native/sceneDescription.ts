@@ -173,6 +173,29 @@ export interface SceneScreenMotionRegion {
 	leadInSec: number;
 	returnSec: number;
 	easing: string;
+	/** The optional spotlight this move carries, already resolved to a point.
+	 *
+	 *  Sent WITHOUT the `target` enum: `animation` means "over where this move is going",
+	 *  and the destination is what `target.positionX/Y` above already carries, so the native
+	 *  side would only be re-deriving a value it has. Omitting the choice is what keeps the
+	 *  resolution in one place.
+	 *
+	 *  Absent when the region has no effect or the user dimmed it to zero — same reading as
+	 *  the field it comes from, so a disabled spotlight costs the renderer nothing.
+	 *
+	 *  NOT yet consumed: the Rust `SceneScreenMotionRegion` does not carry this field, and
+	 *  serde ignores the extra key. `focusEffect` on the TS side is what batch A2 wires up;
+	 *  sending it early keeps that batch from having to reach back into this file. */
+	focusEffect?: {
+		shape: "radial" | "linear";
+		angleDegrees: number;
+		/** The resolved centre, 0..1 of the frame. */
+		centerX: number;
+		centerY: number;
+		size: number;
+		softness: number;
+		dimming: number;
+	};
 }
 
 export interface SceneCameraFullscreenRegion {
@@ -1540,6 +1563,30 @@ export function buildSceneDescription(
 			leadInSec: region.timing.leadInSec,
 			returnSec: region.timing.returnSec,
 			easing: region.timing.easing,
+			// The spotlight travels as a POINT, so the native side never sees the `target`
+			// enum and never has to decide what "follow the move" means. `animation` is
+			// resolved here by reading the destination this projection already carries —
+			// kept in step with `focusEffect.ts` by using the region's authored target
+			// rather than a blended sample, exactly as that module does.
+			...(region.focusEffect && region.focusEffect.dimming > 0
+				? {
+						focusEffect: {
+							shape: region.focusEffect.shape,
+							angleDegrees: region.focusEffect.angleDegrees,
+							centerX:
+								region.focusEffect.target === "fixed"
+									? region.focusEffect.center.x
+									: region.target.position.x,
+							centerY:
+								region.focusEffect.target === "fixed"
+									? region.focusEffect.center.y
+									: region.target.position.y,
+							size: region.focusEffect.size,
+							softness: region.focusEffect.softness,
+							dimming: region.focusEffect.dimming,
+						},
+					}
+				: {}),
 		})),
 		// Speed is the one modifier with nothing to show for itself on a parked playhead: a
 		// still frame has no rate. So the entries under a trim are dropped here rather than

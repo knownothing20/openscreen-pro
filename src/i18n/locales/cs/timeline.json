@@ -18,7 +18,18 @@
 		"rotationX": "Náklon (X)",
 		"rotationY": "Otočení (Y)",
 		"rotationZ": "Náklon do strany (Z)",
-		"easing": "Zplynulení"
+		"easing": "Zplynulení",
+		"focus": {
+			"title": "Zaostření",
+			"shape": "Tvar",
+			"angle": "Úhel",
+			"size": "Čistá oblast",
+			"softness": "Prolnutí",
+			"dimming": "Ztmavení",
+			"target": "Střed",
+			"centerX": "Vodorovný střed",
+			"centerY": "Svislý střed"
+		}
 	},
 	"easingNames": {
 		"linear": "Lineární",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "Nahrávání zde není dostupné",
 		"saveFailed": "Nepodařilo se uložit nahrávku",
 		"importFailed": "Nepodařilo se importovat zvukový soubor"
+	},
+	"focusShapes": {
+		"radial": "Reflektor",
+		"linear": "Pás"
+	},
+	"focusTargets": {
+		"animation": "Sledovat pohyb",
+		"fixed": "Pevný bod"
 	}
 }

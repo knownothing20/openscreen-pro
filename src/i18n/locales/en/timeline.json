@@ -18,7 +18,18 @@
 		"rotationX": "Tilt (X)",
 		"rotationY": "Turn (Y)",
 		"rotationZ": "Roll (Z)",
-		"easing": "Easing"
+		"easing": "Easing",
+		"focus": {
+			"title": "Focus",
+			"shape": "Shape",
+			"angle": "Angle",
+			"size": "Clear area",
+			"softness": "Feather",
+			"dimming": "Dimming",
+			"target": "Centre",
+			"centerX": "Horizontal centre",
+			"centerY": "Vertical centre"
+		}
 	},
 	"easingNames": {
 		"linear": "Linear",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "Recording is not available here",
 		"saveFailed": "Could not save the recording",
 		"importFailed": "Could not import the audio file"
+	},
+	"focusShapes": {
+		"radial": "Spotlight",
+		"linear": "Band"
+	},
+	"focusTargets": {
+		"animation": "Follow the move",
+		"fixed": "Fixed point"
 	}
 }

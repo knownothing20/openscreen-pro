@@ -49,9 +49,14 @@ import {
 import type { AxcutAudioTrack, AxcutClipCropRegion, AxcutDocument } from "../schema";
 import {
 	DEFAULT_SCREEN_MOTION_TIMING,
+	FOCUS_EFFECT_DEFAULT,
 	SCREEN_MOTION_DEFAULT_TARGET,
 } from "../screenMotion/presets";
-import type { ScreenMotionRegionTiming, ScreenMotionTarget } from "../screenMotion/resolve";
+import type {
+	FocusEffect,
+	ScreenMotionRegionTiming,
+	ScreenMotionTarget,
+} from "../screenMotion/resolve";
 import { appendAutoZoomSuggestions } from "../timeline/apply-auto-zooms";
 import { hasAnyClipWithCamera } from "../timeline/camera";
 import { probeAudioDuration, probeVideoDimensions, probeVideoDuration } from "../timeline/duration";
@@ -128,6 +133,18 @@ function patchPillById<T extends { id: string; startMs: number; endMs: number }>
  */
 function playheadSec(): number {
 	return useProjectStore.getState().currentTimeSec;
+}
+
+/**
+ * A fresh copy of the focus effect a spotlight starts from.
+ *
+ * Copied rather than referenced because `FOCUS_EFFECT_DEFAULT` is a frozen module constant
+ * and two regions sharing one `center` object would move together the moment either was
+ * edited. Returned as a function, not a constant, so nothing can hold the copy and edit it
+ * in place either.
+ */
+function focusEffectDefaults(): FocusEffect {
+	return { ...FOCUS_EFFECT_DEFAULT, center: { ...FOCUS_EFFECT_DEFAULT.center } };
 }
 
 export function useTimeline() {
@@ -807,6 +824,36 @@ export function useTimeline() {
 				...doc,
 				screenMotionRegions: (doc.screenMotionRegions ?? []).map((region) =>
 					region.id === id ? { ...region, target: { ...region.target, ...patch } } : region,
+				),
+			};
+			setDocument(next, { history: false });
+			motionTargetLiveRef.current = next;
+		},
+		[setDocument],
+	);
+
+	// The focus effect's live half. It shares the same ref pair and the same commit as the
+	// motion targets above, and the reason is the one written there: the commit only asks
+	// whether a live write happened, never which field produced it, so a drag on the
+	// spotlight is one Ctrl+Z step by the same mechanism as a drag on the position.
+	//
+	// `patch` is Partial because the Inspector edits one field per gesture; a region that has
+	// no effect yet is given the default one first, so the first nudge of any control creates
+	// the effect rather than being swallowed.
+	const setScreenMotionFocusEffectLive = useCallback(
+		(id: string, patch: Partial<FocusEffect>) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			if (motionTargetLiveRef.current !== doc) motionTargetRollbackRef.current = doc;
+			const next: AxcutDocument = {
+				...doc,
+				screenMotionRegions: (doc.screenMotionRegions ?? []).map((region) =>
+					region.id === id
+						? {
+								...region,
+								focusEffect: { ...(region.focusEffect ?? focusEffectDefaults()), ...patch },
+							}
+						: region,
 				),
 			};
 			setDocument(next, { history: false });
@@ -1988,6 +2035,7 @@ export function useTimeline() {
 		setScreenMotionTiming,
 		setCameraMotionTargetLive,
 		setScreenMotionTargetLive,
+		setScreenMotionFocusEffectLive,
 		commitMotionTarget,
 		addCameraFullscreen,
 		removeRegion,

@@ -18,7 +18,18 @@
 		"rotationX": "상하 기울기 (X)",
 		"rotationY": "좌우 회전 (Y)",
 		"rotationZ": "롤 (Z)",
-		"easing": "이징"
+		"easing": "이징",
+		"focus": {
+			"title": "포커스",
+			"shape": "모양",
+			"angle": "각도",
+			"size": "선명한 영역",
+			"softness": "번짐",
+			"dimming": "어둡게",
+			"target": "중심",
+			"centerX": "가로 중심",
+			"centerY": "세로 중심"
+		}
 	},
 	"easingNames": {
 		"linear": "선형",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "여기에서는 녹음할 수 없습니다",
 		"saveFailed": "녹음을 저장하지 못했습니다",
 		"importFailed": "오디오 파일을 가져오지 못했습니다"
+	},
+	"focusShapes": {
+		"radial": "스포트라이트",
+		"linear": "밴드"
+	},
+	"focusTargets": {
+		"animation": "움직임 따라가기",
+		"fixed": "고정 지점"
 	}
 }

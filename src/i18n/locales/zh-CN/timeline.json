@@ -18,7 +18,18 @@
 		"rotationX": "俯仰 (X)",
 		"rotationY": "偏转 (Y)",
 		"rotationZ": "翻滚 (Z)",
-		"easing": "缓动"
+		"easing": "缓动",
+		"focus": {
+			"title": "聚焦",
+			"shape": "形状",
+			"angle": "角度",
+			"size": "清晰区域",
+			"softness": "羽化",
+			"dimming": "压暗",
+			"target": "中心",
+			"centerX": "水平中心",
+			"centerY": "垂直中心"
+		}
 	},
 	"easingNames": {
 		"linear": "线性",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "此处无法录音",
 		"saveFailed": "无法保存录音",
 		"importFailed": "无法导入音频文件"
+	},
+	"focusShapes": {
+		"radial": "聚光",
+		"linear": "光带"
+	},
+	"focusTargets": {
+		"animation": "跟随运镜",
+		"fixed": "固定位置"
 	}
 }

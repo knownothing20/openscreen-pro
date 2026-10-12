@@ -18,7 +18,18 @@
 		"rotationX": "Độ nghiêng (X)",
 		"rotationY": "Độ xoay (Y)",
 		"rotationZ": "Độ lăn (Z)",
-		"easing": "Làm mượt"
+		"easing": "Làm mượt",
+		"focus": {
+			"title": "Lấy nét",
+			"shape": "Hình dạng",
+			"angle": "Góc",
+			"size": "Vùng rõ",
+			"softness": "Độ mờ viền",
+			"dimming": "Độ tối",
+			"target": "Tâm",
+			"centerX": "Tâm ngang",
+			"centerY": "Tâm dọc"
+		}
 	},
 	"easingNames": {
 		"linear": "Tuyến tính",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "Không thể ghi âm ở đây",
 		"saveFailed": "Không thể lưu bản ghi",
 		"importFailed": "Không thể nhập tệp âm thanh"
+	},
+	"focusShapes": {
+		"radial": "Đèn rọi",
+		"linear": "Dải"
+	},
+	"focusTargets": {
+		"animation": "Theo chuyển động",
+		"fixed": "Điểm cố định"
 	}
 }

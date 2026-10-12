@@ -60,3 +60,56 @@ describe("motion easing names", () => {
 		}
 	});
 });
+
+// The focus pane's two dropdowns have the same problem as the easing one above: their
+// options are built from a model list — `tt(\`focusShapes.${shape}\`)` and
+// `tt(\`focusTargets.${target}\`)` — so the literal-key checker never sees the keys, and a
+// missing name would print the raw key in the Inspector while every check stayed green.
+// The lists are spelled out here rather than imported, because they are what the UI offers
+// and this test is the place that says so; a new shape or target the pane grows must be
+// named here before it can ship.
+describe("focus effect names", () => {
+	const SHAPES = ["radial", "linear"] as const;
+	const TARGETS = ["animation", "fixed"] as const;
+	const readTimeline = () =>
+		JSON.parse(readFileSync(`${LOCALES_DIR}/${REFERENCE_LOCALE}/timeline.json`, "utf8")) as {
+			focusShapes?: Record<string, string>;
+			focusTargets?: Record<string, string>;
+			screenMotion?: { focus?: Record<string, string> };
+		};
+
+	it("has a `timeline.focusShapes` entry for every shape the Inspector offers", () => {
+		const { focusShapes } = readTimeline();
+		expect(focusShapes).toBeDefined();
+		for (const shape of SHAPES) {
+			expect(focusShapes?.[shape], `timeline.focusShapes.${shape}`).toBeTruthy();
+		}
+	});
+
+	it("has a `timeline.focusTargets` entry for every target the Inspector offers", () => {
+		const { focusTargets } = readTimeline();
+		expect(focusTargets).toBeDefined();
+		for (const target of TARGETS) {
+			expect(focusTargets?.[target], `timeline.focusTargets.${target}`).toBeTruthy();
+		}
+	});
+
+	it("has every literal label the focus pane renders", () => {
+		const { screenMotion } = readTimeline();
+		const labels = screenMotion?.focus;
+		expect(labels).toBeDefined();
+		for (const key of [
+			"title",
+			"shape",
+			"angle",
+			"size",
+			"softness",
+			"dimming",
+			"target",
+			"centerX",
+			"centerY",
+		] as const) {
+			expect(labels?.[key], `timeline.screenMotion.focus.${key}`).toBeTruthy();
+		}
+	});
+});

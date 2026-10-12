@@ -18,7 +18,18 @@
 		"rotationX": "Inclinaison (X)",
 		"rotationY": "Rotation (Y)",
 		"rotationZ": "Roulis (Z)",
-		"easing": "Adoucissement"
+		"easing": "Adoucissement",
+		"focus": {
+			"title": "Mise au point",
+			"shape": "Forme",
+			"angle": "Angle",
+			"size": "Zone nette",
+			"softness": "Adoucissement",
+			"dimming": "Assombrissement",
+			"target": "Centre",
+			"centerX": "Centre horizontal",
+			"centerY": "Centre vertical"
+		}
 	},
 	"easingNames": {
 		"linear": "Linéaire",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "L'enregistrement n'est pas disponible ici",
 		"saveFailed": "Impossible d'enregistrer la capture",
 		"importFailed": "Impossible d'importer le fichier audio"
+	},
+	"focusShapes": {
+		"radial": "Projecteur",
+		"linear": "Bande"
+	},
+	"focusTargets": {
+		"animation": "Suivre le mouvement",
+		"fixed": "Point fixe"
 	}
 }

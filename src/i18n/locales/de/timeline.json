@@ -18,7 +18,18 @@
 		"rotationX": "Neigung (X)",
 		"rotationY": "Drehung (Y)",
 		"rotationZ": "Rollen (Z)",
-		"easing": "Beschleunigung"
+		"easing": "Beschleunigung",
+		"focus": {
+			"title": "Fokus",
+			"shape": "Form",
+			"angle": "Winkel",
+			"size": "Klarer Bereich",
+			"softness": "Weichzeichnen",
+			"dimming": "Abdunkeln",
+			"target": "Mitte",
+			"centerX": "Waagerechte Mitte",
+			"centerY": "Senkrechte Mitte"
+		}
 	},
 	"easingNames": {
 		"linear": "Linear",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "Aufnahme ist hier nicht verfügbar",
 		"saveFailed": "Die Aufnahme konnte nicht gespeichert werden",
 		"importFailed": "Die Audiodatei konnte nicht importiert werden"
+	},
+	"focusShapes": {
+		"radial": "Spotlight",
+		"linear": "Band"
+	},
+	"focusTargets": {
+		"animation": "Bewegung folgen",
+		"fixed": "Fester Punkt"
 	}
 }

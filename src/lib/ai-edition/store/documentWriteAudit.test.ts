@@ -322,6 +322,14 @@ const DECLARED: WritePath[] = [
 	// release. Recording the live half would make a single drag hundreds of Ctrl+Z steps.
 	w("src/lib/ai-edition/store/useTimeline.ts", "setCameraMotionTargetLive", "set", "automatic"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setScreenMotionTargetLive", "set", "automatic"),
+	// The focus pane's sliders take the same two halves as the motion ones above, and the
+	// live half shares their commit — so it is declared the same way, for the same reason.
+	w(
+		"src/lib/ai-edition/store/useTimeline.ts",
+		"setScreenMotionFocusEffectLive",
+		"set",
+		"automatic",
+	),
 	w("src/lib/ai-edition/store/useTimeline.ts", "commitMotionTarget", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "saveZoomPatch", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setTrimEntries", "save", "gesture"),

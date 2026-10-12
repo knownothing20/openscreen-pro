@@ -18,7 +18,18 @@
 		"rotationX": "上下の傾き (X)",
 		"rotationY": "左右の回転 (Y)",
 		"rotationZ": "ロール (Z)",
-		"easing": "イージング"
+		"easing": "イージング",
+		"focus": {
+			"title": "フォーカス",
+			"shape": "形状",
+			"angle": "角度",
+			"size": "明るい領域",
+			"softness": "ぼかし幅",
+			"dimming": "暗さ",
+			"target": "中心",
+			"centerX": "水平方向の中心",
+			"centerY": "垂直方向の中心"
+		}
 	},
 	"easingNames": {
 		"linear": "リニア",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "ここでは録音できません",
 		"saveFailed": "録音を保存できませんでした",
 		"importFailed": "音声ファイルを読み込めませんでした"
+	},
+	"focusShapes": {
+		"radial": "スポットライト",
+		"linear": "バンド"
+	},
+	"focusTargets": {
+		"animation": "動きに追従",
+		"fixed": "固定位置"
 	}
 }

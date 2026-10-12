@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseScreenMotionRegion, parseScreenMotionRegions } from "./parse";
-import { SCREEN_MOTION_DEFAULT_TARGET } from "./presets";
+import { FOCUS_EFFECT_DEFAULT, SCREEN_MOTION_DEFAULT_TARGET } from "./presets";
 import {
 	lerpScreenMotionState,
 	resolveScreenMotionAtTime,
@@ -235,5 +235,107 @@ describe("screen motion parsing", () => {
 			timing: { easing: "wiggle" },
 		});
 		expect(parsed?.timing.easing).toBe("cubic");
+	});
+});
+
+describe("focus effect parsing", () => {
+	/** Everything a stored region needs except the focus effect. */
+	const base = {
+		id: "a",
+		startMs: 0,
+		endMs: 1000,
+		timing: { leadInSec: 0.5, returnSec: 0.5, easing: "cubic" },
+		target: SCREEN_MOTION_DEFAULT_TARGET,
+	};
+
+	// The field is optional so that "no spotlight" HAS a representation. Handing back a
+	// populated effect for a missing one would dim every project ever written.
+	it("omits the key entirely when the region carries no effect", () => {
+		const parsed = parseScreenMotionRegion({ ...base });
+		expect(parsed).not.toBeNull();
+		expect("focusEffect" in (parsed ?? {})).toBe(false);
+		expect(parsed?.focusEffect).toBeUndefined();
+	});
+
+	it("treats a value that cannot be an effect as no effect", () => {
+		for (const value of [null, "nope", 42, [], true]) {
+			const parsed = parseScreenMotionRegion({ ...base, focusEffect: value });
+			expect(parsed?.focusEffect, JSON.stringify(value)).toBeUndefined();
+		}
+	});
+
+	it("reads a well-formed effect back as written", () => {
+		const parsed = parseScreenMotionRegion({
+			...base,
+			focusEffect: {
+				shape: "linear",
+				angleDegrees: 45,
+				target: "fixed",
+				center: { x: 0.2, y: 0.8 },
+				size: 0.3,
+				softness: 0.7,
+				dimming: 0.4,
+			},
+		});
+		expect(parsed?.focusEffect).toEqual({
+			shape: "linear",
+			angleDegrees: 45,
+			target: "fixed",
+			center: { x: 0.2, y: 0.8 },
+			size: 0.3,
+			softness: 0.7,
+			dimming: 0.4,
+		});
+	});
+
+	it("repairs out-of-range numbers instead of rejecting the region", () => {
+		const parsed = parseScreenMotionRegion({
+			...base,
+			focusEffect: { size: 99, softness: -1, dimming: 5, center: { x: 4, y: -2 } },
+		});
+		expect(parsed).not.toBeNull();
+		expect(parsed?.focusEffect?.size).toBe(1);
+		expect(parsed?.focusEffect?.softness).toBe(0);
+		expect(parsed?.focusEffect?.dimming).toBe(1);
+		expect(parsed?.focusEffect?.center).toEqual({ x: 1, y: 0 });
+	});
+
+	it("falls back for a shape or target it does not know", () => {
+		// A project from a newer build that grew a third shape must still dim on this one,
+		// not lose the whole effect.
+		const parsed = parseScreenMotionRegion({
+			...base,
+			focusEffect: { shape: "cone", target: "cursor" },
+		});
+		expect(parsed?.focusEffect?.shape).toBe("radial");
+		expect(parsed?.focusEffect?.target).toBe("animation");
+	});
+
+	it("wraps an angle rather than clamping it, and takes the fallback for a non-number", () => {
+		const wrap = (angleDegrees: unknown) =>
+			parseScreenMotionRegion({ ...base, focusEffect: { angleDegrees } })?.focusEffect
+				?.angleDegrees;
+		// 450 and 90 draw the same band, so clamping would turn a second turn into a stop.
+		expect(wrap(450)).toBe(90);
+		expect(wrap(-90)).toBe(270);
+		expect(wrap(360)).toBe(0);
+		expect(wrap("sideways")).toBe(FOCUS_EFFECT_DEFAULT.angleDegrees);
+		expect(wrap(Number.NaN)).toBe(FOCUS_EFFECT_DEFAULT.angleDegrees);
+	});
+
+	it("round-trips an effect through its own parser unchanged", () => {
+		// What is written must be what is read back, or every save drifts the effect a
+		// little further from what the user set.
+		const authored = {
+			shape: "linear" as const,
+			angleDegrees: 135,
+			target: "fixed" as const,
+			center: { x: 0.35, y: 0.65 },
+			size: 0.55,
+			softness: 0.25,
+			dimming: 0.75,
+		};
+		const parsed = parseScreenMotionRegion({ ...base, focusEffect: authored });
+		expect(parsed?.focusEffect).toEqual(authored);
 	});
 });

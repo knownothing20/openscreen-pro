@@ -18,7 +18,18 @@
 		"rotationX": "Eğim (X)",
 		"rotationY": "Dönüş (Y)",
 		"rotationZ": "Yatış (Z)",
-		"easing": "Yumuşatma"
+		"easing": "Yumuşatma",
+		"focus": {
+			"title": "Odak",
+			"shape": "Şekil",
+			"angle": "Açı",
+			"size": "Net alan",
+			"softness": "Yumuşatma",
+			"dimming": "Karartma",
+			"target": "Merkez",
+			"centerX": "Yatay merkez",
+			"centerY": "Dikey merkez"
+		}
 	},
 	"easingNames": {
 		"linear": "Doğrusal",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "Burada kayıt kullanılamıyor",
 		"saveFailed": "Kayıt kaydedilemedi",
 		"importFailed": "Ses dosyası içe aktarılamadı"
+	},
+	"focusShapes": {
+		"radial": "Işıldak",
+		"linear": "Şerit"
+	},
+	"focusTargets": {
+		"animation": "Hareketi takip et",
+		"fixed": "Sabit nokta"
 	}
 }

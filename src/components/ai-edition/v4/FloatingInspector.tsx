@@ -60,7 +60,12 @@ import {
 import { CAMERA_MOTION_LIMITS } from "@/lib/ai-edition/cameraMotion/presets";
 import { resolveAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
 import type { AxcutAnnotationRegion, AxcutClip } from "@/lib/ai-edition/schema";
-import { SCREEN_MOTION_LIMITS } from "@/lib/ai-edition/screenMotion/presets";
+import {
+	FOCUS_EFFECT_DEFAULT,
+	FOCUS_EFFECT_LIMITS,
+	SCREEN_MOTION_LIMITS,
+} from "@/lib/ai-edition/screenMotion/presets";
+import type { FocusEffectShape, FocusEffectTarget } from "@/lib/ai-edition/screenMotion/resolve";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { rafCoalesce } from "@/lib/ai-edition/store/rafCoalesce";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
@@ -1418,6 +1423,11 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		const region = tl.screenMotionRegions.find((r) => r.id === selection.id);
 		if (!region) return null;
 		const target = region.target;
+		// The spotlight the pane edits. A region with none shows the defaults — the pane is a
+		// form, and a form with blank fields is not a form. The first nudge of any control
+		// writes the effect (`setScreenMotionFocusEffectLive` seeds it), so what is displayed
+		// and what would be stored agree.
+		const focus = region.focusEffect ?? FOCUS_EFFECT_DEFAULT;
 		const rowStyle = { display: "grid", gap: 4, fontSize: 12 } as const;
 		const deleteAndClose = () => {
 			void tl.removeRegion("screenMotion", selection.id);
@@ -1428,6 +1438,8 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		// multiplies the card's own placement) and the rotations in degrees.
 		const live = (patch: Parameters<typeof tl.setScreenMotionTargetLive>[1]) =>
 			tl.setScreenMotionTargetLive(region.id, patch);
+		const liveFocus = (patch: Parameters<typeof tl.setScreenMotionFocusEffectLive>[1]) =>
+			tl.setScreenMotionFocusEffectLive(region.id, patch);
 		return (
 			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
 				{paneHeader(<Move size={16} />, tt("screenMotion.title"), onClose, tc("actions.close"))}
@@ -1507,6 +1519,119 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							))}
 						</select>
 					</label>
+					{/* The spotlight. No on/off switch: the effect IS its dimming, so a user
+					    who wants no spotlight drags Dimming to 0 and the field stops being
+					    projected at all (`focusEffect.ts` returns null, and the scene
+					    description omits the key). A switch would be a second way to say the
+					    same thing, and the two could disagree. */}
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.focus.title")}</span>
+					</label>
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.focus.shape")}</span>
+						<select
+							value={focus.shape}
+							onChange={(event) => liveFocus({ shape: event.target.value as FocusEffectShape })}
+						>
+							{(["radial", "linear"] as const).map((shape) => (
+								<option key={shape} value={shape}>
+									{tt(`focusShapes.${shape}`)}
+								</option>
+							))}
+						</select>
+					</label>
+					<div style={{ display: "grid" }}>
+						{/* The band's direction means nothing to a round pool, so it is absent
+						    rather than greyed: a disabled control still reads as one the user
+						    is meant to operate. */}
+						{focus.shape === "linear" ? (
+							<SliderCell
+								label={tt("screenMotion.focus.angle")}
+								value={Math.round(focus.angleDegrees)}
+								min={FOCUS_EFFECT_LIMITS.angleMin}
+								max={FOCUS_EFFECT_LIMITS.angleMax}
+								step={1}
+								suffix="°"
+								defaultValue={FOCUS_EFFECT_DEFAULT.angleDegrees}
+								onChange={(next) => liveFocus({ angleDegrees: next })}
+								onCommit={() => void tl.commitMotionTarget()}
+							/>
+						) : null}
+						<SliderCell
+							label={tt("screenMotion.focus.size")}
+							value={Math.round(focus.size * 100)}
+							min={FOCUS_EFFECT_LIMITS.sizeMin * 100}
+							max={FOCUS_EFFECT_LIMITS.sizeMax * 100}
+							step={1}
+							suffix="%"
+							defaultValue={Math.round(FOCUS_EFFECT_DEFAULT.size * 100)}
+							onChange={(next) => liveFocus({ size: next / 100 })}
+							onCommit={() => void tl.commitMotionTarget()}
+						/>
+						<SliderCell
+							label={tt("screenMotion.focus.softness")}
+							value={Math.round(focus.softness * 100)}
+							min={FOCUS_EFFECT_LIMITS.softnessMin * 100}
+							max={FOCUS_EFFECT_LIMITS.softnessMax * 100}
+							step={1}
+							suffix="%"
+							defaultValue={Math.round(FOCUS_EFFECT_DEFAULT.softness * 100)}
+							onChange={(next) => liveFocus({ softness: next / 100 })}
+							onCommit={() => void tl.commitMotionTarget()}
+						/>
+						<SliderCell
+							label={tt("screenMotion.focus.dimming")}
+							value={Math.round(focus.dimming * 100)}
+							min={FOCUS_EFFECT_LIMITS.dimmingMin * 100}
+							max={FOCUS_EFFECT_LIMITS.dimmingMax * 100}
+							step={1}
+							suffix="%"
+							defaultValue={Math.round(FOCUS_EFFECT_DEFAULT.dimming * 100)}
+							onChange={(next) => liveFocus({ dimming: next / 100 })}
+							onCommit={() => void tl.commitMotionTarget()}
+						/>
+					</div>
+					<label style={rowStyle}>
+						<span>{tt("screenMotion.focus.target")}</span>
+						<select
+							value={focus.target}
+							onChange={(event) => liveFocus({ target: event.target.value as FocusEffectTarget })}
+						>
+							{(["animation", "fixed"] as const).map((target) => (
+								<option key={target} value={target}>
+									{tt(`focusTargets.${target}`)}
+								</option>
+							))}
+						</select>
+					</label>
+					<div style={{ display: "grid" }}>
+						{focus.target === "fixed" ? (
+							<>
+								<SliderCell
+									label={tt("screenMotion.focus.centerX")}
+									value={Math.round(focus.center.x * 100)}
+									min={SCREEN_MOTION_LIMITS.positionMin * 100}
+									max={SCREEN_MOTION_LIMITS.positionMax * 100}
+									step={1}
+									suffix="%"
+									defaultValue={Math.round(FOCUS_EFFECT_DEFAULT.center.x * 100)}
+									onChange={(next) => liveFocus({ center: { ...focus.center, x: next / 100 } })}
+									onCommit={() => void tl.commitMotionTarget()}
+								/>
+								<SliderCell
+									label={tt("screenMotion.focus.centerY")}
+									value={Math.round(focus.center.y * 100)}
+									min={SCREEN_MOTION_LIMITS.positionMin * 100}
+									max={SCREEN_MOTION_LIMITS.positionMax * 100}
+									step={1}
+									suffix="%"
+									defaultValue={Math.round(FOCUS_EFFECT_DEFAULT.center.y * 100)}
+									onChange={(next) => liveFocus({ center: { ...focus.center, y: next / 100 } })}
+									onCommit={() => void tl.commitMotionTarget()}
+								/>
+							</>
+						) : null}
+					</div>
 					<button type="button" onClick={deleteAndClose} className={PANE_BUTTON}>
 						<Trash2 size={16} style={{ color: "var(--danger)" }} />
 						{te("inspector.deleteRegion")}

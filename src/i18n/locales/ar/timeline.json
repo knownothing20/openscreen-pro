@@ -18,7 +18,18 @@
 		"rotationX": "الإمالة (X)",
 		"rotationY": "الدوران (Y)",
 		"rotationZ": "الالتفاف (Z)",
-		"easing": "التسارع"
+		"easing": "التسارع",
+		"focus": {
+			"title": "التركيز",
+			"shape": "الشكل",
+			"angle": "الزاوية",
+			"size": "المنطقة الواضحة",
+			"softness": "التدرّج",
+			"dimming": "التعتيم",
+			"target": "المركز",
+			"centerX": "المركز الأفقي",
+			"centerY": "المركز الرأسي"
+		}
 	},
 	"easingNames": {
 		"linear": "خطي",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "التسجيل غير متاح هنا",
 		"saveFailed": "تعذر حفظ التسجيل",
 		"importFailed": "تعذر استيراد الملف الصوتي"
+	},
+	"focusShapes": {
+		"radial": "بقعة ضوء",
+		"linear": "شريط"
+	},
+	"focusTargets": {
+		"animation": "يتبع الحركة",
+		"fixed": "نقطة ثابتة"
 	}
 }

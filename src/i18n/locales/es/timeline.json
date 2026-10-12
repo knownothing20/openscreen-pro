@@ -18,7 +18,18 @@
 		"rotationX": "Inclinación (X)",
 		"rotationY": "Giro (Y)",
 		"rotationZ": "Alabeo (Z)",
-		"easing": "Suavizado"
+		"easing": "Suavizado",
+		"focus": {
+			"title": "Enfoque",
+			"shape": "Forma",
+			"angle": "Ángulo",
+			"size": "Zona nítida",
+			"softness": "Difuminado",
+			"dimming": "Oscurecimiento",
+			"target": "Centro",
+			"centerX": "Centro horizontal",
+			"centerY": "Centro vertical"
+		}
 	},
 	"easingNames": {
 		"linear": "Lineal",
@@ -139,5 +150,13 @@
 		"recordingUnavailable": "La grabación no está disponible aquí",
 		"saveFailed": "No se pudo guardar la grabación",
 		"importFailed": "No se pudo importar el archivo de audio"
+	},
+	"focusShapes": {
+		"radial": "Foco",
+		"linear": "Franja"
+	},
+	"focusTargets": {
+		"animation": "Seguir el movimiento",
+		"fixed": "Punto fijo"
 	}
 }

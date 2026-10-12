@@ -572,9 +572,43 @@ describe("FloatingInspector", () => {
 			]) {
 				expect(screen.getByText(`timeline.screenMotion.${key}`)).toBeInTheDocument();
 			}
-			// Exactly six sliders: adding a seventh (perspective, opacity, …) fails here.
-			expect(screen.getAllByRole("slider")).toHaveLength(6);
+			// `perspective` stays out (authored and transmitted, but nothing renders it), and
+			// the count is pinned so a control with nothing behind it cannot slip in. The
+			// focus effect's own sliders are NOT counted here — they have their own test
+			// below, which states what each one shows.
+			expect(screen.getAllByRole("slider")).toHaveLength(9);
 			expect(screen.queryByText(/perspective/i)).toBeNull();
+		});
+
+		it("shows the focus effect's sliders, and hides the angle unless the shape is a band", () => {
+			renderPane({});
+			for (const key of ["size", "softness", "dimming"]) {
+				expect(screen.getByText(`timeline.screenMotion.focus.${key}`)).toBeInTheDocument();
+			}
+			// A round pool has no direction, so the angle is ABSENT rather than disabled: a
+			// greyed control still reads as one the user is meant to operate.
+			expect(screen.queryByText("timeline.screenMotion.focus.angle")).toBeNull();
+		});
+
+		it("shows the angle and the centre once the shape is a band at a fixed point", () => {
+			// A region that carries its own effect, so the pane reads `region.focusEffect`
+			// rather than showing the defaults.
+			const withFocus = {
+				...region,
+				focusEffect: {
+					shape: "linear",
+					angleDegrees: 30,
+					target: "fixed",
+					center: { x: 0.2, y: 0.8 },
+					size: 0.45,
+					softness: 0.5,
+					dimming: 0.18,
+				},
+			};
+			renderPane({ screenMotionRegions: [withFocus] });
+			expect(screen.getByText("timeline.screenMotion.focus.angle")).toBeInTheDocument();
+			expect(screen.getByText("timeline.screenMotion.focus.centerX")).toBeInTheDocument();
+			expect(screen.getByText("timeline.screenMotion.focus.centerY")).toBeInTheDocument();
 		});
 
 		it("writes the drag live and commits once, so one drag is one undo step", () => {
