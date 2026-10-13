@@ -62,7 +62,29 @@ pub struct LayerCB {
     pub trail_a: [f32; 4],
     pub trail_b: [f32; 4],
     pub trail_mb: [f32; 4],
+    /// Mode 19 (Focus Effect) : le projecteur, en deux `float4` parce que le cbuffer est copié
+    /// OCTET PAR OCTET (`upload_cb` côté Windows, `setFragmentBytes` côté macOS) et que les trois
+    /// backends doivent donc porter exactement le même bloc. `a` = `[shape, angleDegrees, centerX,
+    /// centerY]`, `b` = `[size, softness, dimming, 0]`.
+    ///
+    /// `shape` vaut 0 (radial) ou 1 (linear) — l'énumération `FocusShape`, pas une chaîne : le
+    /// shader n'a pas de table de noms, et un troisième profil se déciderait ici, pas dans les
+    /// trois langages. `angleDegrees` n'est lu que par `linear`, `centerX`/`centerY` que par
+    /// `radial` (le natif résout « suivre le mouvement » en amont, cf. `focusEffect.ts`).
+    ///
+    /// Zéro partout ailleurs : un calque sans projecteur ne paie rien, et le mode 19 est le seul à
+    /// lire ces deux slots — aucun des 19 modes existants ne les regarde.
+    pub focus_a: [f32; 4],
+    pub focus_b: [f32; 4],
 }
+
+/// Le mode du calque « Focus Effect » : un quad PLEIN ÉCRAN qui n'écrit que de l'alpha — du noir
+/// pré-multiplié, `float4(0, 0, 0, dim)`. L'alpha-blending pré-multiplié déjà en place
+/// (`SrcBlend = ONE`, `DestBlend = INV_SRC_ALPHA`) le fait alors assombrir ce qui est dessous sans
+/// qu'aucun état de blend supplémentaire soit nécessaire : c'est la raison du choix d'un quad
+/// plutôt que d'un effet dans le shader de l'écran, qui aurait dû lire la luminosité d'un fond
+/// arbitraire (wallpaper) pour l'assombrir.
+pub const MODE_FOCUS: f32 = 19.0;
 
 impl LayerCB {
     /// Le calque est l'un des modèles 3D — le curseur modelé (mode 15), l'impact de son clic
@@ -1916,6 +1938,10 @@ pub struct FrameGeometry {
     /// Layouts en bloc : le slot de l'écran, un conteneur qui le MASQUE (cf. `ScreenMask`).
     /// `None` ailleurs, et le rendu est celui d'avant, à l'octet.
     pub screen_mask: Option<ScreenMask>,
+    /// Le projecteur actif, ou `None` quand rien ne l'allume (`focus_effect_sample_at` le rend
+    /// déjà `None` pour un effet absent, éteint, ou hors de sa fenêtre). Sa seule présence décide
+    /// si le backend dessine le quad du mode 19 : un effet éteint ne coûte pas un draw.
+    pub focus: Option<crate::screen_motion::FocusEffectSample>,
 }
 
 /// Le conteneur d'un layout en bloc (côte à côte, haut/bas) : un masque fixe, overflow hidden.
@@ -3563,6 +3589,19 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             None => base_radius,
         };
 
+        // Focus Effect : le projecteur de la région qui mène, résolu une fois pour le dessin.
+        //
+        // Même base de temps que les mouvements d'écran (`source_t`, le temps SOURCE du clip), et
+        // c'est la même fonction qui choisit : `focus_effect_sample_at` réutilise la règle du
+        // gagnant de `screen_motion_sample_at` (« le progrès le plus fort gagne »), donc la lumière
+        // et le mouvement qu'elle suit ne peuvent pas désigner deux régions différentes à une même
+        // frame. Le centre, lui, arrive DÉJÀ résolu en point : « suivre le mouvement » a été lu
+        // côté app (`focusEffect.ts`, `sceneDescription.ts`), le natif ne voit jamais l'énumération
+        // de cible. Sans région de mouvement, aucun projecteur — pas un cas d'erreur, juste rien à
+        // dessiner.
+        let focus =
+            crate::screen_motion::focus_effect_sample_at(screen_motion_regions, source_t, &clock);
+
     FrameGeometry {
         scene_preset,
         mb_taps,
@@ -3595,6 +3634,7 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         shape_fade,
         window_frame,
         screen_mask,
+        focus,
     }
 }
 
@@ -7821,6 +7861,8 @@ mod tests {
             shape_fade: 0.0,
             window_frame: None,
             screen_mask: None,
+            // Aucun projecteur : cette fixture sert au curseur, qui n'en dépend pas.
+            focus: None,
         }
     }
 

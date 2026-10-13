@@ -40,6 +40,12 @@ struct Layer {
     trail_a: vec4<f32>,   // mode 8 : coins TL, TR du plan a la frame precedente (px locaux, comme fx) ; mode 18 incline : en fractions de sortie
     trail_b: vec4<f32>,   // mode 8 : coins BR, BL du plan a la frame precedente (comme src_prev) ; mode 18 incline : en fractions de sortie
     trail_mb: vec4<f32>,  // mode 8 : x = taps, y = force du flou de mouvement (ceux du mode 0) ; mode 18 incline : le `mb` du mode 8 (profondeur de champ), et `color.xy` sa lampe ; 0 ailleurs
+    // Mode 19 (projecteur) : presents pour que la taille du bloc reste celle de `LayerCB`, copiee
+    // telle quelle. Le mode 19 n'est PAS encore dessine par ce backend -- voir la note « A2-2 » sur
+    // `MODE_FOCUS` dans `frame_geometry.rs` -- mais un champ absent ici decalerait tout ce qui suit
+    // des qu'il le sera, et WGSL ne le signalerait pas (meme type vec4 partout).
+    focus_a: vec4<f32>,   // mode 19 : x = forme (0 radial, 1 linear), y = angle (degres), zw = centre 0..1 de la sortie
+    focus_b: vec4<f32>,   // mode 19 : x = taille (fraction du petit cote), y = penombre 0..1, z = opacite du voile 0..1
 }
 
 @group(0) @binding(0) var<uniform> layer: Layer;

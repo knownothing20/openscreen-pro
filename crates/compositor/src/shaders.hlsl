@@ -14,7 +14,7 @@ cbuffer Layer : register(b0)
     float4 src;       // u0,v0,u1,v1 dans l'espace source 0..1 ; modes 15 et 17 : décalage px du rayon, P, U
     float2 quad_px;   // taille du quad en pixels (pour les SDF)
     float  radius_px; // rayon des coins arrondis en px (0 = aucun) ; mode 17 : rayon des coins hauts du corps (unités du modèle)
-    float  mode;      // 0 = vidéo NV12, 1 = couleur pleine, 2 = ombre portée, 4 = curseur, 15 = curseur 3D, 16 = impact du clic, 17 = appareil modelé, 18 = écran cadré flouté en bloc
+    float  mode;      // 0 = vidéo NV12, 1 = couleur pleine, 2 = ombre portée, 4 = curseur, 15 = curseur 3D, 16 = impact du clic, 17 = appareil modelé, 18 = écran cadré flouté en bloc, 19 = projecteur (Focus Effect, plein écran)
     float4 color;     // couleur pleine / teinte (ombre : rgb + opacité dans a) ; mode 15 : coin du sprite, écrasement, opacité ; mode 17 : .r = l'appareil (1 portable, 2 téléphone, 3 moniteur), .g = thème sombre, .b = rayon des coins bas du corps, .a = opacité
     float4 fx;        // fx.x = spread ombre (px), fx.y,fx.z libres ; mode 15 : rotation du plan (rad), tangage ; mode 17 : rotation du plan (rad), épaisseur
     float4 src_prev;  // src à la frame précédente (flou de mouvement par vélocité) ; mode 15 : hotspot, lacet ; mode 17 : marges du corps (unités du modèle)
@@ -23,6 +23,8 @@ cbuffer Layer : register(b0)
     float4 trail_a;   // mode 8 : coins TL, TR du plan à la frame précédente (px locaux, comme fx) ; mode 18 incliné : en fractions de sortie
     float4 trail_b;   // mode 8 : coins BR, BL du plan à la frame précédente (comme src_prev) ; mode 18 incliné : en fractions de sortie
     float4 trail_mb;  // mode 8 : x = taps, y = force du flou de mouvement (ceux du mode 0) ; mode 18 incliné : le `mb` du mode 8 (profondeur de champ), et `color.xy` sa lampe ; 0 ailleurs
+    float4 focus_a;   // mode 19 : x = forme (0 radial, 1 linear), y = angle (degrés), zw = centre 0..1 de la sortie ; 0 ailleurs
+    float4 focus_b;   // mode 19 : x = taille (fraction du petit côté), y = pénombre 0..1, z = opacité du voile 0..1 ; 0 ailleurs
 };
 // Mode 15 (curseur modélisé) : le détail des emplacements est dans `frame_geometry.rs`, en tête
 // de la section « Curseur modélisé » (`cursor_model_cb`). Mode 17 (appareil modelé) : en tête de
@@ -3470,6 +3472,74 @@ float4 device_frame(float2 local)
 
 float4 ps_main(VSOut i) : SV_Target
 {
+    // mode 19 : PROJECTEUR (Focus Effect, `frame_geometry::MODE_FOCUS`). Un quad PLEIN ÉCRAN qui
+    // ne dessine qu'un voile noir : le pixel vaut `float4(0, 0, 0, dimFactor)`, prémultiplié, et
+    // l'alpha-blending déjà actif (`SrcBlend = ONE`, `DestBlend = INV_SRC_ALPHA`) assombrit ce qui
+    // est dessous. Aucun tap, aucune texture lue : c'est la raison d'un quad séparé plutôt que d'une
+    // branche dans le shader de l'écran — assombrir « tout sauf la zone nette » demande la distance
+    // au CENTRE DE LA SORTIE, que le calque d'écran n'a pas (il dessine la boîte de l'écran, pas le
+    // cadre), et le fond peut être un wallpaper arbitraire qu'il faudrait relire pour le noircir.
+    //
+    // Presque tout se lit dans `focus_a` / `focus_b` (cf. `LayerCB`) : `shape` (0 radial, 1 linear),
+    // `angleDegrees`, le centre en 0..1 de la sortie, `size` (fraction du petit côté), `softness`,
+    // `dimming`. La géométrie est identique à `focus_dim_factor` (Rust, `screen_motion.rs`), qui est
+    // la version testable de cette même courbe — les deux DOIVENT bouger ensemble.
+    //
+    // La distance se mesure en FRACTIONS DU PETIT CÔTÉ, comme `size` : un rayon en pixels rendrait
+    // le projecteur ovale dès que la sortie n'est pas carrée (`abs(rw - rh)`), alors qu'un cercle
+    // doit rester un cercle. `pout` est déjà 0..1 avec l'origine en haut à gauche, le même repère
+    // que le centre.
+    if (mode > 18.5)
+    {
+        float2 d = i.pout - focus_a.zw;
+        // Le petit côté de la sortie en pixels, pour que la distance et `size` parlent la même
+        // unité : `quad_px` porte la taille du quad, qui est ici tout l'écran.
+        float min_px = min(quad_px.x, quad_px.y);
+        // Distance au cœur, en FRACTIONS DU PLUS PETIT CÔTÉ — la même unité que `size`. Chaque axe
+        // est d'abord ramené en px de sortie (`d.x * quad_px.x`), puis au petit côté (`/ min_px`) :
+        // sur une sortie non carrée, un rayon mesuré en px deviendrait une ellipse.
+        float dist;
+        if (focus_a.x > 0.5)
+        {
+            // Bande : la distance se projette sur la NORMALE à l'angle. La bande s'étend le long de
+            // la direction de l'angle — `0°` pointe vers le HAUT (convention CSS `linear-gradient`),
+            // donc la bande de 0° est horizontale et c'est l'écart VERTICAL qui compte. La normale
+            // est donc `(sin a, -cos a)` : à 0° elle vaut `(0, -1)`, verticale ; à 90° `(1, 0)`,
+            // horizontale, et la bande devient verticale.
+            float a = radians(focus_a.y);
+            dist = abs(d.x * quad_px.x * sin(a) + d.y * quad_px.y * (-cos(a))) / min_px;
+        }
+        else
+        {
+            float2 p = float2(d.x * quad_px.x, d.y * quad_px.y) / min_px;
+            dist = length(p);
+        }
+        // `d` NORMALISÉE : 0 au cœur, 1 à la frontière déclarée par `size`. Le dégradé vit
+        // ENTIÈREMENT à l'intérieur de cette frontière, pour que `size` reste la taille de la zone
+        // nette telle que réglée (miroir exact de `focus_dim_factor`, Rust).
+        float size = max(focus_b.x, 1e-5);
+        float nd = dist / size;
+        float softness = saturate(focus_b.y);
+        float dimming = saturate(focus_b.z);
+        float k;
+        if (nd <= 0.0)
+        {
+            k = 0.0;
+        }
+        else if (softness <= 0.0)
+        {
+            // Bord net : dehors = plein, dedans = net. Sans cette branche, diviser par `softness`
+            // donnerait l'infini sur `nd > 0`.
+            k = 1.0;
+        }
+        else
+        {
+            float inner = 1.0 - softness;
+            k = (nd <= inner) ? 0.0 : saturate((nd - inner) / softness);
+        }
+        return float4(0.0, 0.0, 0.0, dimming * k); // noir prémultiplié
+    }
+
     // mode 18 : l'écran CADRÉ (ombre, cadre, métrage, appareil) flouté comme UN objet rigide
     // (`FrameGeometry::screen_trail`). t2 = son rendu isolé, prémultiplié, à la taille de la
     // sortie. Chaque tap retrouve le point de l'objet qui couvrait ce pixel plus tôt sur la

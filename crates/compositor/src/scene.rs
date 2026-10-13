@@ -572,6 +572,69 @@ pub struct SceneScreenMotionTarget {
     pub perspective: f32,
 }
 
+/// La forme de la zone nette.
+///
+/// Un enum plutôt qu'une `String` : la valeur voyage sur chaque frame et doit être `Copy` pour
+/// que `focus_effect_sample_at` puisse projeter l'effet d'une région empruntée sans cloner.
+/// Un nom inconnu retombe sur `Radial` via `serde`, exactement comme le TS (`parse.ts`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FocusShape {
+    /// Un cercle.
+    Radial,
+    /// Une bande, orientée par `angle_degrees`.
+    Linear,
+}
+
+impl Default for FocusShape {
+    fn default() -> Self {
+        Self::Radial
+    }
+}
+
+/// Le "focus effect" d'un mouvement d'écran : assombrit tout SAUF un cercle ou une bande, qui
+/// suit le mouvement de la région qui le porte.
+///
+/// `center` est déjà un POINT, pas un choix : le TS résout `animation` (« suit le mouvement ») en
+/// lisant la cible de la région, exactement comme `focusEffect.ts` le fait côté app. Le natif ne
+/// voit donc jamais l'enum `target` et n'a pas à décider ce que « suivre » veut dire.
+///
+/// PAS de flou, délibérément. DogSC, dont vient l'effet, adoucit aussi ce qu'il laisse dehors —
+/// mais cette app floute déjà pour une autre raison, l'annotation `blurData`, qui CACHE ce
+/// qu'elle couvre. Deux flous aux intentions opposées seraient indistinguables à l'écran et
+/// forceraient à lire la doc pour les séparer ; le focus effect ne fait donc que l'assombrissement
+/// et laisse le masquage à l'outil de confidentialité. `dimming: 0` se lit « effet éteint ».
+///
+/// Comme pour la cible, aucun défaut n'est « la bonne réponse » : l'app envoie toujours les sept
+/// champs quand l'effet existe, et l'absence du champ se lit `None` — « pas d'effet », pas un
+/// effet par défaut.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneFocusEffect {
+    /// `radial` (cercle) ou `linear` (bande).
+    #[serde(default)]
+    pub shape: FocusShape,
+    /// Orientation de la bande, en degrés. Ignoré pour un cercle.
+    #[serde(default)]
+    pub angle_degrees: f32,
+    /// Centre du cercle / de la bande, 0..1 du canvas. Le TS l'a DÉJÀ résolu : pour une cible
+    /// `animation` il porte la destination du mouvement, pas son état mélangé.
+    #[serde(default = "default_camera_position")]
+    pub center_x: f32,
+    #[serde(default = "default_camera_position")]
+    pub center_y: f32,
+    /// Rayon du cercle (ou demi-largeur de la bande), en fraction du plus PETIT côté du canvas —
+    /// pour qu'un cercle reste un cercle sur une sortie non carrée. 0..1.
+    #[serde(default)]
+    pub size: f32,
+    /// Largeur de la transition entre la zone nette et la zone assombrie, 0..1.
+    #[serde(default)]
+    pub softness: f32,
+    /// Opacité de l'assombrissement HORS de la forme, 0..1. 0 = rien à dessiner.
+    #[serde(default)]
+    pub dimming: f32,
+}
+
 /// Une zone "Screen Motion" de la timeline : l'écran se déplace, grossit et s'incline vers une
 /// cible pendant cette fenêtre.
 ///
@@ -602,6 +665,10 @@ pub struct SceneScreenMotionRegion {
     /// Un nom inconnu (ou absent) retombe sur `cubic`, le même défaut que `parse.ts` (TS).
     #[serde(default)]
     pub easing: String,
+    /// L'assombrissement de la zone nette, ou `None` quand l'auteur n'en a pas mis. L'absence
+    /// se lit « rien à dessiner » : pas de forme, donc aucun coût.
+    #[serde(default)]
+    pub focus_effect: Option<SceneFocusEffect>,
 }
 
 /// Le défaut est l'IDENTITÉ : la carte là où le projet l'a placée, sans rotation. Un payload

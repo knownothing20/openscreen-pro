@@ -2299,6 +2299,34 @@ impl Compositor {
             self.ctx.PSSetShaderResources(5, Some(&[None]));
         }
 
+        // --- Focus Effect (mode 19) : le projecteur, JUSTE APRÈS l'écran et AVANT tout le reste.
+        //
+        // Un quad PLEIN ÉCRAN qui ne pose qu'un voile noir (`float4(0, 0, 0, dim)`, prémultiplié) :
+        // l'alpha-blending déjà en place l'applique, sans état supplémentaire. La place est le
+        // choix, pas un hasard — le projecteur assombrit ce qu'il recouvre, donc tout ce qui est
+        // dessiné AVANT lui est assombri et tout ce qui suit reste net :
+        //   • l'écran (et son cadre, son ombre, son appareil) est dessous → assombri : c'est le
+        //     but, une lumière qui n'éclaire que sa zone n'a de sens que si le reste est plus
+        //     sombre ;
+        //   • le curseur, le webcam et les annotations sont dessus → intacts. Le curseur est le
+        //     geste de l'auteur, il doit rester lisible ; le webcam est un plan séparé, pas le
+        //     contenu qu'on met en avant ; et les annotations (dont les flous de confidentialité,
+        //     qui CACHENT) n'ont pas à s'assombrir — soustraire de l'opacité à un outil de
+        //     dissimulation serait un bug, pas un effet.
+        //   `s_ann`-style : rien ici ne dépend du zoom ni du layout, seulement de `focus`, déjà
+        //   résolu. Pas de `focus` : aucun draw, et la frame est celle d'avant, à l'octet.
+        if let Some(f) = g.focus {
+            let shape = if f.shape == crate::scene::FocusShape::Linear { 1.0 } else { 0.0 };
+            self.draw_solid(&LayerCB {
+                dst: [0.0, 0.0, 1.0, 1.0],
+                quad_px: [self.rw(), self.rh()],
+                mode: crate::frame_geometry::MODE_FOCUS,
+                focus_a: [shape, f.angle_degrees, f.center[0], f.center[1]],
+                focus_b: [f.size, f.softness, f.dimming, 0.0],
+                ..Default::default()
+            });
+        }
+
         // --- flous de confidentialité : sur le métrage, AVANT le curseur. Le curseur reste net
         // par-dessus, et le cristal de Prism Glow, qui réfracte l'image composée, n'y voit que des
         // pixels déjà floutés. Les autres annotations restent le calque le plus haut (plus bas).

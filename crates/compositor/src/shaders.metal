@@ -66,6 +66,13 @@ struct Layer
     float4 trail_a;   // mode 8 : coins TL, TR du plan à la frame précédente (px locaux, comme fx) ; mode 18 incliné : en fractions de sortie
     float4 trail_b;   // mode 8 : coins BR, BL du plan à la frame précédente (comme src_prev) ; mode 18 incliné : en fractions de sortie
     float4 trail_mb;  // mode 8 : x = taps, y = force du flou de mouvement (ceux du mode 0) ; 0 ailleurs
+    // Modes 19 (projecteur) : présents pour que la taille du bloc reste celle de `LayerCB`, copiée
+    // octet par octet (`setFragmentBytes`). Le mode 19 n'est PAS encore dessiné par ce backend —
+    // voir la note « A2-2 » sur `MODE_FOCUS` dans `frame_geometry.rs` — mais un champ absent ici
+    // décalerait tout ce qui suit dès qu'il le sera, et ce décalage serait silencieux (même type
+    // `float4` partout, aucune erreur de compilation).
+    float4 focus_a;   // mode 19 : x = forme (0 radial, 1 linear), y = angle (degrés), zw = centre 0..1 de la sortie
+    float4 focus_b;   // mode 19 : x = taille (fraction du petit côté), y = pénombre 0..1, z = opacité du voile 0..1
 };
 // Mode 15 (curseur modélisé) : le détail des emplacements est dans `frame_geometry.rs`, en tête
 // de la section « Curseur modélisé » (`cursor_model_cb`). Mode 17 (appareil modelé) : en tête de
