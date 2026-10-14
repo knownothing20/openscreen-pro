@@ -29,6 +29,9 @@
 			"target": "Centro",
 			"centerX": "Centro orizzontale",
 			"centerY": "Centro verticale"
+		},
+		"transform": {
+			"title": "Trasformazione"
 		}
 	},
 	"easingNames": {

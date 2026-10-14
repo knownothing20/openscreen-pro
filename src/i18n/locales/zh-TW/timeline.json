@@ -29,6 +29,9 @@
 			"target": "中心",
 			"centerX": "水平中心",
 			"centerY": "垂直中心"
+		},
+		"transform": {
+			"title": "變換"
 		}
 	},
 	"easingNames": {

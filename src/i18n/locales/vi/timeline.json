@@ -29,6 +29,9 @@
 			"target": "Tâm",
 			"centerX": "Tâm ngang",
 			"centerY": "Tâm dọc"
+		},
+		"transform": {
+			"title": "Biến đổi"
 		}
 	},
 	"easingNames": {

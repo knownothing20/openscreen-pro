@@ -29,6 +29,9 @@
 			"target": "中心",
 			"centerX": "水平方向の中心",
 			"centerY": "垂直方向の中心"
+		},
+		"transform": {
+			"title": "変形"
 		}
 	},
 	"easingNames": {

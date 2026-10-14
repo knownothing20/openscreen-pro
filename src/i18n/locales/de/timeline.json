@@ -29,6 +29,9 @@
 			"target": "Mitte",
 			"centerX": "Waagerechte Mitte",
 			"centerY": "Senkrechte Mitte"
+		},
+		"transform": {
+			"title": "Transformation"
 		}
 	},
 	"easingNames": {

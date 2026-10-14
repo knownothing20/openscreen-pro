@@ -29,6 +29,9 @@
 			"target": "중심",
 			"centerX": "가로 중심",
 			"centerY": "세로 중심"
+		},
+		"transform": {
+			"title": "변형"
 		}
 	},
 	"easingNames": {

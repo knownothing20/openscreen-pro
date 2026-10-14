@@ -29,6 +29,7 @@ import {
 import type { ComponentProps } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { TOOLTIP_GAP_PX, Tooltip } from "@/components/ui/tooltip";
 import { parseCustomPlaybackSpeedInput } from "@/components/video-editor/customPlaybackSpeed";
 import {
@@ -1428,7 +1429,6 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 		// writes the effect (`setScreenMotionFocusEffectLive` seeds it), so what is displayed
 		// and what would be stored agree.
 		const focus = region.focusEffect ?? FOCUS_EFFECT_DEFAULT;
-		const rowStyle = { display: "grid", gap: 4, fontSize: 12 } as const;
 		const deleteAndClose = () => {
 			void tl.removeRegion("screenMotion", selection.id);
 			onClose();
@@ -1444,6 +1444,32 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 			<div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
 				{paneHeader(<Move size={16} />, tt("screenMotion.title"), onClose, tc("actions.close"))}
 				<div style={bodyStyle}>
+					{/* Two headings, not one: the pane carried a "focus" heading while the six
+					    transform sliders above it had none, so the list read as one undifferentiated
+					    block. Easing leads its group rather than trailing the sliders — it says HOW
+					    the move travels, the sliders say WHERE it lands, so the whole-group choice
+					    comes first and the per-axis numbers follow. */}
+					<div className={shell.groupLabel}>{tt("screenMotion.transform.title")}</div>
+					{paneStack(
+						tt("screenMotion.easing"),
+						<Select
+							value={region.timing.easing}
+							onValueChange={(easing) =>
+								void tl.setScreenMotionTiming(region.id, {
+									easing: easing as CameraMotionEasing,
+								})
+							}
+						>
+							<SelectTrigger aria-label={tt("screenMotion.easing")} />
+							<SelectContent>
+								{CAMERA_MOTION_EASINGS.map((easing) => (
+									<SelectItem key={easing} value={easing}>
+										{tt(`easingNames.${easing}`)}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>,
+					)}
 					<div style={{ display: "grid" }}>
 						<SliderCell
 							label={tt("screenMotion.positionX")}
@@ -1502,61 +1528,43 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							onCommit={() => void tl.commitMotionTarget()}
 						/>
 					</div>
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.easing")}</span>
-						<select
-							value={region.timing.easing}
-							onChange={(event) =>
-								void tl.setScreenMotionTiming(region.id, {
-									easing: event.target.value as CameraMotionEasing,
-								})
-							}
-						>
-							{CAMERA_MOTION_EASINGS.map((easing) => (
-								<option key={easing} value={easing}>
-									{tt(`easingNames.${easing}`)}
-								</option>
-							))}
-						</select>
-					</label>
 					{/* The spotlight. No on/off switch: the effect IS its dimming, so a user
 					    who wants no spotlight drags Dimming to 0 and the field stops being
 					    projected at all (`focusEffect.ts` returns null, and the scene
 					    description omits the key). A switch would be a second way to say the
 					    same thing, and the two could disagree. */}
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.focus.title")}</span>
-					</label>
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.focus.shape")}</span>
-						<select
+					<div className={shell.groupLabel}>{tt("screenMotion.focus.title")}</div>
+					{/* A two-way choice wears buttons, not a `<select>`: the native popup is drawn by
+					    the OS (no CSS reaches it), and a dropdown that hides two options behind a
+					    click reads worse than the options standing side by side. Same component the
+					    right panes already use for their own two-way rows. */}
+					{paneStack(
+						tt("screenMotion.focus.shape"),
+						<ChoiceRow<FocusEffectShape>
+							label={tt("screenMotion.focus.shape")}
+							options={(["radial", "linear"] as const).map((shape) => ({
+								value: shape,
+								label: tt(`focusShapes.${shape}`),
+							}))}
 							value={focus.shape}
-							onChange={(event) => liveFocus({ shape: event.target.value as FocusEffectShape })}
-						>
-							{(["radial", "linear"] as const).map((shape) => (
-								<option key={shape} value={shape}>
-									{tt(`focusShapes.${shape}`)}
-								</option>
-							))}
-						</select>
-					</label>
+							onChange={(shape) => liveFocus({ shape })}
+						/>,
+					)}
+					{/* Next to the shape, not after the sliders: both rows ask "which one", and
+					    grouping the two choices keeps them from being interleaved with the numbers. */}
+					{paneStack(
+						tt("screenMotion.focus.target"),
+						<ChoiceRow<FocusEffectTarget>
+							label={tt("screenMotion.focus.target")}
+							options={(["animation", "fixed"] as const).map((target) => ({
+								value: target,
+								label: tt(`focusTargets.${target}`),
+							}))}
+							value={focus.target}
+							onChange={(target) => liveFocus({ target })}
+						/>,
+					)}
 					<div style={{ display: "grid" }}>
-						{/* The band's direction means nothing to a round pool, so it is absent
-						    rather than greyed: a disabled control still reads as one the user
-						    is meant to operate. */}
-						{focus.shape === "linear" ? (
-							<SliderCell
-								label={tt("screenMotion.focus.angle")}
-								value={Math.round(focus.angleDegrees)}
-								min={FOCUS_EFFECT_LIMITS.angleMin}
-								max={FOCUS_EFFECT_LIMITS.angleMax}
-								step={1}
-								suffix="°"
-								defaultValue={FOCUS_EFFECT_DEFAULT.angleDegrees}
-								onChange={(next) => liveFocus({ angleDegrees: next })}
-								onCommit={() => void tl.commitMotionTarget()}
-							/>
-						) : null}
 						<SliderCell
 							label={tt("screenMotion.focus.size")}
 							value={Math.round(focus.size * 100)}
@@ -1590,21 +1598,22 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							onChange={(next) => liveFocus({ dimming: next / 100 })}
 							onCommit={() => void tl.commitMotionTarget()}
 						/>
-					</div>
-					<label style={rowStyle}>
-						<span>{tt("screenMotion.focus.target")}</span>
-						<select
-							value={focus.target}
-							onChange={(event) => liveFocus({ target: event.target.value as FocusEffectTarget })}
-						>
-							{(["animation", "fixed"] as const).map((target) => (
-								<option key={target} value={target}>
-									{tt(`focusTargets.${target}`)}
-								</option>
-							))}
-						</select>
-					</label>
-					<div style={{ display: "grid" }}>
+						{/* The two conditional rows sit last, in the same grid: they appear and
+						    disappear with the choices above, so trailing them keeps the numbers the
+						    user is dragging from jumping up and down the pane. */}
+						{focus.shape === "linear" ? (
+							<SliderCell
+								label={tt("screenMotion.focus.angle")}
+								value={Math.round(focus.angleDegrees)}
+								min={FOCUS_EFFECT_LIMITS.angleMin}
+								max={FOCUS_EFFECT_LIMITS.angleMax}
+								step={1}
+								suffix="°"
+								defaultValue={FOCUS_EFFECT_DEFAULT.angleDegrees}
+								onChange={(next) => liveFocus({ angleDegrees: next })}
+								onCommit={() => void tl.commitMotionTarget()}
+							/>
+						) : null}
 						{focus.target === "fixed" ? (
 							<>
 								<SliderCell

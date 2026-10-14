@@ -29,6 +29,9 @@
 			"target": "المركز",
 			"centerX": "المركز الأفقي",
 			"centerY": "المركز الرأسي"
+		},
+		"transform": {
+			"title": "التحويل"
 		}
 	},
 	"easingNames": {
