@@ -12,6 +12,7 @@ export const SHORTCUT_ACTIONS = [
 	"playPause",
 	"copySelected",
 	"paste",
+	"pasteAttributes",
 ] as const;
 
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];
@@ -127,6 +128,9 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	playPause: { key: " " },
 	copySelected: { key: "c", ctrl: true },
 	paste: { key: "v", ctrl: true },
+	// Ctrl+Shift+V. `matchesShortcut` compares `shiftKey` exactly, so this can never be
+	// confused with `paste` above — the two differ in that one flag and nothing else.
+	pasteAttributes: { key: "v", ctrl: true, shift: true },
 };
 
 export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
@@ -143,6 +147,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	playPause: "Play / Pause",
 	copySelected: "Copy Selected",
 	paste: "Paste",
+	pasteAttributes: "Paste Attributes",
 };
 
 export function matchesShortcut(

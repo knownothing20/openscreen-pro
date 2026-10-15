@@ -1023,6 +1023,30 @@ export function NewEditorShell() {
 		[tl],
 	);
 
+	// Ctrl+Shift+V — paste the COPIED move's properties onto the selected move. Distinct
+	// from `pasteRegion` below, which makes a second region at the playhead; this one
+	// rewrites the selected region in place and leaves its span and id alone. The work
+	// itself lives in the timeline store so it is one save (one undo step).
+	const pasteAttributes = useCallback(async () => {
+		const sel = tl.selection;
+		if (!sel) {
+			toast.error(te("regionClipboard.pasteAttributesNoTarget"));
+			return;
+		}
+		const { pasteClipboard } = await import("@/lib/ai-edition/store/regionClipboard");
+		const snapshot = pasteClipboard();
+		if (!snapshot) {
+			toast.error(te("regionClipboard.pasteAttributesEmpty"));
+			return;
+		}
+		// Cross-kind and unsupported kinds land here together: the store refuses both, and
+		// from the user's seat they are the same mistake — the thing on the clipboard is not
+		// the thing under the playhead.
+		const ok = await tl.pasteMotionAttributes(snapshot);
+		if (ok) toast.success(te("regionClipboard.pasteAttributesDone"));
+		else toast.error(te("regionClipboard.pasteAttributesKindMismatch"));
+	}, [tl, te]);
+
 	const pasteRegion = useCallback(async () => {
 		const doc = useProjectStore.getState().document;
 		if (!doc) return;
@@ -1350,6 +1374,15 @@ export function NewEditorShell() {
 					return;
 				}
 			}
+			// Before `paste`, deliberately: both are Ctrl+V, and only `shiftKey` separates
+			// them. `matchesShortcut` compares that flag exactly, so the order is not what
+			// makes this correct — but keeping the narrower binding first is what stops a
+			// future edit to either one from silently swallowing the other.
+			if (matchesShortcut(e, shortcuts.pasteAttributes, isMac)) {
+				e.preventDefault();
+				void pasteAttributes();
+				return;
+			}
 			if (matchesShortcut(e, shortcuts.paste, isMac)) {
 				e.preventDefault();
 				// Paste what was COPIED. It used to fall back to `tl.clipSelection`,
@@ -1461,6 +1494,7 @@ export function NewEditorShell() {
 		handleCopyRegion,
 		handleSave,
 		pasteRegion,
+		pasteAttributes,
 		tl,
 		promptUnsaved,
 		saveDocument,
@@ -1470,6 +1504,10 @@ export function NewEditorShell() {
 		isMac,
 		togglePlay,
 		handleSeek,
+		// Read by the Ctrl+Shift+R branch below. It was missing before this round and only
+		// ever showed up as a warning; adding a second paste binding to this same effect is
+		// what made the checker treat the whole dependency list as load-bearing.
+		openVoiceoverFlow,
 	]);
 
 	const showTimeline = mode !== "rec";

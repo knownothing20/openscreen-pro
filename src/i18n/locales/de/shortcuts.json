@@ -28,7 +28,8 @@
 		"deleteSelected": "Auswahl löschen",
 		"playPause": "Wiedergabe / Pause",
 		"copySelected": "Auswahl kopieren",
-		"paste": "Einfügen"
+		"paste": "Einfügen",
+		"pasteAttributes": "Attribute einfügen"
 	},
 	"fixedActions": {
 		"undo": "Rückgängig",

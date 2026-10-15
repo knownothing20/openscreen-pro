@@ -84,7 +84,11 @@
 			"zoom": "Zoom",
 			"speed": "Tempo",
 			"annotation": "Text"
-		}
+		},
+		"pasteAttributesNoTarget": "Select a move to paste attributes onto",
+		"pasteAttributesEmpty": "Nothing copied to paste attributes from",
+		"pasteAttributesDone": "Move attributes pasted",
+		"pasteAttributesKindMismatch": "The copied item isn't the same kind of move"
 	},
 	"topbar": {
 		"toggleChatPanel": "Chat-Panel",

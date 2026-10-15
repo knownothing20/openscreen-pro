@@ -84,7 +84,11 @@
 			"zoom": "缩放",
 			"speed": "速度",
 			"annotation": "标注"
-		}
+		},
+		"pasteAttributesNoTarget": "请先选中要粘贴属性的运镜",
+		"pasteAttributesEmpty": "剪贴板里没有可粘贴的运镜属性",
+		"pasteAttributesDone": "已粘贴运镜属性",
+		"pasteAttributesKindMismatch": "复制的内容与选中的运镜不是同一种类型"
 	},
 	"topbar": {
 		"toggleChatPanel": "聊天面板",

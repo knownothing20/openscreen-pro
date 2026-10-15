@@ -615,3 +615,304 @@ describe("region clipboard: the two motion kinds stay apart", () => {
 		expect(motionRegions()).toHaveLength(1);
 	});
 });
+
+// Ctrl+Shift+V — paste the COPIED move's PROPERTIES onto the selected move. The ordinary
+// Ctrl+V above makes a second region; this one rewrites the selected one in place. What
+// identifies the target (id, startMs, endMs, the clip anchor behind them) must survive
+// verbatim, and only the authored look must travel — otherwise a "paste" would quietly
+// re-time or re-anchor the user's move, which is the one thing they did not ask for.
+describe("paste attributes: camera motion", () => {
+	/** The target: a different look and a different span, on purpose. */
+	const CAMERA_MOTION_DST: CameraMotionRegion = {
+		id: "cammotion_dst",
+		startMs: 12000,
+		endMs: 18000,
+		timing: { leadInSec: 0.2, returnSec: 0.3, easing: "linear" },
+		target: {
+			layout: "shape",
+			shape: "circle",
+			position: { x: 0.8, y: 0.5 },
+			size: 0.3,
+			roundness: 1,
+			opacity: 0.5,
+		},
+	};
+
+	const pasteAttributes = () => press({ key: "v", ctrlKey: true, shiftKey: true });
+
+	it("takes the copied look and timing, keeping the target's id and span", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_SRC, CAMERA_MOTION_DST] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown((await screen.findAllByText("Camera Motion"))[1]);
+		await pasteAttributes();
+
+		expect(motionRegions()).toHaveLength(2);
+		const dst = motionRegions().find(
+			(r) => r.id === "cammotion_dst",
+		) as unknown as typeof CAMERA_MOTION_DST;
+
+		// The authored look and envelope came across...
+		expect(dst.target).toEqual(CAMERA_MOTION_SRC.target);
+		expect(dst.timing).toEqual(CAMERA_MOTION_SRC.timing);
+		// ...and nothing that identifies the target moved.
+		expect(dst.id).toBe("cammotion_dst");
+		expect(dst.startMs).toBe(12000);
+		expect(dst.endMs).toBe(18000);
+		// The source is untouched — a properties paste writes one region, not two.
+		const src = motionRegions().find(
+			(r) => r.id === "cammotion_src",
+		) as unknown as typeof CAMERA_MOTION_SRC;
+		expect(src.target).toEqual(CAMERA_MOTION_SRC.target);
+		expect(src.startMs).toBe(1000);
+	});
+
+	it("records exactly one undo step, and redo brings the pasted look back", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_SRC, CAMERA_MOTION_DST] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown((await screen.findAllByText("Camera Motion"))[1]);
+		await pasteAttributes();
+
+		const after = motionRegions().find(
+			(r) => r.id === "cammotion_dst",
+		) as unknown as typeof CAMERA_MOTION_DST;
+		expect(after.target).toEqual(CAMERA_MOTION_SRC.target);
+
+		// ONE undo must be enough — the store writes target and timing in a single save.
+		await act(async () => {
+			await undo();
+		});
+		const undone = motionRegions().find(
+			(r) => r.id === "cammotion_dst",
+		) as unknown as typeof CAMERA_MOTION_DST;
+		expect(undone.target).toEqual(CAMERA_MOTION_DST.target);
+		expect(undone.timing).toEqual(CAMERA_MOTION_DST.timing);
+
+		await act(async () => {
+			await redo();
+		});
+		const redone = motionRegions().find(
+			(r) => r.id === "cammotion_dst",
+		) as unknown as typeof CAMERA_MOTION_DST;
+		expect(redone.target).toEqual(CAMERA_MOTION_SRC.target);
+	});
+
+	it("refuses a cross-kind paste and leaves the document alone", async () => {
+		loadDoc(makeDoc({ screenMotionRegions: [SCREEN_MOTION_SRC] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown(await screen.findByText("Screen Motion"));
+		await pasteAttributes();
+
+		expect(screenRegions()).toHaveLength(1);
+		const only = screenRegions()[0] as unknown as typeof SCREEN_MOTION_SRC;
+		expect(only.target).toEqual(SCREEN_MOTION_SRC.target);
+		expect(toastError).toHaveBeenCalled();
+	});
+
+	it("does nothing with an empty clipboard", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_DST] }), 5);
+		renderShell();
+
+		fireEvent.pointerDown(await screen.findByText("Camera Motion"));
+		await pasteAttributes();
+
+		const only = motionRegions()[0] as unknown as typeof CAMERA_MOTION_DST;
+		expect(only.target).toEqual(CAMERA_MOTION_DST.target);
+		expect(toastError).toHaveBeenCalled();
+	});
+
+	it("does nothing when no move is selected", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_DST] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		await pasteAttributes();
+
+		const only = motionRegions()[0] as unknown as typeof CAMERA_MOTION_DST;
+		expect(only.target).toEqual(CAMERA_MOTION_DST.target);
+	});
+
+	it("leaves the plain Ctrl+V behaviour alone", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_DST] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown(await screen.findByText("Camera Motion"));
+		await paste();
+
+		// A SECOND region, and the selected one still carries its own look.
+		expect(motionRegions()).toHaveLength(2);
+		const dst = motionRegions().find(
+			(r) => r.id === "cammotion_dst",
+		) as unknown as typeof CAMERA_MOTION_DST;
+		expect(dst.target).toEqual(CAMERA_MOTION_DST.target);
+	});
+});
+
+describe("paste attributes: screen motion and focus effect", () => {
+	const SCREEN_MOTION_DST: ScreenMotionRegion = {
+		id: "screenmotion_dst",
+		startMs: 12000,
+		endMs: 18000,
+		timing: { leadInSec: 0.2, returnSec: 0.3, easing: "linear" },
+		target: {
+			position: { x: 0.2, y: 0.8 },
+			scale: 1,
+			rotationX: 0,
+			rotationY: 0,
+			rotationZ: 0,
+			perspective: 0.2,
+		},
+	};
+
+	/** A source that carries a spotlight — the effect must travel with the target. */
+	const SCREEN_MOTION_WITH_FOCUS: ScreenMotionRegion = {
+		...SCREEN_MOTION_SRC,
+		id: "screenmotion_focus_src",
+		focusEffect: {
+			shape: "radial",
+			angleDegrees: 0,
+			target: "fixed",
+			center: { x: 0.3, y: 0.7 },
+			size: 0.2,
+			softness: 0.4,
+			dimming: 0.7,
+		},
+	};
+
+	const pasteAttributes = () => press({ key: "v", ctrlKey: true, shiftKey: true });
+
+	it("takes the copied target and timing, keeping the target's id and span", async () => {
+		loadDoc(makeDoc({ screenMotionRegions: [SCREEN_MOTION_SRC, SCREEN_MOTION_DST] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "screenMotion", region: JSON.parse(JSON.stringify(SCREEN_MOTION_SRC)) });
+		fireEvent.pointerDown((await screen.findAllByText("Screen Motion"))[1]);
+		await pasteAttributes();
+
+		const dst = screenRegions().find(
+			(r) => r.id === "screenmotion_dst",
+		) as unknown as typeof SCREEN_MOTION_DST;
+		expect(dst.target).toEqual(SCREEN_MOTION_SRC.target);
+		expect(dst.timing).toEqual(SCREEN_MOTION_SRC.timing);
+		expect(dst.id).toBe("screenmotion_dst");
+		expect(dst.startMs).toBe(12000);
+		expect(dst.endMs).toBe(18000);
+	});
+
+	it("carries a focus effect across, and clears one the source does not have", async () => {
+		loadDoc(makeDoc({ screenMotionRegions: [SCREEN_MOTION_WITH_FOCUS, SCREEN_MOTION_DST] }), 5);
+		renderShell();
+
+		// Source HAS a spotlight -> the target gets it.
+		copyRegion({
+			kind: "screenMotion",
+			region: JSON.parse(JSON.stringify(SCREEN_MOTION_WITH_FOCUS)),
+		});
+		fireEvent.pointerDown((await screen.findAllByText("Screen Motion"))[1]);
+		await pasteAttributes();
+
+		const withFocus = screenRegions().find(
+			(r) => r.id === "screenmotion_dst",
+		) as unknown as typeof SCREEN_MOTION_WITH_FOCUS;
+		expect(withFocus.focusEffect).toEqual(SCREEN_MOTION_WITH_FOCUS.focusEffect);
+
+		// Source has NO spotlight -> the target's is cleared, not silently kept.
+		copyRegion({ kind: "screenMotion", region: JSON.parse(JSON.stringify(SCREEN_MOTION_SRC)) });
+		await pasteAttributes();
+
+		const cleared = screenRegions().find(
+			(r) => r.id === "screenmotion_dst",
+		) as unknown as typeof SCREEN_MOTION_DST;
+		expect(cleared.focusEffect).toBeUndefined();
+		expect(cleared.target).toEqual(SCREEN_MOTION_SRC.target);
+	});
+
+	it("survives save and reopen", async () => {
+		loadDoc(makeDoc({ screenMotionRegions: [SCREEN_MOTION_SRC, SCREEN_MOTION_DST] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "screenMotion", region: JSON.parse(JSON.stringify(SCREEN_MOTION_SRC)) });
+		fireEvent.pointerDown((await screen.findAllByText("Screen Motion"))[1]);
+		await pasteAttributes();
+
+		// Whatever was handed to the bridge is what a reopen would read back.
+		const saved = bridgeMocks.save.mock.calls.at(-1)?.[0] as AxcutDocument | undefined;
+		expect(saved).toBeTruthy();
+		const reloaded = saved?.screenMotionRegions.find(
+			(r) => r.id === "screenmotion_dst",
+		) as unknown as typeof SCREEN_MOTION_DST;
+		expect(reloaded.target).toEqual(SCREEN_MOTION_SRC.target);
+		expect(reloaded.startMs).toBe(12000);
+	});
+});
+
+// The store's `saveDocument` resolves `false` on a handled failure (a read-only project, a
+// disk error) and the caller reads that as "the edit did not happen". A properties paste is
+// no exception: announcing success over a write that landed nothing is worse here than
+// elsewhere, because the user's only evidence would be the toast — the region on screen
+// still shows its old look, and they would read that as the paste being broken.
+describe("paste attributes: a failed save", () => {
+	const CAMERA_MOTION_DST: CameraMotionRegion = {
+		id: "cammotion_dst",
+		startMs: 12000,
+		endMs: 18000,
+		timing: { leadInSec: 0.2, returnSec: 0.3, easing: "linear" },
+		target: {
+			layout: "shape",
+			shape: "circle",
+			position: { x: 0.8, y: 0.5 },
+			size: 0.3,
+			roundness: 1,
+			opacity: 0.5,
+		},
+	};
+
+	const pasteAttributes = () => press({ key: "v", ctrlKey: true, shiftKey: true });
+
+	it("never announces success when the write failed", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_SRC, CAMERA_MOTION_DST] }), 5);
+		renderShell();
+
+		bridgeMocks.save.mockResolvedValueOnce({ success: false, error: "disk full" });
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown((await screen.findAllByText("Camera Motion"))[1]);
+		await pasteAttributes();
+
+		// The one assertion that matters: no success toast over a write that did not land.
+		expect(toastSuccess).not.toHaveBeenCalled();
+		expect(toastError).toHaveBeenCalled();
+		// The document is left as it was — a failed write installs nothing.
+		const dst = motionRegions().find(
+			(r) => r.id === "cammotion_dst",
+		) as unknown as typeof CAMERA_MOTION_DST;
+		expect(dst.target).toEqual(CAMERA_MOTION_DST.target);
+	});
+
+	it("does not leave a half-applied undo step behind", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_SRC, CAMERA_MOTION_DST] }), 5);
+		renderShell();
+
+		bridgeMocks.save.mockResolvedValueOnce({ success: false, error: "disk full" });
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown((await screen.findAllByText("Camera Motion"))[1]);
+		await pasteAttributes();
+
+		// `saveDocument` records history only BELOW the write, so a failed save pushes nothing.
+		// An undo after it must therefore be a no-op, not a jump to some half-pasted state.
+		await act(async () => {
+			await undo();
+		});
+		const dst = motionRegions().find(
+			(r) => r.id === "cammotion_dst",
+		) as unknown as typeof CAMERA_MOTION_DST;
+		expect(dst.target).toEqual(CAMERA_MOTION_DST.target);
+	});
+});

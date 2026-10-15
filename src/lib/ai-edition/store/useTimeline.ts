@@ -14,6 +14,7 @@ import type {
 import { useScopedT } from "@/contexts/I18nContext";
 import { DEFAULT_TEXT_PLATE } from "../annotations/background";
 import { fitTextBox } from "../annotations/placement";
+import { parseCameraMotionRegion } from "../cameraMotion/parse";
 import {
 	CAMERA_MOTION_FULLSCREEN_TARGET,
 	DEFAULT_CAMERA_MOTION_TIMING,
@@ -47,6 +48,7 @@ import {
 	withClipsChanged,
 } from "../document/timeline";
 import type { AxcutAudioTrack, AxcutClipCropRegion, AxcutDocument } from "../schema";
+import { parseScreenMotionRegion } from "../screenMotion/parse";
 import {
 	DEFAULT_SCREEN_MOTION_TIMING,
 	FOCUS_EFFECT_DEFAULT,
@@ -874,6 +876,109 @@ export function useTimeline() {
 		motionTargetRollbackRef.current = null;
 		await saveDocument(doc, { history: true, historyBase });
 	}, [saveDocument]);
+
+	/**
+	 * Paste a copied move's PROPERTIES onto the move that is selected right now.
+	 *
+	 * The ordinary `paste` (Ctrl+V) makes a SECOND region at the playhead. This one
+	 * does the opposite thing on purpose: it makes the selected region LOOK like the
+	 * copied one. So everything that identifies the target — its `id`, its
+	 * `startMs`/`endMs`, and the clip anchor those two derive from — is kept verbatim,
+	 * and only what the user actually authored travels: the target (position, size,
+	 * shape, roundness, opacity for the camera; position, scale, rotations for the
+	 * screen) plus the timing envelope (`leadInSec` / `returnSec` / `easing`) and, on
+	 * a screen move, its focus effect.
+	 *
+	 * ONE save, one undo step. Writing the target and the timing through
+	 * `setCameraMotionTarget` + `setCameraMotionTiming` would record two, and Ctrl+Z
+	 * would then have to be pressed twice to undo one gesture.
+	 *
+	 * Cross-kind pastes are REFUSED rather than coerced. The two kinds share no target
+	 * field (`size`/`roundness`/`opacity` against `scale`/`rotations`), so a "paste"
+	 * between them would either invent values or leave half the target at the old one
+	 * — a shape nobody authored and nothing can undo cleanly. The caller turns the
+	 * `false` into a message.
+	 *
+	 * Both sides are run through the same `parse*Region` repair the document loader
+	 * uses, so a snapshot that was hand-edited (or written by an older build) lands in
+	 * range instead of putting an out-of-range value straight into the document. That
+	 * is also what clamps the copied envelope to a target shorter than the source: the
+	 * values are repaired, never re-derived, and the evaluator's own window clamping
+	 * still decides how much of the envelope fits.
+	 *
+	 * Returns whether a save happened, so the caller only announces a paste that
+	 * landed.
+	 */
+	const pasteMotionAttributes = useCallback(
+		async (snapshot: { kind: string; region: Record<string, unknown> }): Promise<boolean> => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return false;
+			const sel = selection;
+			if (!sel) return false;
+
+			// Only a move onto a move, and only of the same kind. `cameraMotion` and
+			// `screenMotion` are the whole of this round's scope; a zoom or a trim has no
+			// authored target to carry, so they fall out here rather than in a branch that
+			// would have to invent one.
+			if (snapshot.kind !== sel.kind) return false;
+			if (sel.kind !== "cameraMotion" && sel.kind !== "screenMotion") return false;
+
+			const raw = snapshot.region;
+			// The span is the target's, never the source's: `probe` is only here because the
+			// parser needs a well-formed span to hand back a region at all.
+			const probe = { id: "probe", startMs: 0, endMs: 1, ...raw };
+
+			if (sel.kind === "cameraMotion") {
+				const regions = doc.cameraMotionRegions ?? [];
+				if (!regions.some((r) => r.id === sel.id)) return false;
+				const copied = parseCameraMotionRegion(probe);
+				if (!copied) return false;
+
+				const next: AxcutDocument = {
+					...doc,
+					cameraMotionRegions: regions.map((region) =>
+						region.id === sel.id
+							? { ...region, target: copied.target, timing: copied.timing }
+							: region,
+					),
+				};
+				// An identical paste hands back nothing new to save; recording it would push an
+				// undo step for an edit that did not happen (same rule as `setMarkerLabel`).
+				if (JSON.stringify(next) === JSON.stringify(doc)) return false;
+				return await saveDocument(next, { history: true });
+			}
+
+			const regions = doc.screenMotionRegions ?? [];
+			if (!regions.some((r) => r.id === sel.id)) return false;
+			const copied = parseScreenMotionRegion(probe);
+			if (!copied) return false;
+			// `in`, not a truthiness test and not `Object.hasOwn` (the test tsconfig's lib
+			// predates it): a source that carries NO focus effect must CLEAR the target's,
+			// while one that carries a switched-off effect (dimming 0) must still install it.
+			// `parseScreenMotionRegion` folds those two into `undefined` and an object, so the
+			// distinction has to be read off the raw snapshot.
+			const sourceHasFocus = "focusEffect" in raw;
+
+			const next: AxcutDocument = {
+				...doc,
+				screenMotionRegions: regions.map((region) => {
+					if (region.id !== sel.id) return region;
+					const merged = { ...region, target: copied.target, timing: copied.timing };
+					if (sourceHasFocus && copied.focusEffect) {
+						return { ...merged, focusEffect: copied.focusEffect };
+					}
+					// No spotlight on the source → none on the target. Keeping the old one
+					// would make the paste a no-op on the very field the user watched, which
+					// is the one outcome a properties-paste must never produce.
+					const { focusEffect: _cleared, ...withoutFocus } = merged;
+					return withoutFocus;
+				}),
+			};
+			if (JSON.stringify(next) === JSON.stringify(doc)) return false;
+			return await saveDocument(next, { history: true });
+		},
+		[selection, saveDocument],
+	);
 
 	const addCameraFullscreen = useCallback(
 		async (durationSec = DEFAULT_NEW_REGION_SEC) => {
@@ -2037,6 +2142,7 @@ export function useTimeline() {
 		setScreenMotionTargetLive,
 		setScreenMotionFocusEffectLive,
 		commitMotionTarget,
+		pasteMotionAttributes,
 		addCameraFullscreen,
 		removeRegion,
 		removeMarker,

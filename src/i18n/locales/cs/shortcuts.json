@@ -28,7 +28,8 @@
 		"deleteSelected": "Smazat vybrané",
 		"playPause": "Přehrát / Pozastavit",
 		"copySelected": "Kopírovat vybrané",
-		"paste": "Vložit"
+		"paste": "Vložit",
+		"pasteAttributes": "Vložit atributy"
 	},
 	"fixedActions": {
 		"undo": "Zpět",

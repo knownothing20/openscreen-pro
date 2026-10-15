@@ -28,7 +28,8 @@
 		"deleteSelected": "Supprimer la sélection",
 		"playPause": "Lecture / Pause",
 		"copySelected": "Copier la sélection",
-		"paste": "Coller"
+		"paste": "Coller",
+		"pasteAttributes": "Coller les attributs"
 	},
 	"fixedActions": {
 		"undo": "Annuler",

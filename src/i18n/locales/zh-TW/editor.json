@@ -84,7 +84,11 @@
 			"zoom": "縮放",
 			"speed": "速度",
 			"annotation": "文字"
-		}
+		},
+		"pasteAttributesNoTarget": "請先選取要貼上屬性的運鏡",
+		"pasteAttributesEmpty": "剪貼簿裡沒有可貼上的運鏡屬性",
+		"pasteAttributesDone": "已貼上運鏡屬性",
+		"pasteAttributesKindMismatch": "複製的內容與選取的運鏡不是同一種類型"
 	},
 	"topbar": {
 		"toggleChatPanel": "聊天面板",

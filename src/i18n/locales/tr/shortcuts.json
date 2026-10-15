@@ -28,7 +28,8 @@
 		"deleteSelected": "Seçileni Sil",
 		"playPause": "Oynat / Duraklat",
 		"copySelected": "Seçileni Kopyala",
-		"paste": "Yapıştır"
+		"paste": "Yapıştır",
+		"pasteAttributes": "Öznitelikleri yapıştır"
 	},
 	"fixedActions": {
 		"undo": "Geri Al",
