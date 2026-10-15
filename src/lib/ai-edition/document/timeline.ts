@@ -411,6 +411,28 @@ function mapAllRegionCollections(
 				() => createId("audio"),
 			),
 		),
+		// Camera and screen moves are clip-anchored on the SAME v5 contract as zoom and
+		// annotation — `{clipId, sourceStartSec, sourceEndSec}` with `startMs`/`endMs` as a
+		// derived cache — so they take the same walk. Leaving them out meant every structural
+		// edit refreshed the cache of every other collection and left these two behind: the
+		// pill stayed on the ruler where the move USED to be while its footage moved out from
+		// under it, and deleting the clip left an orphan anchor pointing at nothing.
+		//
+		// An un-anchored move is returned untouched by the walk below (`hasCompleteClipAnchor`
+		// says no), which is what keeps the pre-anchor RAW semantics intact: with no anchor
+		// there is no claim about which clip it belongs to, so nothing re-homes it.
+		// `?? []` on these two, unlike the zoom/annotation walks above: the schema defaults them,
+		// but this function is also reachable with a document that never went through it — the
+		// insert path hands it a hand-built one — and a missing collection is "no moves", not a
+		// crash on the first structural edit.
+		cameraMotionRegions: fn(
+			(document.cameraMotionRegions ?? []) as unknown as StoredRegion[],
+			"cammotion",
+		) as unknown as AxcutDocument["cameraMotionRegions"],
+		screenMotionRegions: fn(
+			(document.screenMotionRegions ?? []) as unknown as StoredRegion[],
+			"screenmotion",
+		) as unknown as AxcutDocument["screenMotionRegions"],
 		legacyEditor:
 			legacy && (speedRegions || cameraFullscreenRegions)
 				? {
@@ -1284,8 +1306,8 @@ function joinable(left: AxcutClip, right: AxcutClip): boolean {
 }
 
 /** Move every row anchored to an absorbed clip onto the one that swallowed it. A trim, a
- *  zoom, an annotation and an audio take all name a clip the same way, and an id that no
- *  longer exists has to stop being named. */
+ *  zoom, an annotation, an audio take and a camera or screen move all name a clip the same
+ *  way, and an id that no longer exists has to stop being named. */
 function reanchorRows(document: AxcutDocument, absorbed: Map<string, string>): AxcutDocument {
 	const moved = mapAllRegionCollections(document, (regions) =>
 		regions.map((region) =>

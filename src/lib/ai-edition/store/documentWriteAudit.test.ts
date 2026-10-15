@@ -331,6 +331,12 @@ const DECLARED: WritePath[] = [
 		"automatic",
 	),
 	w("src/lib/ai-edition/store/useTimeline.ts", "commitMotionTarget", "save", "gesture"),
+	// Pasting a move's properties onto the selected pill. Listed twice because the camera
+	// branch and the screen branch each own a `saveDocument` call. A gesture, not an
+	// automatic write: the user pressed Ctrl+Shift+V, and one Ctrl+Z has to take the whole
+	// pill back — which is why the paste writes once per kind rather than once per region.
+	w("src/lib/ai-edition/store/useTimeline.ts", "pasteMotionAttributes", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "pasteMotionAttributes", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "saveZoomPatch", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setTrimEntries", "save", "gesture"),
 	// The live halves of the two drags.
