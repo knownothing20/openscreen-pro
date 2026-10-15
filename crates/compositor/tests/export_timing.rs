@@ -20,6 +20,9 @@
 //!   ffmpeg -f concat -safe 0 -i concat.txt -c copy screen_colors.mp4
 //!   ffmpeg -f lavfi -i "color=c=gray:size=320x240:duration=4:rate=60" \
 //!     -c:v libopenh264 -g 60 -pix_fmt yuv420p webcam_gray.mp4
+//!   # plus the short webcams the annex-track tests below need:
+//!   ffmpeg -f lavfi -i "color=c=gray:size=320x240:duration=2:rate=60" \
+//!     -c:v libopenh264 -g 60 -pix_fmt yuv420p webcam_gray_2s.mp4
 
 // Pas sur Linux : `pipeline::probe_frame_count` n'existe que dans
 // `pipeline_windows` et `pipeline_macos`. Les fichiers de `tests/` sont compiles
@@ -216,5 +219,209 @@ fn gif_export_spans_the_whole_timeline() {
         last < first - 40.0,
         "last frame still looks like the first — the export never advanced past \
          the opening red second (first {first:.1}, last {last:.1})"
+    );
+}
+
+// ---------------------------------------------------------------------------------
+// Annex-track contract: the screen is the MAIN track, the webcam a satellite.
+//
+// A webcam shorter than the screen used to clamp the clip — `source_end_sec` was
+// min'd against the webcam's available duration, so a 4 s screen behind a 2 s
+// webcam exported only 2 s, and a clip starting past the webcam's end was dropped
+// entirely (the walk `continue`d, producing a 262-byte MP4). These lock in the
+// fixed contract: only the screen's own availability bounds the clip, and a short
+// webcam holds its last frame instead of shortening anything.
+// ---------------------------------------------------------------------------------
+
+fn webcam_path(dir: &PathBuf, name: &str) -> String {
+    dir.join(name).to_string_lossy().into_owned()
+}
+
+fn clip_with(dir: &PathBuf, webcam: String, start: f64, end: f64, offset: f64) -> ClipSource {
+    ClipSource {
+        screen: webcam_path(dir, "screen_colors.mp4"),
+        webcam,
+        source_start_sec: start,
+        source_end_sec: end,
+        webcam_offset_sec: offset,
+        has_audio: false,
+    }
+}
+
+fn export_frames(clips: &[ClipSource], dir: &PathBuf, out_name: &str, fps: u32) -> u64 {
+    let gpu = Gpu::create(false).expect("gpu");
+    let params = ExportParams {
+        width: 640,
+        height: 360,
+        fps: Some(fps),
+        codec: ExportCodec::H264,
+        bit_rate: None,
+    };
+    let comp = Compositor::new_sized(&gpu, params.width, params.height).expect("compositor");
+    let out = dir.join(out_name);
+    let stats = pipeline::run_composited_multi(
+        clips,
+        &out.to_string_lossy(),
+        &gpu,
+        &comp,
+        &Cfg::c8(),
+        &params,
+        &mut |_| {},
+    )
+    .expect("mp4 export");
+    stats.frames
+}
+
+/// A — screen 4 s, webcam 2 s. The export must cover the WHOLE screen timeline.
+///
+/// Before the fix this was 120 frames (2 s): the webcam's `available_duration_sec`
+/// clamped `source_end_sec`, silently truncating the recording.
+#[test]
+fn screen_duration_survives_a_shorter_webcam() {
+    let Some(dir) = media_dir() else {
+        eprintln!("skipped: set OPENSCREEN_TEST_MEDIA");
+        return;
+    };
+    let frames = export_frames(
+        &[clip_with(
+            &dir,
+            webcam_path(&dir, "webcam_gray_2s.mp4"),
+            0.0,
+            SOURCE_SEC,
+            0.0,
+        )],
+        &dir,
+        "out_short_webcam.mp4",
+        60,
+    );
+    assert_eq!(
+        frames, 240,
+        "a 4 s screen behind a 2 s webcam must still export 4 s (240 frames at 60 fps); \
+         got {frames} — the webcam is clamping the main track again"
+    );
+}
+
+/// B — the clip starts AFTER the webcam has ended. It must not be dropped.
+///
+/// `Decoder::seek_to` returns null past the end of a stream, and the walk used to
+/// `continue` on that, emitting a 262-byte MP4 for a 3–4 s clip behind a 2 s webcam.
+#[test]
+fn clip_starting_past_webcam_end_is_not_dropped() {
+    let Some(dir) = media_dir() else {
+        eprintln!("skipped: set OPENSCREEN_TEST_MEDIA");
+        return;
+    };
+    let frames = export_frames(
+        &[clip_with(
+            &dir,
+            webcam_path(&dir, "webcam_gray_2s.mp4"),
+            3.0,
+            SOURCE_SEC,
+            0.0,
+        )],
+        &dir,
+        "out_past_webcam_end.mp4",
+        60,
+    );
+    assert!(
+        frames > 0,
+        "the clip was dropped entirely — this is the empty-export regression"
+    );
+    assert_eq!(frames, 60, "a 3–4 s clip is 1 s at 60 fps; got {frames}");
+}
+
+/// C — no webcam at all: the pre-existing behaviour must be untouched.
+#[test]
+fn no_webcam_still_exports_the_whole_screen() {
+    let Some(dir) = media_dir() else {
+        eprintln!("skipped: set OPENSCREEN_TEST_MEDIA");
+        return;
+    };
+    let frames = export_frames(
+        &[clip_with(&dir, String::new(), 0.0, SOURCE_SEC, 0.0)],
+        &dir,
+        "out_no_webcam.mp4",
+        60,
+    );
+    assert_eq!(frames, 240, "no webcam must not change the screen timeline");
+}
+
+/// D — webcam and screen the same length: the ordinary case must not regress.
+#[test]
+fn equal_length_webcam_exports_the_whole_timeline() {
+    let Some(dir) = media_dir() else {
+        eprintln!("skipped: set OPENSCREEN_TEST_MEDIA");
+        return;
+    };
+    let frames = export_frames(
+        &[clip_with(
+            &dir,
+            webcam_path(&dir, "webcam_gray.mp4"),
+            0.0,
+            SOURCE_SEC,
+            0.0,
+        )],
+        &dir,
+        "out_equal_webcam.mp4",
+        60,
+    );
+    assert_eq!(frames, 240, "equal-length webcam must export the whole 4 s");
+}
+
+/// E — a webcam time offset shifts the webcam's own clock; it must not shorten the
+/// screen. The webcam ends at `offset + 2 s` on the screen clock, which is still
+/// inside the 4 s clip.
+#[test]
+fn webcam_offset_does_not_shorten_the_screen() {
+    let Some(dir) = media_dir() else {
+        eprintln!("skipped: set OPENSCREEN_TEST_MEDIA");
+        return;
+    };
+    let frames = export_frames(
+        &[clip_with(
+            &dir,
+            webcam_path(&dir, "webcam_gray_2s.mp4"),
+            0.0,
+            SOURCE_SEC,
+            1.0,
+        )],
+        &dir,
+        "out_webcam_offset.mp4",
+        60,
+    );
+    assert_eq!(
+        frames, 240,
+        "an offset webcam must not bound the screen timeline; got {frames}"
+    );
+}
+
+/// F — two clips sharing one screen source. Clip #1 has a short webcam, clip #2 a
+/// full-length one; neither may shorten the other, and the total must be the sum
+/// of the two screen windows.
+#[test]
+fn multiclip_webcam_lengths_do_not_leak_between_clips() {
+    let Some(dir) = media_dir() else {
+        eprintln!("skipped: set OPENSCREEN_TEST_MEDIA");
+        return;
+    };
+    let frames = export_frames(
+        &[
+            clip_with(&dir, webcam_path(&dir, "webcam_gray_2s.mp4"), 0.0, 2.0, 0.0),
+            clip_with(
+                &dir,
+                webcam_path(&dir, "webcam_gray.mp4"),
+                2.0,
+                SOURCE_SEC,
+                0.0,
+            ),
+        ],
+        &dir,
+        "out_multiclip_webcam.mp4",
+        60,
+    );
+    assert_eq!(
+        frames, 240,
+        "2 s + 2 s of screen at 60 fps is 240 frames; got {frames} — a webcam's \
+         length leaked across a clip boundary"
     );
 }

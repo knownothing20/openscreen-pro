@@ -234,12 +234,32 @@ pub(crate) unsafe fn walk_composited_timeline(
         // par le même offset que le seek (`webcam_time = screen_time - offset`).
         let webcam_available_screen_end =
             webcam_available_duration.map(|duration| duration + clip.webcam_offset_sec);
+        // L'ÉCRAN EST LA PISTE PRINCIPALE, LA WEBCAM UNE PISTE ANNEXE : seule la durée
+        // réellement disponible de l'écran borne la fin du clip. Une webcam plus courte ne
+        // raccourcit RIEN — elle tient sa dernière frame sur la fin du clip (voir la boucle
+        // de frames plus bas, où `NextFrameTime::Eof` rend `FrameStep::Hold`).
+        //
+        // Elle bornait `source_end_sec` jusqu'ici, et ce n'était pas anodin : un enregistrement
+        // dont la webcam décroche à 20 s (fichier tronqué, caméra débranchée, périphérique plus
+        // lent que l'écran) exportait 20 s au lieu des 42 s de l'écran, sans autre trace qu'un
+        // `[pipeline] warning: clip #N raccourci`. Un clip commençant APRÈS la fin de la webcam
+        // était même entièrement jeté, produisant un MP4 vide.
         let mut source_end_sec = clip.source_end_sec;
         if let Some(duration) = screen_available_duration {
             source_end_sec = source_end_sec.min(duration);
         }
-        if let Some(duration) = webcam_available_screen_end {
-            source_end_sec = source_end_sec.min(duration);
+        // Diagnostiqué, pas appliqué : la webcam plus courte que l'écran est normale et se
+        // rattrape par la dernière frame. Le dire une fois rend la situation lisible, là où
+        // l'ancien message la présentait comme un clip tronqué.
+        if let (Some(screen_end), Some(webcam_end)) =
+            (screen_available_duration, webcam_available_screen_end)
+        {
+            if webcam_end + 1e-6 < screen_end {
+                eprintln!(
+                    "[pipeline] webcam shorter than screen; holding last webcam frame (webcam ends {:.3}s, screen ends {:.3}s, clip #{}; screen=\"{}\", webcam=\"{}\")",
+                    webcam_end, screen_end, clip_index, clip.screen, clip.webcam,
+                );
+            }
         }
         if source_end_sec + 1e-6 < clip.source_end_sec {
             eprintln!(
@@ -277,10 +297,15 @@ pub(crate) unsafe fn walk_composited_timeline(
         if sdec.seek_to(clip.source_start_sec)?.is_null() {
             continue; // clip vide / au-delà de la source
         }
-        if wdec
-            .seek_to((clip.source_start_sec - clip.webcam_offset_sec).max(0.0))?
-            .is_null()
-        {
+        // La webcam se rattrape au lieu de jeter le clip : `seek_to` rend null dès qu'on
+        // demande un temps au-delà de sa fin, et le `continue` qui suivait vidait purement et
+        // simplement un clip 30–40 s placé derrière une webcam de 20 s — l'export sortait un
+        // MP4 de 262 octets. `seek_to_or_last` retombe sur la dernière frame décodable, qui est
+        // exactement ce que la piste annexe doit montrer à partir de là.
+        let webcam_start_sec = (clip.source_start_sec - clip.webcam_offset_sec).max(0.0);
+        if wdec.seek_to_or_last(webcam_start_sec)?.is_null() {
+            // Aucune frame décodable du tout (fichier illisible) : ce n'est pas un EOF, et
+            // sans frame il n'y a rien à composer pour la PiP.
             continue;
         }
 
