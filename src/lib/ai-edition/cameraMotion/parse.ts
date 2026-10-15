@@ -56,6 +56,36 @@ export function parseCameraMotionTarget(value: unknown): CameraMotionTarget {
  * The span is repaired rather than rejected: `endMs <= startMs` becomes a one-millisecond
  * region, which is invisible but harmless, instead of taking the project down with it.
  */
+/**
+ * The v5 clip anchor, or nothing.
+ *
+ * Read straight off the stored region and handed back only when it is USABLE: a `clipId`
+ * that is a non-empty string, and source bounds that are finite and non-negative. Anything
+ * else is dropped rather than repaired — a half-anchor (a `clipId` with no bounds, a bound
+ * that is a string) describes a position nothing can resolve, and inventing the missing
+ * half would silently re-home the move onto whatever clip the numbers happened to land on.
+ *
+ * `undefined` is the answer for "the author did not give us one", which is exactly what a
+ * document written before the anchor existed carries. The schema leaves all three optional
+ * for that reason, so a region without them stays valid on `startMs`/`endMs` alone.
+ */
+export function readClipAnchor(raw: Record<string, unknown>): {
+	clipId?: string;
+	sourceStartSec?: number;
+	sourceEndSec?: number;
+} {
+	const clipId =
+		typeof raw.clipId === "string" && raw.clipId.trim().length > 0 ? raw.clipId.trim() : undefined;
+	const bound = (value: unknown): number | undefined =>
+		typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+	const sourceStartSec = bound(raw.sourceStartSec);
+	const sourceEndSec = bound(raw.sourceEndSec);
+	// A `clipId` on its own addresses nothing, and bounds on their own say which seconds of
+	// which clip — so all three travel together or none does.
+	if (clipId === undefined || sourceStartSec === undefined || sourceEndSec === undefined) return {};
+	return { clipId, sourceStartSec, sourceEndSec };
+}
+
 export function parseCameraMotionRegion(value: unknown): CameraMotionRegion | null {
 	const raw = asRecord(value);
 	if (!raw) return null;
@@ -79,6 +109,11 @@ export function parseCameraMotionRegion(value: unknown): CameraMotionRegion | nu
 			easing,
 		},
 		target: parseCameraMotionTarget(raw.target),
+		// Carried through, not dropped: the anchor is the source of truth for which clip the
+		// move belongs to, so losing it here would make a save→reopen forget the region's
+		// media, and a later clip reorder would leave the move pointing at whatever now sits
+		// under its derived `startMs`.
+		...readClipAnchor(raw),
 	};
 }
 

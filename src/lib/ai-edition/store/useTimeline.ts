@@ -83,6 +83,27 @@ import { useSequentialTimelineOps } from "./useSequentialTimelineOps";
 // these 2 s, which is what all five add* used to hardcode.
 const DEFAULT_NEW_REGION_SEC = 2;
 
+/**
+ * What a properties-paste did, so the caller can say the right thing about it.
+ *
+ * A boolean could not carry this. `false` meant "not the same kind of move", "there was
+ * nothing to change" and "the write did not land" all at once, and the caller reported the
+ * first over all three — including over a write that had already raised its own failure
+ * toast, which read as two unrelated errors for one keystroke.
+ *
+ * - `saved`         — the write landed; exactly one undo step was recorded.
+ * - `unchanged`     — the target already looked like the source. Nothing written, nothing
+ *                     to undo, and NOT an error: the user asked for a state the document
+ *                     was already in.
+ * - `invalidTarget` — nothing is selected, or the clipboard holds a different kind of
+ *                     move. The only outcome the user has to do something about.
+ * - `saveFailed`    — the write did not land: a handled failure, or a newer write
+ *                     superseded this one. Either way it is NOT a success, and
+ *                     `saveDocument` has already toasted the failure, so the caller must
+ *                     not add a second, unrelated message on top.
+ */
+export type PasteMotionOutcome = "saved" | "unchanged" | "invalidTarget" | "saveFailed";
+
 // NaN-guarded floors. Timeline inputs arrive from drag deltas and persisted
 // documents, both of which can carry NaN; every action needs the same guard.
 const finiteSec = (n: number) => (Number.isFinite(n) ? Math.max(0, n) : 0);
@@ -881,7 +902,7 @@ export function useTimeline() {
 	 * Paste a copied move's PROPERTIES onto the move that is selected right now.
 	 *
 	 * The ordinary `paste` (Ctrl+V) makes a SECOND region at the playhead. This one
-	 * does the opposite thing on purpose: it makes the selected region LOOK like the
+	 * does the opposite thing on purpose: it makes the selected move LOOK like the
 	 * copied one. So everything that identifies the target — its `id`, its
 	 * `startMs`/`endMs`, and the clip anchor those two derive from — is kept verbatim,
 	 * and only what the user actually authored travels: the target (position, size,
@@ -889,15 +910,21 @@ export function useTimeline() {
 	 * screen) plus the timing envelope (`leadInSec` / `returnSec` / `easing`) and, on
 	 * a screen move, its focus effect.
 	 *
-	 * ONE save, one undo step. Writing the target and the timing through
-	 * `setCameraMotionTarget` + `setCameraMotionTiming` would record two, and Ctrl+Z
-	 * would then have to be pressed twice to undo one gesture.
+	 * It acts on the PILL, not the one region the click landed on. Several adjacent
+	 * regions that share a look render as a single pill, and `resolvePillIds` is what
+	 * says which ones those are — the same call `dropPillById` uses to delete a pill.
+	 * Rewriting only the selected id would give the pill two different looks, and the
+	 * merge rule would then split it into two pills under the user's cursor: an edit
+	 * that was asked to change how one pill LOOKS would instead change how many there
+	 * are.
+	 *
+	 * ONE save, one undo step, for the whole pill. Writing each region through
+	 * `setCameraMotionTarget` + `setCameraMotionTiming` would record two per region.
 	 *
 	 * Cross-kind pastes are REFUSED rather than coerced. The two kinds share no target
 	 * field (`size`/`roundness`/`opacity` against `scale`/`rotations`), so a "paste"
 	 * between them would either invent values or leave half the target at the old one
-	 * — a shape nobody authored and nothing can undo cleanly. The caller turns the
-	 * `false` into a message.
+	 * — a shape nobody authored and nothing can undo cleanly.
 	 *
 	 * Both sides are run through the same `parse*Region` repair the document loader
 	 * uses, so a snapshot that was hand-edited (or written by an older build) lands in
@@ -906,22 +933,28 @@ export function useTimeline() {
 	 * values are repaired, never re-derived, and the evaluator's own window clamping
 	 * still decides how much of the envelope fits.
 	 *
-	 * Returns whether a save happened, so the caller only announces a paste that
-	 * landed.
+	 * Answers with an OUTCOME rather than a boolean, because the three ways this can
+	 * decline are three different things to tell the user — see
+	 * {@link PasteMotionOutcome}. A bare `false` had the caller report "not the same
+	 * kind of move" over a paste that was merely a no-op, or over a write that failed
+	 * and had already raised its own error.
 	 */
 	const pasteMotionAttributes = useCallback(
-		async (snapshot: { kind: string; region: Record<string, unknown> }): Promise<boolean> => {
+		async (snapshot: {
+			kind: string;
+			region: Record<string, unknown>;
+		}): Promise<PasteMotionOutcome> => {
 			const doc = useProjectStore.getState().document;
-			if (!doc) return false;
+			if (!doc) return "invalidTarget";
 			const sel = selection;
-			if (!sel) return false;
+			if (!sel) return "invalidTarget";
 
 			// Only a move onto a move, and only of the same kind. `cameraMotion` and
 			// `screenMotion` are the whole of this round's scope; a zoom or a trim has no
 			// authored target to carry, so they fall out here rather than in a branch that
 			// would have to invent one.
-			if (snapshot.kind !== sel.kind) return false;
-			if (sel.kind !== "cameraMotion" && sel.kind !== "screenMotion") return false;
+			if (snapshot.kind !== sel.kind) return "invalidTarget";
+			if (sel.kind !== "cameraMotion" && sel.kind !== "screenMotion") return "invalidTarget";
 
 			const raw = snapshot.region;
 			// The span is the target's, never the source's: `probe` is only here because the
@@ -930,28 +963,32 @@ export function useTimeline() {
 
 			if (sel.kind === "cameraMotion") {
 				const regions = doc.cameraMotionRegions ?? [];
-				if (!regions.some((r) => r.id === sel.id)) return false;
+				// Every region under the selected pill, resolved from the merge rule rather
+				// than from stored provenance — see `resolvePillIds`.
+				const under = new Set(resolvePillIds(regions, sel.id));
+				if (!regions.some((r) => under.has(r.id))) return "invalidTarget";
 				const copied = parseCameraMotionRegion(probe);
-				if (!copied) return false;
+				if (!copied) return "invalidTarget";
 
 				const next: AxcutDocument = {
 					...doc,
 					cameraMotionRegions: regions.map((region) =>
-						region.id === sel.id
+						under.has(region.id)
 							? { ...region, target: copied.target, timing: copied.timing }
 							: region,
 					),
 				};
 				// An identical paste hands back nothing new to save; recording it would push an
 				// undo step for an edit that did not happen (same rule as `setMarkerLabel`).
-				if (JSON.stringify(next) === JSON.stringify(doc)) return false;
-				return await saveDocument(next, { history: true });
+				if (JSON.stringify(next) === JSON.stringify(doc)) return "unchanged";
+				return (await saveDocument(next, { history: true })) ? "saved" : "saveFailed";
 			}
 
 			const regions = doc.screenMotionRegions ?? [];
-			if (!regions.some((r) => r.id === sel.id)) return false;
+			const under = new Set(resolvePillIds(regions, sel.id));
+			if (!regions.some((r) => under.has(r.id))) return "invalidTarget";
 			const copied = parseScreenMotionRegion(probe);
-			if (!copied) return false;
+			if (!copied) return "invalidTarget";
 			// `in`, not a truthiness test and not `Object.hasOwn` (the test tsconfig's lib
 			// predates it): a source that carries NO focus effect must CLEAR the target's,
 			// while one that carries a switched-off effect (dimming 0) must still install it.
@@ -962,7 +999,7 @@ export function useTimeline() {
 			const next: AxcutDocument = {
 				...doc,
 				screenMotionRegions: regions.map((region) => {
-					if (region.id !== sel.id) return region;
+					if (!under.has(region.id)) return region;
 					const merged = { ...region, target: copied.target, timing: copied.timing };
 					if (sourceHasFocus && copied.focusEffect) {
 						return { ...merged, focusEffect: copied.focusEffect };
@@ -974,8 +1011,8 @@ export function useTimeline() {
 					return withoutFocus;
 				}),
 			};
-			if (JSON.stringify(next) === JSON.stringify(doc)) return false;
-			return await saveDocument(next, { history: true });
+			if (JSON.stringify(next) === JSON.stringify(doc)) return "unchanged";
+			return (await saveDocument(next, { history: true })) ? "saved" : "saveFailed";
 		},
 		[selection, saveDocument],
 	);

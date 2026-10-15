@@ -162,6 +162,12 @@ export interface CameraMotionRegionTiming {
  *
  * `startMs`/`endMs` are the same derived RAW-virtual span every other region carries, so a
  * camera move trims, reorders and ripples with its footage exactly like a zoom does.
+ *
+ * The `clipId` / `sourceStartSec` / `sourceEndSec` triple is the same v5 clip anchor a zoom
+ * and an annotation carry: it is the SOURCE OF TRUTH for where the move belongs, and
+ * `startMs`/`endMs` are a derived cache of it. Optional on the same terms as everywhere else
+ * — a document written before the anchor existed has no triple, and one is never invented
+ * for it.
  */
 export interface CameraMotionRegion {
 	id: string;
@@ -169,6 +175,11 @@ export interface CameraMotionRegion {
 	endMs: number;
 	timing: CameraMotionRegionTiming;
 	target: CameraMotionTarget;
+	/** v5 clip anchor. Absent on regions authored before it, and on pasted ones that had
+	 *  no clip to anchor to. Never fabricated. */
+	clipId?: string;
+	sourceStartSec?: number;
+	sourceEndSec?: number;
 	/** True only on regions the legacy adapter produced for evaluation; never stored. */
 	legacyFullscreen?: boolean;
 }

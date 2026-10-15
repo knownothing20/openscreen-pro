@@ -1,4 +1,5 @@
 import { isCameraMotionEasing } from "../cameraMotion/easingNames";
+import { readClipAnchor } from "../cameraMotion/parse";
 import {
 	clampFocusEffectAngle,
 	clampFocusEffectDimming,
@@ -139,6 +140,12 @@ export function parseScreenMotionRegion(value: unknown): ScreenMotionRegion | nu
 		// bytes that do not carry the key at all, so an older build reading the file back sees
 		// exactly what it wrote.
 		...(focusEffect ? { focusEffect } : {}),
+		// Carried through, not dropped: the anchor is the source of truth for which clip the
+		// move belongs to, so losing it here would make a save→reopen forget the region's
+		// media, and a later clip reorder would leave the move pointing at whatever now sits
+		// under its derived `startMs`. `readClipAnchor` is shared with the camera's parser so
+		// the two kinds cannot drift on what counts as a usable anchor.
+		...readClipAnchor(raw),
 	};
 }
 

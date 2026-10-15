@@ -448,9 +448,8 @@ describe("region clipboard: copying what is selected", () => {
 		// The clipboard survives a project switch — the existing rule retires it when a CLIP
 		// is copied, not when another project is opened — so what matters is that the paste
 		// re-anchors into the project it lands in. `anchorRegionsWithDerivedMs` places it
-		// against B's clips, and `parseCameraMotionRegion` stores only
-		// `{id, startMs, endMs, timing, target}`: a camera move carries no clip and no asset
-		// anchor at all (unlike zoom), so there is nothing of A's that could survive into B.
+		// against B's clips, and the motion parser now KEEPS the anchor it computes, so the
+		// move lands bound to B's clip rather than to a bare pair of milliseconds.
 		const base = makeDoc();
 		loadDoc(
 			makeDoc({
@@ -475,7 +474,14 @@ describe("region clipboard: copying what is selected", () => {
 		expect(pasted.startMs).toBe(2000);
 		expect(pasted.endMs).toBe(5000);
 		// Nothing that could still point back at project A.
-		expect("clipId" in pasted).toBe(false);
+		// The paste carries a clip anchor now — and it is B'S, not A's. That is stronger than
+		// the "no anchor at all" this used to assert: `anchorRegionsWithDerivedMs` always
+		// re-homed the move onto B's clip, but the motion parser dropped the triple on the way
+		// through, so the anchor it computed never reached the document. What matters is
+		// unchanged: nothing points back at project A.
+		expect((pasted as { clipId?: string }).clipId).toBe("clip_b");
+		expect((pasted as { sourceStartSec?: number }).sourceStartSec).toBe(2);
+		expect((pasted as { sourceEndSec?: number }).sourceEndSec).toBe(5);
 		expect("assetId" in pasted).toBe(false);
 	});
 });
@@ -914,5 +920,246 @@ describe("paste attributes: a failed save", () => {
 			(r) => r.id === "cammotion_dst",
 		) as unknown as typeof CAMERA_MOTION_DST;
 		expect(dst.target).toEqual(CAMERA_MOTION_DST.target);
+	});
+});
+
+// A pill is not a region. Several adjacent regions that share a look render as ONE pill, and
+// the user selects the pill — so a properties-paste has to reach every region under it.
+// Rewriting only the clicked id would leave the pill with two different looks, and the merge
+// rule would then split it in two: an edit asked to change how a pill LOOKS would change how
+// many pills there are. `resolvePillIds` is the same call `dropPillById` uses to delete one.
+describe("paste attributes: a pill made of several merged regions", () => {
+	/** Two adjacent regions with identical look and timing: one pill, two regions. */
+	const MERGED_LOOK = {
+		layout: "shape" as const,
+		shape: "square" as const,
+		position: { x: 0.5, y: 0.5 },
+		size: 0.4,
+		roundness: 0.3,
+		opacity: 0.9,
+	};
+	const MERGED_TIMING = { leadInSec: 0.5, returnSec: 0.5, easing: "linear" as const };
+	const MERGED_A: CameraMotionRegion = {
+		id: "cammotion_m1",
+		startMs: 1000,
+		endMs: 2000,
+		timing: { ...MERGED_TIMING },
+		target: { ...MERGED_LOOK },
+	};
+	const MERGED_B: CameraMotionRegion = {
+		id: "cammotion_m2",
+		startMs: 2000,
+		endMs: 3000,
+		timing: { ...MERGED_TIMING },
+		target: { ...MERGED_LOOK },
+	};
+
+	const pasteAttributes = () => press({ key: "v", ctrlKey: true, shiftKey: true });
+	const byId = (id: string) =>
+		motionRegions().find((r) => r.id === id) as unknown as CameraMotionRegion;
+
+	it("updates EVERY region under the pill, keeping each id and span", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [MERGED_A, MERGED_B, CAMERA_MOTION_SRC] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		// One pill renders for the merged pair, so index 0 is that pill.
+		fireEvent.pointerDown((await screen.findAllByText("Camera Motion"))[0]);
+		await pasteAttributes();
+
+		// Still three regions — the paste rewrote them, it did not merge or split anything.
+		expect(motionRegions()).toHaveLength(3);
+
+		// BOTH halves took the copied look...
+		expect(byId("cammotion_m1").target).toEqual(CAMERA_MOTION_SRC.target);
+		expect(byId("cammotion_m2").target).toEqual(CAMERA_MOTION_SRC.target);
+		expect(byId("cammotion_m1").timing).toEqual(CAMERA_MOTION_SRC.timing);
+		expect(byId("cammotion_m2").timing).toEqual(CAMERA_MOTION_SRC.timing);
+
+		// ...and neither moved.
+		expect(byId("cammotion_m1").startMs).toBe(1000);
+		expect(byId("cammotion_m1").endMs).toBe(2000);
+		expect(byId("cammotion_m2").startMs).toBe(2000);
+		expect(byId("cammotion_m2").endMs).toBe(3000);
+		expect(toastSuccess).toHaveBeenCalledTimes(1);
+	});
+
+	it("records ONE undo step for the whole pill, and redo restores every region", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [MERGED_A, MERGED_B] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown((await screen.findAllByText("Camera Motion"))[0]);
+		await pasteAttributes();
+		expect(byId("cammotion_m1").target).toEqual(CAMERA_MOTION_SRC.target);
+		expect(byId("cammotion_m2").target).toEqual(CAMERA_MOTION_SRC.target);
+
+		await act(async () => {
+			await undo();
+		});
+		// One undo is enough for the pair.
+		expect(byId("cammotion_m1").target).toEqual(MERGED_LOOK);
+		expect(byId("cammotion_m2").target).toEqual(MERGED_LOOK);
+
+		await act(async () => {
+			await redo();
+		});
+		expect(byId("cammotion_m1").target).toEqual(CAMERA_MOTION_SRC.target);
+		expect(byId("cammotion_m2").target).toEqual(CAMERA_MOTION_SRC.target);
+	});
+
+	it("carries a focus effect to every region under a merged screen pill", async () => {
+		const look = {
+			position: { x: 0.5, y: 0.5 },
+			scale: 1.2,
+			rotationX: 0,
+			rotationY: 0,
+			rotationZ: 0,
+			perspective: 0.3,
+		};
+		const timing = { leadInSec: 0.5, returnSec: 0.5, easing: "linear" as const };
+		const s1: ScreenMotionRegion = {
+			id: "screenmotion_n1",
+			startMs: 1000,
+			endMs: 2000,
+			timing: { ...timing },
+			target: { ...look },
+		};
+		const s2: ScreenMotionRegion = {
+			id: "screenmotion_n2",
+			startMs: 2000,
+			endMs: 3000,
+			timing: { ...timing },
+			target: { ...look },
+		};
+		const src: ScreenMotionRegion = {
+			...SCREEN_MOTION_SRC,
+			id: "screenmotion_fsrc",
+			focusEffect: {
+				shape: "radial",
+				angleDegrees: 0,
+				target: "fixed",
+				center: { x: 0.25, y: 0.75 },
+				size: 0.3,
+				softness: 0.2,
+				dimming: 0.6,
+			},
+		};
+		loadDoc(makeDoc({ screenMotionRegions: [s1, s2, src] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "screenMotion", region: JSON.parse(JSON.stringify(src)) });
+		fireEvent.pointerDown((await screen.findAllByText("Screen Motion"))[0]);
+		await pasteAttributes();
+
+		const n1 = screenRegions().find(
+			(r) => r.id === "screenmotion_n1",
+		) as unknown as ScreenMotionRegion;
+		const n2 = screenRegions().find(
+			(r) => r.id === "screenmotion_n2",
+		) as unknown as ScreenMotionRegion;
+		expect(n1.focusEffect).toEqual(src.focusEffect);
+		expect(n2.focusEffect).toEqual(src.focusEffect);
+		expect(n1.target).toEqual(SCREEN_MOTION_SRC.target);
+		expect(n2.target).toEqual(SCREEN_MOTION_SRC.target);
+		expect(n1.startMs).toBe(1000);
+		expect(n2.endMs).toBe(3000);
+	});
+
+	it("does not split a pill into two when only one half would have changed", async () => {
+		// A paste that reached only `cammotion_m1` would leave the two halves with different
+		// looks — the merge rule would then render them as two pills. Asserting the count
+		// afterwards is what catches that: the pair must still be ONE pill.
+		loadDoc(makeDoc({ cameraMotionRegions: [MERGED_A, MERGED_B] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown((await screen.findAllByText("Camera Motion"))[0]);
+		await pasteAttributes();
+
+		const { coalesceRegionsForRuler } = await import("@/lib/ai-edition/timeline/timelineMap");
+		expect(coalesceRegionsForRuler(motionRegions())).toHaveLength(1);
+	});
+});
+
+// The three ways a properties-paste can decline are three different things to tell the user.
+// A boolean flattened them, and the caller reported "not the same kind of move" over all of
+// them — including over a write that had already raised its own failure toast.
+describe("paste attributes: which message for which outcome", () => {
+	const DST: CameraMotionRegion = {
+		id: "cammotion_dst",
+		startMs: 12000,
+		endMs: 18000,
+		timing: { leadInSec: 0.2, returnSec: 0.3, easing: "linear" },
+		target: {
+			layout: "shape",
+			shape: "circle",
+			position: { x: 0.8, y: 0.5 },
+			size: 0.3,
+			roundness: 1,
+			opacity: 0.5,
+		},
+	};
+	const pasteAttributes = () => press({ key: "v", ctrlKey: true, shiftKey: true });
+	// The shell also toasts unrelated startup noise in jsdom ("Could not auto-create project
+	// from recording"), so counting every `toast.error` would measure that instead of the
+	// paste. Counting the keys this feature owns is what makes the count meaningful.
+	const ownErrors = (key: string) => toastError.mock.calls.filter(([k]) => k === key).length;
+
+	it("kind mismatch: says so, exactly once", async () => {
+		loadDoc(makeDoc({ screenMotionRegions: [SCREEN_MOTION_SRC] }), 5);
+		renderShell();
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown(await screen.findByText("Screen Motion"));
+		await pasteAttributes();
+
+		expect(ownErrors("regionClipboard.pasteAttributesKindMismatch")).toBe(1);
+		expect(ownErrors("regionClipboard.pasteAttributesNoTarget")).toBe(0);
+		expect(toastSuccess).not.toHaveBeenCalled();
+	});
+
+	it("no actual change: silent, no write, no undo step, and NOT a kind mismatch", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_SRC] }), 5);
+		renderShell();
+
+		// Copy the very region that is selected: the paste would change nothing.
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown(await screen.findByText("Camera Motion"));
+		await pasteAttributes();
+
+		// Neither message. Reporting a kind mismatch here named a cause that was not the cause.
+		expect(ownErrors("regionClipboard.pasteAttributesKindMismatch")).toBe(0);
+		expect(ownErrors("regionClipboard.pasteAttributesNoTarget")).toBe(0);
+		expect(toastSuccess).not.toHaveBeenCalled();
+		// And no undo step was pushed for an edit that did not happen.
+		const before = motionRegions()[0] as unknown as CameraMotionRegion;
+		await act(async () => {
+			await undo();
+		});
+		const after = motionRegions()[0] as unknown as CameraMotionRegion;
+		expect(after.target).toEqual(before.target);
+	});
+
+	it("bridge save failure: the failure is reported once, and not as a kind mismatch", async () => {
+		loadDoc(makeDoc({ cameraMotionRegions: [CAMERA_MOTION_SRC, DST] }), 5);
+		renderShell();
+
+		bridgeMocks.save.mockResolvedValueOnce({ success: false, error: "disk full" });
+
+		copyRegion({ kind: "cameraMotion", region: JSON.parse(JSON.stringify(CAMERA_MOTION_SRC)) });
+		fireEvent.pointerDown((await screen.findAllByText("Camera Motion"))[1]);
+		await pasteAttributes();
+
+		// `saveDocument` raises the real failure; the paste must not add a kind-mismatch line
+		// on top of it, and must not claim success.
+		expect(toastSuccess).not.toHaveBeenCalled();
+		// The real failure is `saveDocument`'s own toast; what this asserts is that the paste
+		// added nothing on top of it, and in particular did not misname the cause.
+		expect(ownErrors("regionClipboard.pasteAttributesKindMismatch")).toBe(0);
+		// And the failure itself WAS reported — `saveDocument` raises it through `toastText`,
+		// which returns the translated sentence rather than the key, so the check is that
+		// some error toast happened rather than that a particular string was passed.
+		expect(toastError).toHaveBeenCalled();
 	});
 });

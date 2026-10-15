@@ -90,6 +90,15 @@ export interface ScreenMotionRegion {
 	 * document simply reads as "no focus", so no `schemaVersion` bump is owed.
 	 */
 	focusEffect?: FocusEffect;
+	/**
+	 * The v5 clip anchor, the same triple a zoom and an annotation carry: it is the SOURCE
+	 * OF TRUTH for where the move belongs, and `startMs`/`endMs` are a derived cache of it.
+	 * Optional on the same terms as everywhere else — a document written before the anchor
+	 * existed has no triple, and one is never invented for it.
+	 */
+	clipId?: string;
+	sourceStartSec?: number;
+	sourceEndSec?: number;
 }
 
 /**

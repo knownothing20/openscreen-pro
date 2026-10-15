@@ -1042,9 +1042,22 @@ export function NewEditorShell() {
 		// Cross-kind and unsupported kinds land here together: the store refuses both, and
 		// from the user's seat they are the same mistake — the thing on the clipboard is not
 		// the thing under the playhead.
-		const ok = await tl.pasteMotionAttributes(snapshot);
-		if (ok) toast.success(te("regionClipboard.pasteAttributesDone"));
-		else toast.error(te("regionClipboard.pasteAttributesKindMismatch"));
+		//
+		// Each outcome gets its own message, and two of them get none. `unchanged` is not a
+		// failure — the target already looked like the source, so there is nothing to say.
+		// `saveFailed` has already been toasted by `saveDocument`, which knows the actual
+		// reason; adding a kind-mismatch line on top would name the wrong cause.
+		switch (await tl.pasteMotionAttributes(snapshot)) {
+			case "saved":
+				toast.success(te("regionClipboard.pasteAttributesDone"));
+				break;
+			case "invalidTarget":
+				toast.error(te("regionClipboard.pasteAttributesKindMismatch"));
+				break;
+			case "unchanged":
+			case "saveFailed":
+				break;
+		}
 	}, [tl, te]);
 
 	const pasteRegion = useCallback(async () => {
