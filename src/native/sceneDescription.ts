@@ -40,6 +40,7 @@ import {
 	readSpeedRegions,
 	resolvePlaybackSegments,
 } from "@/lib/ai-edition/document/timeline";
+import { defaultOpeningSequence, type OpeningSequence } from "@/lib/ai-edition/opening/opening";
 import type { AxcutAudioTrack, AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
@@ -624,6 +625,12 @@ export interface SceneDescription {
 	cropByClip: Array<{ x: number; y: number; width: number; height: number } | null>;
 	/** Output frame. `fps` null = use the first clip's source fps. */
 	output: { width: number; height: number; fps: number | null };
+	/**
+	 * Opening Motion. Global — it plays on the output clock across cuts, so it is a scene
+	 * field and never a motion region. Always present: the native side reads `enabled` to
+	 * decide whether to short-circuit, and a project with no opening sends it disabled.
+	 */
+	opening: OpeningSequence;
 	/** Webcam background effect. Omitted when the mode is "none". */
 	webcamEffect?: SceneWebcamEffect;
 }
@@ -1603,6 +1610,15 @@ export function buildSceneDescription(
 			})),
 		cropByClip,
 		output: { ...pickOutputDims(document, settings.aspectRatio), fps: null },
+		// Opening Motion — the GLOBAL entrance of the whole programme. Always sent, unlike
+		// `webcamEffect` below: it is one small object with a boolean that turns it off, and
+		// the native side needs it on every frame to decide whether to short-circuit at all.
+		//
+		// It rides the SCENE and not the two motion-region lists on purpose. Those are
+		// anchored per clip and evaluated on source time; the opening plays on the OUTPUT
+		// clock, continuous across cuts, so a clip that starts at 1 s plays the opening's
+		// second half rather than restarting it.
+		opening: document.opening ?? defaultOpeningSequence(),
 		// Omitted rather than sent as `{mode:"none"}`: the Rust side defaults the field, and
 		// every project without a webcam effect would otherwise carry it for nothing.
 		...(settings.webcamBackgroundMode !== "none"

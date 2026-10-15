@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/native", () => ({
@@ -70,6 +71,7 @@ const DOC: AxcutDocument = {
 	markers: [],
 	cameraMotionRegions: [],
 	screenMotionRegions: [],
+	opening: defaultOpeningSequence(),
 	legacyEditor: null,
 };
 const STATS: CompositorExportGifResult = {

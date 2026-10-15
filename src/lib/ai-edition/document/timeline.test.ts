@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import {
 	type AxcutClip,
 	type AxcutDocument,
@@ -63,6 +64,7 @@ function makeDoc(overrides: Partial<AxcutDocument> = {}): AxcutDocument {
 		markers: [],
 		cameraMotionRegions: [],
 		screenMotionRegions: [],
+		opening: defaultOpeningSequence(),
 		legacyEditor: null,
 		...overrides,
 	};

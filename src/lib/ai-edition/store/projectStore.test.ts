@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import { saveWithDeadline, useProjectStore, waitForDocumentSaves } from "./projectStore";
 import { clearHistory, past, pushHistory } from "./undoStack";
 
@@ -77,6 +78,7 @@ const sampleDoc = {
 	markers: [],
 	cameraMotionRegions: [],
 	screenMotionRegions: [],
+	opening: defaultOpeningSequence(),
 	legacyEditor: null,
 };
 

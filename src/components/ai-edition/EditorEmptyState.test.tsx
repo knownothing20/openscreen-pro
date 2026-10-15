@@ -57,6 +57,18 @@ const sampleDoc = vi.hoisted(
 		markers: [],
 		cameraMotionRegions: [],
 		screenMotionRegions: [],
+		opening: {
+			// Same reason as `schemaVersion` above: this fixture is built inside `vi.hoisted`,
+			// which runs BEFORE the module's imports are initialised, so `defaultOpeningSequence()`
+			// would throw "Cannot access ... before initialization". Literal, not a call.
+			enabled: false,
+			preset: "sideSlide",
+			durationSec: 2.2,
+			staggerSec: 0.16,
+			curve: "swift",
+			elementOrder: ["screen", "camera"],
+			includedElements: ["screen", "camera"],
+		},
 		legacyEditor: null,
 	}),
 );

@@ -39,6 +39,9 @@ pub mod ffi;
 pub mod frame_geometry;
 pub mod gif_export;
 pub mod gif_export_control;
+/// Ouverture globale (Side Slide) : la seule partie de l'entrée qui se joue sur l'horloge de
+/// SORTIE. Partagée telle quelle par les trois backends, comme `frame_geometry`.
+pub mod opening;
 pub mod regions;
 // Multiplateforme à dessein : n'utilise que libavformat (liée sur les trois
 // cibles) et le shim C. Seul Linux l'appelle aujourd'hui, parce que c'est la

@@ -4,6 +4,7 @@ import {
 	collectUsedAssetDims,
 	pickExtremeDims,
 } from "@/lib/ai-edition/document/outputFormat";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import {
 	type AxcutAsset,
 	type AxcutClip,
@@ -61,6 +62,7 @@ function doc(assets: AxcutAsset[], clips: AxcutClip[]): AxcutDocument {
 		markers: [],
 		cameraMotionRegions: [],
 		screenMotionRegions: [],
+		opening: defaultOpeningSequence(),
 		legacyEditor: null,
 	};
 }

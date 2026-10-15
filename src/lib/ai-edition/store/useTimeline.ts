@@ -47,6 +47,7 @@ import {
 	setClipSourceRange,
 	withClipsChanged,
 } from "../document/timeline";
+import { defaultOpeningSequence, type OpeningSequence } from "../opening/opening";
 import type { AxcutAudioTrack, AxcutClipCropRegion, AxcutDocument } from "../schema";
 import { parseScreenMotionRegion } from "../screenMotion/parse";
 import {
@@ -210,6 +211,11 @@ export function useTimeline() {
 	// re-seeds the pair the moment the document is not the one it produced.
 	const motionTargetRollbackRef = useRef<AxcutDocument | null>(null);
 	const motionTargetLiveRef = useRef<AxcutDocument | null>(null);
+	// The same pair for the opening's two sliders. Separate from the motion pair above
+	// because they are a different control on a different pane: sharing would let a slider
+	// drag on one pane leave a stale rollback for the other.
+	const openingRollbackRef = useRef<AxcutDocument | null>(null);
+	const openingLiveRef = useRef<AxcutDocument | null>(null);
 
 	// A drag does not always end in a commit: `ZoomFocusOverlay` unmounts the moment
 	// `focusMode` flips to "auto", so `endDrag` never runs and the snapshot outlives the
@@ -1015,6 +1021,61 @@ export function useTimeline() {
 			return (await saveDocument(next, { history: true })) ? "saved" : "saveFailed";
 		},
 		[selection, saveDocument],
+	);
+
+	/**
+	 * Opening Motion — the global entrance of the programme.
+	 *
+	 * Three entry points, because the pane has two kinds of control:
+	 *
+	 *   - `setOpening`     — a discrete change (the toggle, an element switch, an order
+	 *                        swap). One save, one undo step.
+	 *   - `setOpeningLive` — one frame of a slider drag. Writes without history, remembering
+	 *                        the document the drag started from.
+	 *   - `commitOpening`  — the end of that drag. One save, one undo step, covering every
+	 *                        frame the drag wrote.
+	 *
+	 * That split is the whole reason a duration drag does not push sixty undo entries. It is
+	 * the same shape as `setMotionTargetLive` / `commitMotionTarget` above, with its own ref
+	 * pair so the two panes cannot leave each other a stale rollback.
+	 */
+	const setOpeningLive = useCallback(
+		(patch: Partial<OpeningSequence>) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			if (openingLiveRef.current === null) openingRollbackRef.current = doc;
+			const next: AxcutDocument = {
+				...doc,
+				opening: { ...(doc.opening ?? defaultOpeningSequence()), ...patch },
+			};
+			openingLiveRef.current = next;
+			setDocument(next, { history: false });
+		},
+		[setDocument],
+	);
+
+	const commitOpening = useCallback(async () => {
+		const doc = useProjectStore.getState().document;
+		if (!doc) return;
+		// `null` when no live write happened — a click that moved nothing. There is then no
+		// state to go back to, and `null` records nothing (see `DocumentWriteOptions.historyBase`).
+		const historyBase = openingLiveRef.current === doc ? openingRollbackRef.current : null;
+		openingLiveRef.current = null;
+		openingRollbackRef.current = null;
+		await saveDocument(doc, { history: true, historyBase });
+	}, [saveDocument]);
+
+	const setOpening = useCallback(
+		async (patch: Partial<OpeningSequence>) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			const next: AxcutDocument = {
+				...doc,
+				opening: { ...(doc.opening ?? defaultOpeningSequence()), ...patch },
+			};
+			await saveDocument(next, { history: true });
+		},
+		[saveDocument],
 	);
 
 	const addCameraFullscreen = useCallback(
@@ -2180,6 +2241,9 @@ export function useTimeline() {
 		setScreenMotionFocusEffectLive,
 		commitMotionTarget,
 		pasteMotionAttributes,
+		setOpening,
+		setOpeningLive,
+		commitOpening,
 		addCameraFullscreen,
 		removeRegion,
 		removeMarker,

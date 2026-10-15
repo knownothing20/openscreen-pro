@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import { STT_NATIVE_EXTRACTION_UNAVAILABLE } from "../../../../electron/stt/transcriptionContract";
 import { type AxcutDocument, axcutSchemaVersion, transcriptSchema } from "../schema";
 import { transcribeAsset } from "./transcribe";
@@ -61,6 +62,7 @@ function makeDoc(): AxcutDocument {
 		markers: [],
 		cameraMotionRegions: [],
 		screenMotionRegions: [],
+		opening: defaultOpeningSequence(),
 		legacyEditor: null,
 	};
 }

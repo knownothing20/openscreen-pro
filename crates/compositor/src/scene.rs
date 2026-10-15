@@ -951,6 +951,79 @@ impl SceneWebcamEffect {
     }
 }
 
+/// Ouverture globale : l'entrée de tout le programme, par glissement latéral.
+///
+/// Elle vit dans la scène plutôt que sur un clip parce qu'elle est GLOBALE : elle se joue sur
+/// l'horloge de SORTIE (`FrameGeometryInput::programme_time`), continue à travers les coupes.
+/// L'ancrer à un clip la ferait repartir de zéro à chaque segment — exactement le bug que la
+/// sémantique « programme » existe pour éviter. C'est aussi pourquoi elle ne porte pas
+/// d'ancre de clip, contrairement aux régions de mouvement.
+///
+/// Tous les champs sont `#[serde(default)]` : un `opening` partiel — ou un JSON écrit par une
+/// version antérieure, qui n'a pas la clé du tout — se lit sans erreur et retombe sur les
+/// défauts ci-dessous. Le natif répare ensuite (`opening::OpeningSequence::repaired`) : un
+/// réglage d'ouverture invalide ne doit jamais empêcher un projet de s'ouvrir.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneOpening {
+    /// Le seul interrupteur qui compte. Absent/false → identité.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Nom du preset. Seul `sideSlide` existe ; tout autre nom (ou absent) y retombe, comme
+    /// côté TS, pour qu'un preset retiré ne fige pas la scène.
+    #[serde(default = "default_opening_preset")]
+    pub preset: String,
+    /// Durée TOTALE de l'ouverture, en secondes — les deux éléments finissent à cet instant.
+    #[serde(default = "default_opening_duration_sec")]
+    pub duration_sec: f32,
+    /// Décalage entre le premier et le second élément, en secondes.
+    #[serde(default = "default_opening_stagger_sec")]
+    pub stagger_sec: f32,
+    /// Nom de courbe. Seul `swift` existe ; tout autre nom retombe dessus.
+    #[serde(default = "default_opening_curve")]
+    pub curve: String,
+    /// Ordre d'entrée, par nom d'élément (`"screen"`, `"camera"`). Les noms inconnus sont
+    /// ignorés à la réparation ; les manquants sont ajoutés à la fin.
+    #[serde(default = "default_opening_element_order")]
+    pub element_order: Vec<String>,
+    /// Éléments participants. Un élément absent n'entre pas.
+    #[serde(default = "default_opening_included_elements")]
+    pub included_elements: Vec<String>,
+}
+
+impl Default for SceneOpening {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            preset: default_opening_preset(),
+            duration_sec: default_opening_duration_sec(),
+            stagger_sec: default_opening_stagger_sec(),
+            curve: default_opening_curve(),
+            element_order: default_opening_element_order(),
+            included_elements: default_opening_included_elements(),
+        }
+    }
+}
+
+fn default_opening_preset() -> String {
+    "sideSlide".to_string()
+}
+fn default_opening_duration_sec() -> f32 {
+    2.2
+}
+fn default_opening_stagger_sec() -> f32 {
+    0.16
+}
+fn default_opening_curve() -> String {
+    "swift".to_string()
+}
+fn default_opening_element_order() -> Vec<String> {
+    vec!["screen".to_string(), "camera".to_string()]
+}
+fn default_opening_included_elements() -> Vec<String> {
+    vec!["screen".to_string(), "camera".to_string()]
+}
+
 /// Tout ce dont le natif a besoin pour composer la scène, sérialisé depuis un document.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -995,6 +1068,13 @@ pub struct Scene {
     /// État de rendu interne, positionné par `for_clip_window` (jamais envoyé par l'app).
     #[serde(skip)]
     pub(crate) active_clip_index: usize,
+    /// Ouverture globale (Opening Motion) : l'entrée de TOUT le programme, pas d'un clip.
+    ///
+    /// `#[serde(default)]` : absent de tout JSON écrit avant cette version, et de tout projet
+    /// qui n'a jamais activé l'ouverture. Un tel projet s'ouvre donc en « pas d'ouverture » —
+    /// bit pour bit le même rendu qu'avant, sans bump de `schemaVersion` ni migration.
+    #[serde(default)]
+    pub opening: SceneOpening,
     pub output: SceneOutput,
 }
 

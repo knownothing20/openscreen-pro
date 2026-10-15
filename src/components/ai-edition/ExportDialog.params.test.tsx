@@ -4,6 +4,7 @@
 import "@testing-library/jest-dom";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 
 vi.mock("sonner", () => ({
 	toast: { success: vi.fn(), error: vi.fn() },
@@ -78,6 +79,7 @@ const DOC: AxcutDocument = {
 	cameraMotionRegions: [],
 	screenMotionRegions: [],
 	// A fixed format, so the 1080p tier is exactly 1920x1080 (Auto adds its padding border).
+	opening: defaultOpeningSequence(),
 	legacyEditor: { aspectRatio: "16:9" },
 };
 

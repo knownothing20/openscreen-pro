@@ -5,6 +5,7 @@ import {
 	DEFAULT_WEBCAM_LAYOUT_PRESET,
 	DEFAULT_WEBCAM_MASK_SHAPE,
 } from "@/components/video-editor/types";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import { DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
 import { SETTING_BOUNDS } from "@/lib/projectDefaults";
 import { ROUNDNESS_SLIDER_MAX_PX } from "@/native/paramUnits";
@@ -38,6 +39,7 @@ const baseDoc: AxcutDocument = {
 	screenMotionRegions: [],
 	transcripts: [],
 	transcript: null,
+	opening: defaultOpeningSequence(),
 	legacyEditor: null,
 };
 

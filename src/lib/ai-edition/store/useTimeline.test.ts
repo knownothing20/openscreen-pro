@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/contexts/I18nContext";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import { DEFAULT_TEXT_PLATE } from "../annotations/background";
 import {
 	CAMERA_MOTION_DEFAULT_TARGET,
@@ -134,6 +135,7 @@ const sampleDoc: AxcutDocument = {
 	markers: [],
 	cameraMotionRegions: [],
 	screenMotionRegions: [],
+	opening: defaultOpeningSequence(),
 	legacyEditor: null,
 };
 

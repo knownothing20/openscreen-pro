@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import { STT_MEDIA_UNREADABLE } from "../../../../electron/stt/transcriptionContract";
 import type { AxcutDocument, AxcutTranscript } from "../schema";
 import {
@@ -361,6 +362,7 @@ const base = {
 	markers: [],
 	cameraMotionRegions: [],
 	screenMotionRegions: [],
+	opening: defaultOpeningSequence(),
 	legacyEditor: null,
 };
 

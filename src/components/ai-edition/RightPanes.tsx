@@ -66,6 +66,18 @@ import {
 } from "@/lib/ai-edition/document/outputFormat";
 import type { InsertSide } from "@/lib/ai-edition/document/transcript";
 import {
+	DEFAULT_OPENING_DURATION_SEC,
+	DEFAULT_OPENING_STAGGER_SEC,
+	defaultOpeningSequence,
+	MAX_OPENING_DURATION_SEC,
+	MIN_OPENING_DURATION_SEC,
+	MIN_OPENING_STAGGER_SEC,
+	maxStaggerForDuration,
+	OPENING_ELEMENT_CAMERA,
+	OPENING_ELEMENT_SCREEN,
+	type OpeningElement,
+} from "@/lib/ai-edition/opening/opening";
+import {
 	type AxcutAsset,
 	type AxcutAudioTrack,
 	type AxcutClip,
@@ -83,7 +95,7 @@ import {
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useCaptions } from "@/lib/ai-edition/store/useCaptions";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
-import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
+import { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import {
 	buildAggregatedSections,
 	type ClipSection,
@@ -2298,6 +2310,146 @@ function pluralKey(locale: string, count: number): string {
 		: `effects.fitClip${category === "few" ? "Few" : "Many"}`;
 }
 
+// ─── Opening Motion (section of the Effects pane) ──────────────────
+
+/**
+ * The global entrance: the screen slides in from the left, the camera from the right, and
+ * both land exactly on the normal layout.
+ *
+ * Global, so it has no clip and no timeline pill — it is not a motion region and does not
+ * appear on the timeline. It plays on the output clock, so a project cut in two plays one
+ * opening across the cut rather than two.
+ *
+ * The two sliders use the live/commit split: dragging writes to the document without
+ * history, and the release records ONE undo step for the whole drag. Without it a single
+ * duration drag would push sixty entries and Ctrl+Z would crawl back through them.
+ */
+function OpeningSection() {
+	const ts = useScopedT("settings");
+	const { hasDocument } = useEditorSettings();
+	const tl = useTimeline();
+	// `document` first, then the fallback OUTSIDE the selector. `?? defaultOpeningSequence()`
+	// inside the selector would hand zustand a fresh object on every call, which it reads as a
+	// changed snapshot and re-renders forever (React #185).
+	const document = useProjectStore((s) => s.document);
+	const opening = document?.opening ?? defaultOpeningSequence();
+	const hasCamera = useMemo(
+		() => (document ? hasAnyClipWithCamera(document.assets, document.timeline.clips) : false),
+		[document],
+	);
+
+	// A camera that is not in the project cannot enter, so the switch is not offered — an
+	// enabled control that does nothing is worse than no control. `hasCamera` is also what
+	// the native side keys on (`LiveParams::has_webcam`), so the two agree by construction.
+	const screenIncluded = opening.includedElements.includes(OPENING_ELEMENT_SCREEN);
+	const cameraIncluded = opening.includedElements.includes(OPENING_ELEMENT_CAMERA);
+	const setIncluded = (element: OpeningElement, on: boolean) => {
+		const kept = opening.includedElements.filter((name) => name !== element);
+		// Written in the canonical order, so a stored value never depends on click order.
+		const next: OpeningElement[] = [];
+		for (const name of [OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA] as const) {
+			if (name === element ? on : kept.includes(name)) next.push(name);
+		}
+		void tl.setOpening({ includedElements: next });
+	};
+
+	const cameraFirst = opening.elementOrder[0] === OPENING_ELEMENT_CAMERA;
+
+	return (
+		<>
+			<div className={styles.sectionLabel}>{ts("effects.opening")}</div>
+			<div className={styles.paneRow}>
+				<span className={styles.label}>{ts("effects.openingEnable")}</span>
+				<Toggle
+					checked={opening.enabled}
+					ariaLabel={ts("effects.openingEnable")}
+					tooltip={ts("effects.openingEnableTip")}
+					disabled={!hasDocument}
+					onChange={(v) => void tl.setOpening({ enabled: v })}
+				/>
+			</div>
+			{opening.enabled ? (
+				<>
+					<div className={styles.sliderGrid}>
+						<SliderCell
+							label={ts("effects.openingDuration")}
+							value={opening.durationSec}
+							min={MIN_OPENING_DURATION_SEC}
+							max={MAX_OPENING_DURATION_SEC}
+							step={0.1}
+							defaultValue={DEFAULT_OPENING_DURATION_SEC}
+							decimals={1}
+							suffix="s"
+							disabled={!hasDocument}
+							onChange={(v) => tl.setOpeningLive({ durationSec: v })}
+							onCommit={() => void tl.commitOpening()}
+						/>
+						<SliderCell
+							label={ts("effects.openingStagger")}
+							value={opening.staggerSec}
+							min={MIN_OPENING_STAGGER_SEC}
+							// Bounded by the duration, exactly as the parser and the native
+							// evaluator do: past 80% the second element would start after the
+							// opening had already ended.
+							max={maxStaggerForDuration(opening.durationSec)}
+							step={0.01}
+							defaultValue={DEFAULT_OPENING_STAGGER_SEC}
+							decimals={2}
+							suffix="s"
+							disabled={!hasDocument}
+							onChange={(v) => tl.setOpeningLive({ staggerSec: v })}
+							onCommit={() => void tl.commitOpening()}
+						/>
+					</div>
+					<div className={styles.paneRow}>
+						<span className={styles.label}>{ts("effects.openingScreen")}</span>
+						<Toggle
+							checked={screenIncluded}
+							ariaLabel={ts("effects.openingScreen")}
+							tooltip={ts("effects.openingScreenTip")}
+							disabled={!hasDocument}
+							onChange={(v) => setIncluded(OPENING_ELEMENT_SCREEN, v)}
+						/>
+					</div>
+					{hasCamera ? (
+						<div className={styles.paneRow}>
+							<span className={styles.label}>{ts("effects.openingCamera")}</span>
+							<Toggle
+								checked={cameraIncluded}
+								ariaLabel={ts("effects.openingCamera")}
+								tooltip={ts("effects.openingCameraTip")}
+								disabled={!hasDocument}
+								onChange={(v) => setIncluded(OPENING_ELEMENT_CAMERA, v)}
+							/>
+						</div>
+					) : null}
+					{/* Only worth offering when both can enter: with one element there is no
+					    order to choose. */}
+					{hasCamera && screenIncluded && cameraIncluded ? (
+						<div className={styles.paneRow}>
+							<span className={styles.label}>{ts("effects.openingOrder")}</span>
+							<button
+								type="button"
+								className={styles.linkBtn}
+								disabled={!hasDocument}
+								onClick={() =>
+									void tl.setOpening({
+										elementOrder: cameraFirst
+											? [OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA]
+											: [OPENING_ELEMENT_CAMERA, OPENING_ELEMENT_SCREEN],
+									})
+								}
+							>
+								{cameraFirst ? ts("effects.openingCameraFirst") : ts("effects.openingScreenFirst")}
+							</button>
+						</div>
+					) : null}
+				</>
+			) : null}
+		</>
+	);
+}
+
 // ─── Video Effects ─────────────────────────────────────────────────
 
 const RECORDING_FRAME_LABEL_KEYS: Record<RecordingFrame, string> = {
@@ -2637,6 +2789,10 @@ export function VideoEffectsPane() {
 					/>
 				</div>
 			) : null}
+			{/* Last, because it is the one control here that acts on the whole PROGRAMME
+			    rather than on the recording or the background — everything above shapes a
+			    frame, this shapes the first two seconds of the export. */}
+			<OpeningSection />
 		</Pane>
 	);
 }

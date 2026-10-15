@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import type { AxcutClip, AxcutDocument } from "@/lib/ai-edition/schema";
 import { axcutSchemaVersion } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
@@ -78,6 +79,7 @@ function makeDocument(): AxcutDocument {
 		markers: [],
 		cameraMotionRegions: [],
 		screenMotionRegions: [],
+		opening: defaultOpeningSequence(),
 		legacyEditor: null,
 	};
 }

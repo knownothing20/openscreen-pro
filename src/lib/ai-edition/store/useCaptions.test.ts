@@ -9,6 +9,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import { getCaptionSettings } from "../captions";
 import type { AxcutDocument } from "../schema";
 import { axcutSchemaVersion } from "../schema";
@@ -75,6 +76,7 @@ const docA: AxcutDocument = {
 	markers: [],
 	cameraMotionRegions: [],
 	screenMotionRegions: [],
+	opening: defaultOpeningSequence(),
 	legacyEditor: null,
 };
 

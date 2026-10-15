@@ -3258,7 +3258,9 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             k if k.is_device() => Some(device_frame_margins(k, s_box_px, s_box_u)),
             _ => Some(window_frame_margins(s_box_px, s_box_u)),
         };
-        let (s_base, s_base_prev) = (s_box, s_box_prev);
+        // `mut` for the global opening below: it is the last transform applied, and it moves
+        // the base box alongside the zoomed one so a frame or a slot mask travels with it.
+        let (mut s_base, s_base_prev) = (s_box, s_box_prev);
         // Layouts "bloc" (side-by-side / top-bottom) : la boîte écran est un SLOT au ratio
         // arbitraire, et le web y fait tenir l'image en `cover` (`computeCompositeLayout`
         // renvoie `screenCover: true`, honoré par `frameRenderer`). Le natif l'ignorait, donc
@@ -3398,7 +3400,8 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             &clock,
             s_dst_prev,
         );
-        let s_dst = match screen_sample {
+        // `mut` for the global opening below — see the note on `s_base`.
+        let mut s_dst = match screen_sample {
             Some(sample) => {
                 zoom_rotation = [
                     zoom_rotation[0] + sample.rotation[0],
@@ -3463,6 +3466,43 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         w_dst_prev = cam_sample_prev
             .map(|sample| crate::camera_motion::camera_motion_dst(w_dst_prev, &sample))
             .unwrap_or(w_dst_prev);
+
+        // ---- Ouverture globale (Side Slide) ----
+        //
+        // L'entrée de TOUT le programme, posée sur l'horloge de SORTIE. `programme_t` est
+        // continu à travers les coupes : le second clip d'un projet coupé à 1 s joue la SUITE
+        // de l'ouverture, pas un nouveau départ. C'est la seule raison pour laquelle ce bloc
+        // lit `programme_time` et jamais `source_t` — ce dernier saute à chaque clip, et
+        // l'ouverture repartirait alors de zéro à chaque segment.
+        //
+        // Elle s'applique APRÈS le zoom et les deux mouvements, comme une transformation
+        // d'entrée par-dessus la mise en page finale : elle ne remplace jamais la cible qu'un
+        // utilisateur a réglée, elle la déplace pendant les premières secondes puis la rend
+        // telle quelle. `opening_rect` court-circuite à `eased >= 1.0` en renvoyant le rect
+        // d'origine, donc « rendue telle quelle » est exact, pas approché.
+        //
+        // `s_base` voyage AVEC `s_dst` : `s_ann` et `screen_mask` en dérivent, et un cadre,
+        // une ombre ou le masque d'un slot qui resteraient en place pendant que le métrage
+        // entre seraient exactement le bord qui traîne qu'on veut éviter. Les deux tournent
+        // autour de leur propre centre, donc la boîte zoomée et sa boîte au repos gardent
+        // leur écart en se déplaçant.
+        //
+        // Aucune caméra → `has_webcam` est faux et seul l'écran entre. `repaired` ne peut pas
+        // échouer, donc un réglage absurde se répare ici plutôt que de noircir le cadre.
+        let opening_programme_t = input.programme_time.unwrap_or(frame / FPS);
+        let opening = crate::opening::OpeningSequence::repaired(
+            &scene.map(|s| s.opening.clone()).unwrap_or_default(),
+        );
+        if !opening.is_identity() {
+            let opening_frame = opening.sample_at(opening_programme_t, lp.has_webcam);
+            if let Some(sample) = opening_frame.screen {
+                s_dst = crate::opening::opening_rect(s_dst, &sample);
+                s_base = crate::opening::opening_rect(s_base, &sample);
+            }
+            if let Some(sample) = opening_frame.camera {
+                w_dst = crate::opening::opening_rect(w_dst, &sample);
+            }
+        }
 
         // Aucun contre-étirement ici : le render target porte la géométrie de sortie, rien n'est
         // étiré après coup, donc aucun rect n'est rétréci pour compenser.

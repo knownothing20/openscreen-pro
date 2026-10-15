@@ -23,6 +23,7 @@ import { clampToBound } from "../../projectDefaults";
 // module TYPE-ONLY, so requiring them here never re-enters schema at runtime.
 import { parseCameraMotionRegions } from "../cameraMotion/parse";
 import { createId } from "../document/ids";
+import { parseOpeningSequence } from "../opening/opening";
 import { parseScreenMotionRegions } from "../screenMotion/parse";
 import { anchorRegionsWithDerivedMs } from "../timeline/timelineMap";
 
@@ -676,6 +677,15 @@ const documentSchemaShape = z.object({
 	// before this existed reads as "the screen stays where the project put it" and stays
 	// valid without a version bump.
 	screenMotionRegions: z.array(z.unknown()).default([]).transform(parseScreenMotionRegions),
+	// Opening Motion — the GLOBAL entrance of the whole programme. Read through a repairing
+	// parser rather than a zod object, for the same reason as the two motion lists above: a
+	// hand-edited duration must land back in range, never take the project down with it.
+	//
+	// Defaulted, so a document written before the opening existed reads as "no opening" and
+	// stays valid with no `schemaVersion` bump. It is also deliberately NOT a motion region:
+	// it plays on the output clock across cuts, so it carries no clip anchor and never
+	// appears in `cameraMotionRegions` / `screenMotionRegions`.
+	opening: z.unknown().default(null).transform(parseOpeningSequence),
 	legacyEditor: legacyEditorSchema.nullable().default(null),
 });
 

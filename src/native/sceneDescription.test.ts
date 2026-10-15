@@ -11,6 +11,7 @@ import {
 	getZoomScale,
 	ZOOM_DEPTH_SCALES,
 } from "@/components/video-editor/types";
+import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import type {
 	AxcutAsset,
 	AxcutClip,
@@ -104,6 +105,7 @@ function makeDoc(
 		markers: [],
 		cameraMotionRegions: [],
 		screenMotionRegions: [],
+		opening: defaultOpeningSequence(),
 		legacyEditor: overrides.legacyEditor ?? null,
 	};
 }
@@ -2902,5 +2904,51 @@ describe("buildSceneDescription.recordingMarkers", () => {
 			],
 		};
 		expect(buildSceneDescription(withMarkers)).toEqual(buildSceneDescription(withoutMarkers));
+	});
+});
+
+describe("opening — the scene contract", () => {
+	it("sends a disabled opening for a project that has none", () => {
+		const scene = buildSceneDescription(makeDoc());
+		// Present rather than omitted: the native side reads `enabled` on every frame to
+		// decide whether to short-circuit at all, so a missing field would be answered by
+		// its own default instead of by the project.
+		expect(scene.opening.enabled).toBe(false);
+		expect(scene.opening.preset).toBe("sideSlide");
+		expect(scene.opening.curve).toBe("swift");
+		expect(scene.opening.durationSec).toBe(2.2);
+		expect(scene.opening.elementOrder).toEqual(["screen", "camera"]);
+	});
+
+	it("sends the stored opening through unchanged", () => {
+		const doc = makeDoc();
+		doc.opening = {
+			enabled: true,
+			preset: "sideSlide",
+			durationSec: 3.2,
+			staggerSec: 0.4,
+			curve: "swift",
+			elementOrder: ["camera", "screen"],
+			includedElements: ["screen"],
+		};
+		expect(buildSceneDescription(doc).opening).toEqual(doc.opening);
+	});
+
+	it("keeps the opening OFF the motion-region lists", () => {
+		// The whole point of the split: the opening is global and plays on the output clock,
+		// so it must never be serialised as a clip-anchored motion region.
+		const doc = makeDoc();
+		doc.opening = {
+			enabled: true,
+			preset: "sideSlide",
+			durationSec: 2.2,
+			staggerSec: 0.16,
+			curve: "swift",
+			elementOrder: ["screen", "camera"],
+			includedElements: ["screen", "camera"],
+		};
+		const scene = buildSceneDescription(doc);
+		expect(scene.cameraMotionRegions).toHaveLength(0);
+		expect(scene.screenMotionRegions).toHaveLength(0);
 	});
 });

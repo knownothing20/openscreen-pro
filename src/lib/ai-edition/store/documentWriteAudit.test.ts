@@ -337,6 +337,14 @@ const DECLARED: WritePath[] = [
 	// pill back — which is why the paste writes once per kind rather than once per region.
 	w("src/lib/ai-edition/store/useTimeline.ts", "pasteMotionAttributes", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "pasteMotionAttributes", "save", "gesture"),
+	// Opening Motion. `setOpening` is a discrete change (the toggle, an element switch, an
+	// order swap) and commits in one save; `commitOpening` is the end of a slider drag, whose
+	// live frames went through `setDocument` with `history: false` and so are not listed.
+	w("src/lib/ai-edition/store/useTimeline.ts", "setOpening", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "commitOpening", "save", "gesture"),
+	// The live half of a slider drag: writes without history, exactly like the motion
+	// sliders' own `*Live` rows above.
+	w("src/lib/ai-edition/store/useTimeline.ts", "setOpeningLive", "set", "automatic"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "saveZoomPatch", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setTrimEntries", "save", "gesture"),
 	// The live halves of the two drags.
