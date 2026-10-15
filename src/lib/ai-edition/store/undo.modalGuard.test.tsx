@@ -91,3 +91,37 @@ describe("useUndoRedoShortcuts under a modal", () => {
 		expect(useProjectStore.getState().document?.project.title).toBe("before");
 	});
 });
+
+describe("useUndoRedoShortcuts from a focused control", () => {
+	/** The pointer leaves focus on whatever it last pressed. A slider is a control, not a
+	 *  text field, so the document undo is the one the user means by Ctrl+Z there. */
+	it("undoes when a range slider holds focus", () => {
+		render(<Harness modal={false} />);
+		const slider = document.createElement("input");
+		slider.type = "range";
+		document.body.appendChild(slider);
+		slider.focus();
+
+		fireEvent.keyDown(slider, { key: "z", ctrlKey: true });
+
+		expect(onAfter).toHaveBeenCalledTimes(1);
+		expect(useProjectStore.getState().document?.project.title).toBe("before");
+		slider.remove();
+	});
+
+	/** The rule the range exception must not break: inside a text field, the browser's own
+	 *  text undo is the one the user means. */
+	it("leaves a text field's own Ctrl+Z alone", () => {
+		render(<Harness modal={false} />);
+		const text = document.createElement("input");
+		text.type = "text";
+		document.body.appendChild(text);
+		text.focus();
+
+		fireEvent.keyDown(text, { key: "z", ctrlKey: true });
+
+		expect(onAfter).not.toHaveBeenCalled();
+		expect(useProjectStore.getState().document?.project.title).toBe("after");
+		text.remove();
+	});
+});

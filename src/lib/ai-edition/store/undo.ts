@@ -77,7 +77,11 @@ export function redo(): boolean {
  * points, so it lives in one function.
  */
 function isTextEditingTarget(node: EventTarget | null): boolean {
-	if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) return true;
+	if (node instanceof HTMLTextAreaElement) return true;
+	// A range input is a control, not a text field: the browser's own text undo means nothing
+	// there. Counting it as one swallowed Ctrl+Z right after a slider drag, because the pointer
+	// leaves focus on the control — so the user's very next Ctrl+Z went nowhere at all.
+	if (node instanceof HTMLInputElement) return node.type !== "range";
 	return node instanceof HTMLElement && node.isContentEditable;
 }
 
