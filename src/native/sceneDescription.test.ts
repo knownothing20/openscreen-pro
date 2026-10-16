@@ -2951,4 +2951,22 @@ describe("opening — the scene contract", () => {
 		expect(scene.cameraMotionRegions).toHaveLength(0);
 		expect(scene.screenMotionRegions).toHaveLength(0);
 	});
+
+	it("sends the preset the document chose, not a repaired default", () => {
+		// The contract the native side reads: whatever `preset` string it gets must be one it
+		// knows. `converge` must survive the trip verbatim, or the app would show one style and
+		// the compositor would draw the other.
+		const doc = makeDoc();
+		doc.opening = {
+			enabled: true,
+			preset: "converge",
+			durationSec: 2.2,
+			staggerSec: 0.16,
+			curve: "swift",
+			elementOrder: ["screen", "camera"],
+			includedElements: ["screen", "camera"],
+		};
+		expect(buildSceneDescription(doc).opening.preset).toBe("converge");
+		expect(buildSceneDescription(doc).opening).toEqual(doc.opening);
+	});
 });

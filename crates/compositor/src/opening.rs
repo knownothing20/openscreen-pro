@@ -1,8 +1,13 @@
-//! Ouverture globale — preset « Side Slide ».
+//! Ouverture globale — presets « Side Slide » et « Converge ».
 //!
-//! L'entrée de tout le programme : l'écran glisse depuis la gauche, la caméra depuis la
-//! droite, décalés l'un par rapport à l'autre, puis tout se pose exactement sur la mise en
-//! page normale.
+//! L'entrée de tout le programme. En Side Slide l'écran glisse depuis la gauche et la caméra
+//! depuis la droite ; en Converge l'écran arrive du coin haut-gauche et la caméra du coin
+//! bas-droit, en plus petit. Dans les deux cas, décalés l'un par rapport à l'autre, puis tout
+//! se pose exactement sur la mise en page normale.
+//!
+//! Les deux presets ne diffèrent QUE par la géométrie de départ (échelle + point d'origine) :
+//! la courbe, le calcul du temps, le décalage entre éléments et la liste des participants sont
+//! communs. C'est ce qui permet d'en ajouter un troisième sans toucher à la chorégraphie.
 //!
 //! # Pourquoi ici, et pas sur un clip
 //!
@@ -46,11 +51,64 @@ const STAGGER_DURATION_FRACTION: f32 = 0.8;
 /// nulle (qui ferait un « pop » d'une image) quand durée et décalage sont presque égaux.
 const MIN_SLIDE_SEC: f32 = 0.05;
 
-/// Échelles de départ, reprises de DogSC : l'écran part à 94 %, la caméra à 88 %, et les deux
-/// finissent à 100 %. Une caméra part de plus loin parce qu'elle est plus petite à l'écran :
-/// le même 6 % se lirait comme un à-coup sur une vignette.
+/// Nom du preset « glissement latéral » : chacun entre par son côté, à l'horizontale.
+pub const PRESET_SIDE_SLIDE: &str = "sideSlide";
+/// Nom du preset « convergence » : chacun entre par un coin opposé, en plus petit.
+pub const PRESET_CONVERGE: &str = "converge";
+
+/// Échelles de départ du Side Slide, reprises de DogSC : l'écran part à 94 %, la caméra à
+/// 88 %, et les deux finissent à 100 %. Une caméra part de plus loin parce qu'elle est plus
+/// petite à l'écran : le même 6 % se lirait comme un à-coup sur une vignette.
 const SCREEN_FROM_SCALE: f32 = 0.94;
 const CAMERA_FROM_SCALE: f32 = 0.88;
+
+/// Converge — l'écran part du coin haut-gauche, la caméra du coin bas-droit, et les deux
+/// convergent vers leur place. Départ plus franc qu'un Side Slide (0,72 / 0,58) : c'est ce qui
+/// fait lire « ça se rassemble » plutôt que « ça glisse ».
+///
+/// Les offsets sont en FRACTIONS DE LA TOILE (largeur pour x, hauteur pour y), jamais en
+/// pixels : la même scène doit se composer à l'identique en 480×270 comme en 4K.
+const CONVERGE_SCREEN_FROM_SCALE: f32 = 0.72;
+const CONVERGE_SCREEN_FROM: [f32; 2] = [-1.05, -0.62];
+const CONVERGE_CAMERA_FROM_SCALE: f32 = 0.58;
+const CONVERGE_CAMERA_FROM: [f32; 2] = [1.12, 0.72];
+
+/// Les presets que ce module sait animer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpeningPreset {
+    SideSlide,
+    Converge,
+}
+
+impl OpeningPreset {
+    /// Un nom inconnu retombe sur le défaut, et ne lève jamais : un preset retiré du produit
+    /// ne doit pas figer une scène déjà enregistrée.
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            PRESET_CONVERGE => Self::Converge,
+            _ => Self::SideSlide,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SideSlide => PRESET_SIDE_SLIDE,
+            Self::Converge => PRESET_CONVERGE,
+        }
+    }
+}
+
+/// D'où l'élément part, et par où. La direction appartient au preset, pas à la chorégraphie :
+/// c'est le seul point où les deux presets divergent, et il est décidé une fois, à la
+/// construction de l'échantillon.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OpeningMotion {
+    /// Glissement horizontal. La distance est « toute la toile plus la largeur de l'élément »,
+    /// donc elle dépend d'une largeur que seul `opening_rect` connaît : elle y est calculée.
+    SideSlide { side: f32 },
+    /// Convergence depuis un point hors cadre FIXE, en fractions de la toile de sortie.
+    Converge { from: [f32; 2] },
+}
 
 /// Ce qu'un élément doit faire à un instant donné.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -60,8 +118,7 @@ pub struct OpeningSample {
     pub eased: f32,
     /// Échelle au repos de l'élément, à `eased = 0`.
     pub from_scale: f32,
-    /// -1.0 = entre par la gauche, +1.0 = entre par la droite.
-    pub side: f32,
+    pub motion: OpeningMotion,
 }
 
 /// Les deux éléments, échantillonnés au même instant. `None` = cet élément n'entre pas
@@ -86,6 +143,7 @@ impl OpeningFrame {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OpeningSequence {
     enabled: bool,
+    preset: OpeningPreset,
     duration_sec: f32,
     stagger_sec: f32,
     slide_sec: f32,
@@ -120,12 +178,20 @@ impl OpeningSequence {
 
         Self {
             enabled: raw.enabled,
+            // Un nom inconnu (ou une scène écrite avant que le champ existe) retombe sur le
+            // défaut plutôt que de rendre une scène non animée ou, pire, un autre preset.
+            preset: OpeningPreset::from_name(&raw.preset),
             duration_sec,
             stagger_sec,
             slide_sec,
             order,
             included,
         }
+    }
+
+    /// Le preset retenu, après réparation du nom.
+    pub fn preset(&self) -> OpeningPreset {
+        self.preset
     }
 
     /// L'ouverture ne fait rien : interrupteur fermé, ou aucun élément retenu.
@@ -161,12 +227,13 @@ impl OpeningSequence {
         // Un temps non fini ne doit pas se propager en NaN dans une géométrie.
         let t = if t_sec.is_finite() { t_sec } else { 0.0 };
 
+        let entering = self.entering(has_camera);
         let mut frame = OpeningFrame::default();
-        if self.includes(ELEMENT_SCREEN) {
-            frame.screen = Some(self.sample_element(ELEMENT_SCREEN, t));
+        if entering.contains(&ELEMENT_SCREEN) {
+            frame.screen = Some(self.sample_element(ELEMENT_SCREEN, t, &entering));
         }
-        if has_camera && self.includes(ELEMENT_CAMERA) {
-            frame.camera = Some(self.sample_element(ELEMENT_CAMERA, t));
+        if entering.contains(&ELEMENT_CAMERA) {
+            frame.camera = Some(self.sample_element(ELEMENT_CAMERA, t, &entering));
         }
         frame
     }
@@ -175,21 +242,68 @@ impl OpeningSequence {
         self.included.iter().any(|n| n == element)
     }
 
-    fn sample_element(&self, element: &str, t: f32) -> OpeningSample {
+    /// Qui entre VRAIMENT, dans l'ordre d'entrée. C'est la sélection du document restreinte à
+    /// ce qui peut effectivement entrer — et c'est cette liste, pas `order` entier, qui décide
+    /// des rangs.
+    ///
+    /// La distinction n'est pas cosmétique : un `order` qui nomme la caméra en premier
+    /// condamnait l'écran à attendre `stagger` secondes pour un élément qui n'existe pas, sur
+    /// un projet sans caméra. Le rang se lit donc sur les participants, comme le
+    /// `participatingElements()` de DogSC.
+    fn entering(&self, has_camera: bool) -> Vec<&str> {
+        self.order
+            .iter()
+            .map(String::as_str)
+            .filter(|name| *name != ELEMENT_CAMERA || has_camera)
+            .filter(|name| self.includes(name))
+            .collect()
+    }
+
+    fn sample_element(&self, element: &str, t: f32, entering: &[&str]) -> OpeningSample {
         let camera = element == ELEMENT_CAMERA;
-        // Position dans l'ordre d'entrée : le premier élément part à 0, le second à
-        // `stagger`. Un nom absent de l'ordre (impossible après réparation) part à 0.
-        let index = self.order.iter().position(|n| n == element).unwrap_or(0) as f32;
-        let start = index * self.stagger_sec;
-        let progress = ((t - start) / self.slide_sec).clamp(0.0, 1.0);
+        // Rang parmi les participants. Un nom absent de la liste (impossible : on n'arrive ici
+        // que pour un participant) part à 0.
+        let rank = entering.iter().position(|name| *name == element).unwrap_or(0) as f32;
+        let (start, slide) = if entering.len() <= 1 {
+            // Un seul élément : rien à décaler, et il dispose de TOUTE la durée. Garder
+            // `duration - stagger` lui laisserait un trou mort à la fin, sans second élément
+            // pour l'y occuper.
+            (0.0, self.duration_sec)
+        } else {
+            // Deux éléments ou plus : le premier part à 0, le suivant à `stagger`, et les deux
+            // glissent sur le même temps — la chorégraphie d'origine, inchangée.
+            (rank * self.stagger_sec, self.slide_sec)
+        };
+        let progress = ((t - start) / slide.max(MIN_SLIDE_SEC)).clamp(0.0, 1.0);
+        let (from_scale, motion) = self.departure(camera);
         OpeningSample {
             eased: swift_ease(progress),
-            from_scale: if camera {
-                CAMERA_FROM_SCALE
-            } else {
-                SCREEN_FROM_SCALE
-            },
-            side: if camera { 1.0 } else { -1.0 },
+            from_scale,
+            motion,
+        }
+    }
+
+    /// Géométrie de départ : le seul endroit où les presets divergent.
+    fn departure(&self, camera: bool) -> (f32, OpeningMotion) {
+        match (self.preset, camera) {
+            (OpeningPreset::SideSlide, false) => {
+                (SCREEN_FROM_SCALE, OpeningMotion::SideSlide { side: -1.0 })
+            }
+            (OpeningPreset::SideSlide, true) => {
+                (CAMERA_FROM_SCALE, OpeningMotion::SideSlide { side: 1.0 })
+            }
+            (OpeningPreset::Converge, false) => (
+                CONVERGE_SCREEN_FROM_SCALE,
+                OpeningMotion::Converge {
+                    from: CONVERGE_SCREEN_FROM,
+                },
+            ),
+            (OpeningPreset::Converge, true) => (
+                CONVERGE_CAMERA_FROM_SCALE,
+                OpeningMotion::Converge {
+                    from: CONVERGE_CAMERA_FROM,
+                },
+            ),
         }
     }
 }
@@ -221,12 +335,19 @@ pub fn opening_rect(base: [f32; 4], sample: &OpeningSample) -> [f32; 4] {
     let h = base[3] * scale;
     let cx = base[0] + base[2] * 0.5;
     let cy = base[1] + base[3] * 0.5;
-    // `1.0` est la largeur du cadre (coordonnées normalisées) : la translation vaut donc
-    // « toute la largeur, plus la largeur de l'élément », ce qui le sort du cadre quelle que
-    // soit sa taille. Le facteur `(1 - eased)` la ramène à zéro au moment où l'élément se pose.
+    // `1 - eased` ramène la translation à zéro au moment où l'élément se pose. Il ne peut pas
+    // valoir 0 ici : `eased >= 1.0` est déjà sorti plus haut.
     let travel = 1.0 - eased;
-    let dx = sample.side * travel * (1.0 + w);
-    [cx - w * 0.5 + dx, cy - h * 0.5, w, h]
+    let (dx, dy) = match sample.motion {
+        // `1.0` est la largeur du cadre (coordonnées normalisées) : la translation vaut donc
+        // « toute la largeur, plus la largeur de l'élément », ce qui le sort du cadre quelle
+        // que soit sa taille.
+        OpeningMotion::SideSlide { side } => (side * travel * (1.0 + w), 0.0),
+        // Le point de départ est donné en fractions de la toile : rien à dériver du rect, et
+        // l'axe vertical existe (contrairement au Side Slide, qui reste à l'horizontale).
+        OpeningMotion::Converge { from } => (from[0] * travel, from[1] * travel),
+    };
+    [cx - w * 0.5 + dx, cy - h * 0.5 + dy, w, h]
 }
 
 /// `true` si le nom désigne un élément que ce preset sait animer.
@@ -286,6 +407,29 @@ mod tests {
         })
     }
 
+    /// La même chose, en Converge.
+    fn converge(duration: f32, stagger: f32) -> OpeningSequence {
+        OpeningSequence::repaired(&SceneOpening {
+            enabled: true,
+            preset: PRESET_CONVERGE.to_string(),
+            duration_sec: duration,
+            stagger_sec: stagger,
+            ..Default::default()
+        })
+    }
+
+    /// Réglée pour ne retenir que `names`, dans `order`.
+    fn only(order: &[&str], names: &[&str]) -> OpeningSequence {
+        OpeningSequence::repaired(&SceneOpening {
+            enabled: true,
+            duration_sec: 2.2,
+            stagger_sec: 0.16,
+            element_order: order.iter().map(|s| s.to_string()).collect(),
+            included_elements: names.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        })
+    }
+
     #[test]
     fn swift_curve_is_pinned_at_both_ends() {
         assert_eq!(swift_ease(0.0), 0.0);
@@ -331,7 +475,7 @@ mod tests {
         let frame = s.sample_at(0.0, true);
         let screen = frame.screen.expect("screen enters");
         assert_eq!(screen.eased, 0.0);
-        assert_eq!(screen.side, -1.0);
+        assert_eq!(screen.motion, OpeningMotion::SideSlide { side: -1.0 });
         assert_eq!(screen.from_scale, SCREEN_FROM_SCALE);
 
         let base = [0.1, 0.1, 0.8, 0.8];
@@ -347,7 +491,7 @@ mod tests {
     fn at_t0_the_camera_starts_off_canvas_on_the_right() {
         let s = seq(true);
         let camera = s.sample_at(0.0, true).camera.expect("camera enters");
-        assert_eq!(camera.side, 1.0);
+        assert_eq!(camera.motion, OpeningMotion::SideSlide { side: 1.0 });
         assert_eq!(camera.from_scale, CAMERA_FROM_SCALE);
 
         let base = [0.62, 0.62, 0.3, 0.3];
@@ -539,5 +683,282 @@ mod tests {
         let base_cx = base[0] + base[2] * 0.5;
         let mid_cx = mid[0] + mid[2] * 0.5;
         assert!((base_cx - mid_cx).abs() > 0.0, "still travelling");
+    }
+
+    // ── Converge ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn an_unknown_preset_falls_back_to_side_slide() {
+        for name in ["", "sideSlide", "side-slide", "light3d", "sticker", "CONVERGE"] {
+            let s = OpeningSequence::repaired(&SceneOpening {
+                enabled: true,
+                preset: name.to_string(),
+                ..Default::default()
+            });
+            assert_eq!(s.preset(), OpeningPreset::SideSlide, "preset {name:?}");
+            // Et surtout : ce que ça REND est bien un Side Slide, pas autre chose.
+            let screen = s.sample_at(0.0, true).screen.expect("screen");
+            assert_eq!(screen.from_scale, SCREEN_FROM_SCALE, "preset {name:?}");
+            assert_eq!(screen.motion, OpeningMotion::SideSlide { side: -1.0 });
+        }
+        // Le nom connu, lui, est bien reconnu.
+        assert_eq!(
+            OpeningSequence::repaired(&SceneOpening {
+                enabled: true,
+                preset: PRESET_CONVERGE.to_string(),
+                ..Default::default()
+            })
+            .preset(),
+            OpeningPreset::Converge
+        );
+    }
+
+    #[test]
+    fn converge_starts_the_screen_in_the_top_left_corner() {
+        let s = converge(2.2, 0.16);
+        let screen = s.sample_at(0.0, true).screen.expect("screen enters");
+        assert_eq!(screen.eased, 0.0);
+        assert_eq!(
+            screen.motion,
+            OpeningMotion::Converge {
+                from: CONVERGE_SCREEN_FROM
+            }
+        );
+        assert_eq!(screen.from_scale, CONVERGE_SCREEN_FROM_SCALE);
+
+        let base = [0.1, 0.1, 0.8, 0.8];
+        let out = opening_rect(base, &screen);
+        // Entièrement à GAUCHE du cadre...
+        assert!(out[0] + out[2] <= 0.0, "screen must be fully left, got {out:?}");
+        // ...et son coin haut est AU-DESSUS : les deux axes partent du même côté (haut-gauche).
+        assert!(out[1] < 0.0, "screen must start above the frame, got {out:?}");
+        // L'échelle de départ est appliquée telle quelle, autour de son propre centre.
+        assert!((out[2] - base[2] * CONVERGE_SCREEN_FROM_SCALE).abs() < 1e-6);
+        assert!((out[3] - base[3] * CONVERGE_SCREEN_FROM_SCALE).abs() < 1e-6);
+    }
+
+    #[test]
+    fn converge_starts_the_camera_in_the_bottom_right_corner() {
+        let s = converge(2.2, 0.16);
+        let camera = s.sample_at(0.0, true).camera.expect("camera enters");
+        assert_eq!(
+            camera.motion,
+            OpeningMotion::Converge {
+                from: CONVERGE_CAMERA_FROM
+            }
+        );
+        assert_eq!(camera.from_scale, CONVERGE_CAMERA_FROM_SCALE);
+
+        let base = [0.62, 0.62, 0.3, 0.3];
+        let out = opening_rect(base, &camera);
+        assert!(out[0] >= 1.0, "camera must be fully right, got {out:?}");
+        assert!(out[1] >= 1.0, "camera must be fully below, got {out:?}");
+    }
+
+    #[test]
+    fn converge_pulls_both_elements_towards_their_place() {
+        let s = converge(2.2, 0.16);
+        let base = [0.1, 0.1, 0.8, 0.8];
+        // L'écran remonte et vient de la gauche : son bord gauche avance, son haut descend.
+        let mut last_left = f32::NEG_INFINITY;
+        let mut last_top = f32::NEG_INFINITY;
+        for i in 0..=20 {
+            let t = i as f32 * 0.1;
+            let out = opening_rect(base, &s.sample_at(t, true).screen.unwrap());
+            assert!(out[0] >= last_left - 1e-6, "screen must not back up at t={t}");
+            assert!(out[1] >= last_top - 1e-6, "screen must not dip at t={t}");
+            last_left = out[0];
+            last_top = out[1];
+        }
+        // La caméra, elle, repart de la droite et du BAS : ses deux bords reculent.
+        let cam_base = [0.62, 0.62, 0.3, 0.3];
+        let mut last_right = f32::INFINITY;
+        let mut last_bottom = f32::INFINITY;
+        for i in 0..=20 {
+            let t = i as f32 * 0.1;
+            let out = opening_rect(cam_base, &s.sample_at(t, true).camera.unwrap());
+            assert!(out[0] <= last_right + 1e-6, "camera must not advance at t={t}");
+            assert!(out[1] <= last_bottom + 1e-6, "camera must not rise at t={t}");
+            last_right = out[0];
+            last_bottom = out[1];
+        }
+    }
+
+    #[test]
+    fn converge_lands_exactly_home_and_stays() {
+        let s = converge(2.2, 0.16);
+        let base = [0.1, 0.1, 0.8, 0.8];
+        for t in [2.2_f32, 2.21, 3.0, 60.0] {
+            let frame = s.sample_at(t, true);
+            assert_eq!(frame.screen.unwrap().eased, 1.0, "screen home at t={t}");
+            assert_eq!(frame.camera.unwrap().eased, 1.0, "camera home at t={t}");
+            assert_eq!(opening_rect(base, &frame.screen.unwrap()), base);
+            assert_eq!(opening_rect(base, &frame.camera.unwrap()), base);
+        }
+    }
+
+    #[test]
+    fn disabled_converge_is_still_the_identity() {
+        let s = OpeningSequence::repaired(&SceneOpening {
+            enabled: false,
+            preset: PRESET_CONVERGE.to_string(),
+            ..Default::default()
+        });
+        assert!(s.is_identity());
+        assert!(s.sample_at(0.0, true).is_identity());
+    }
+
+    #[test]
+    fn the_two_presets_share_their_timing() {
+        // Même durée, même décalage, même ordre : seule la géométrie de départ change. Si un
+        // preset se mettait à danser sur un autre temps, c'est ici que ça se verrait.
+        let slide = with(2.2, 0.16);
+        let conv = converge(2.2, 0.16);
+        for i in 0..=22 {
+            let t = i as f32 * 0.1;
+            let a = slide.sample_at(t, true);
+            let b = conv.sample_at(t, true);
+            assert_eq!(a.screen.unwrap().eased, b.screen.unwrap().eased, "screen eased at t={t}");
+            assert_eq!(a.camera.unwrap().eased, b.camera.unwrap().eased, "camera eased at t={t}");
+        }
+    }
+
+    #[test]
+    fn the_side_slide_geometry_is_unchanged() {
+        // Valeurs figées : la régression que ce test existe pour attraper, c'est un Converge
+        // qui se serait glissé dans le chemin du Side Slide. base = [0.2, 0.2, 0.6, 0.6],
+        // durée 2,2 s, décalage 0,16 s, écran en premier.
+        let s = with(2.2, 0.16);
+        let base = [0.2, 0.2, 0.6, 0.6];
+
+        let at = |t: f32, element: &str| {
+            let frame = s.sample_at(t, true);
+            let sample = if element == ELEMENT_CAMERA {
+                frame.camera.unwrap()
+            } else {
+                frame.screen.unwrap()
+            };
+            opening_rect(base, &sample)
+        };
+
+        // t = 0 : entièrement hors cadre, à gauche, à l'échelle 0,94, centré verticalement.
+        let t0 = at(0.0, ELEMENT_SCREEN);
+        assert!((t0[0] - (0.5 - 0.6 * 0.94 * 0.5 - (1.0 + 0.6 * 0.94))).abs() < 1e-6, "t0 {t0:?}");
+        // Le CENTRE vertical ne bouge pas : l'élément rétrécit sur place, il ne se décale pas
+        // vers un coin (c'est la différence de fond avec Converge).
+        assert!((t0[1] + t0[3] * 0.5 - 0.5).abs() < 1e-6, "vertical centre must not move: {t0:?}");
+
+        // t = 1,0 : à mi-vol, la valeur exacte de la formule d'origine.
+        let mid = at(1.0, ELEMENT_SCREEN);
+        let eased = swift_ease(1.0 / 2.04);
+        let scale = 0.94 + 0.06 * eased;
+        let w = 0.6 * scale;
+        let expected_x = 0.5 - w * 0.5 - (1.0 - eased) * (1.0 + w);
+        assert!((mid[0] - expected_x).abs() < 1e-6, "mid x {mid:?} vs {expected_x}");
+        assert!((mid[2] - w).abs() < 1e-6, "mid w {mid:?} vs {w}");
+
+        // Et la caméra part bien de la DROITE, pas du coin.
+        let cam0 = at(0.0, ELEMENT_CAMERA);
+        assert!(cam0[0] >= 1.0, "camera must be fully right: {cam0:?}");
+        assert!(
+            (cam0[1] + cam0[3] * 0.5 - 0.5).abs() < 1e-6,
+            "camera must not move vertically: {cam0:?}"
+        );
+    }
+
+    // ── Participants ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn a_lone_participant_starts_at_zero_whatever_its_rank_in_the_order() {
+        // Ordre « caméra d'abord », mais aucune caméra dans le projet : l'écran ne doit pas
+        // hériter du rang 1 et attendre `stagger` secondes pour rien.
+        let s = only(&["camera", "screen"], &["screen", "camera"]);
+        let screen = s.sample_at(0.0, false).screen.expect("screen enters");
+        assert_eq!(screen.eased, 0.0, "a lone participant starts at t=0");
+        // Le témoin : à la moitié de la durée il est à mi-parcours, donc il a bien commencé.
+        let half = s.sample_at(1.1, false).screen.unwrap();
+        assert!((half.eased - swift_ease(0.5)).abs() < 1e-6, "{}", half.eased);
+    }
+
+    #[test]
+    fn a_lone_participant_uses_the_whole_duration() {
+        // Sans second élément, il n'y a rien à occuper pendant `stagger` : le garder laisserait
+        // un trou mort en fin d'ouverture.
+        let s = only(&["screen", "camera"], &["screen"]);
+        let half = s.sample_at(1.1, false).screen.unwrap();
+        assert!(
+            (half.eased - swift_ease(0.5)).abs() < 1e-6,
+            "half the duration must be half the travel, got {}",
+            half.eased
+        );
+        assert_eq!(s.sample_at(2.2, false).screen.unwrap().eased, 1.0);
+    }
+
+    #[test]
+    fn a_lone_camera_also_starts_at_zero() {
+        let s = only(&["screen", "camera"], &["camera"]);
+        let half = s.sample_at(1.1, true).camera.unwrap();
+        assert!((half.eased - swift_ease(0.5)).abs() < 1e-6, "{}", half.eased);
+    }
+
+    #[test]
+    fn two_participants_keep_the_staggered_schedule() {
+        // Le correctif ne doit pas avoir aplatit le cas normal.
+        let s = only(&["screen", "camera"], &["screen", "camera"]);
+        assert_eq!(s.sample_at(0.0, true).camera.unwrap().eased, 0.0, "camera waits");
+        assert!(s.sample_at(0.08, true).screen.unwrap().eased > 0.0, "screen leads");
+        assert_eq!(s.sample_at(0.15, true).camera.unwrap().eased, 0.0);
+        assert!(s.sample_at(0.17, true).camera.unwrap().eased > 0.0);
+        // Et les deux se posent exactement à la durée.
+        let end = s.sample_at(2.2, true);
+        assert_eq!(end.screen.unwrap().eased, 1.0);
+        assert_eq!(end.camera.unwrap().eased, 1.0);
+    }
+
+    #[test]
+    fn the_schedule_is_a_pure_function_of_the_inputs() {
+        // L'ouverture est globale : la même seconde doit donner le même état, et rien dans la
+        // liste des participants ne doit dépendre de l'historique. Deux appels identiques —
+        // c'est ce qui garantit qu'un changement de caméra d'un clip à l'autre ne peut pas
+        // réordonner la chorégraphie en cours de route sans que ça se voie ici.
+        let s = only(&["camera", "screen"], &["screen", "camera"]);
+        for t in [0.0_f32, 0.4, 1.1, 2.2] {
+            assert_eq!(s.sample_at(t, true), s.sample_at(t, true), "t={t}");
+        }
+        // Et la liste des participants ne dépend que de `has_camera`, pas du temps.
+        let with_cam = s.sample_at(1.1, true);
+        let without_cam = s.sample_at(1.1, false);
+        assert!(with_cam.camera.is_some() && without_cam.camera.is_none());
+    }
+
+    #[test]
+    fn converge_survives_absurd_settings() {
+        for raw in [
+            SceneOpening {
+                enabled: true,
+                preset: PRESET_CONVERGE.to_string(),
+                duration_sec: f32::NAN,
+                ..Default::default()
+            },
+            SceneOpening {
+                enabled: true,
+                preset: PRESET_CONVERGE.to_string(),
+                stagger_sec: f32::INFINITY,
+                ..Default::default()
+            },
+        ] {
+            let s = OpeningSequence::repaired(&raw);
+            for t in [-1.0_f32, 0.0, 0.5, 2.2, 10.0, f32::NAN] {
+                for sample in [s.sample_at(t, true).screen, s.sample_at(t, true).camera]
+                    .into_iter()
+                    .flatten()
+                {
+                    let out = opening_rect([0.1, 0.1, 0.8, 0.8], &sample);
+                    for v in out {
+                        assert!(v.is_finite(), "rect NaN/Inf at t={t} for {raw:?}");
+                    }
+                }
+            }
+        }
     }
 }

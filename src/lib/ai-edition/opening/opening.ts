@@ -13,8 +13,31 @@
 // half in the second clip, not a fresh opening. That is also why it carries no clip anchor —
 // see the round's notes on keeping global settings independent of the per-clip motion regions.
 
-/** The only preset this round ships. A name we do not know falls back to it. */
+/** The presets this round ships. A name we do not know falls back to `sideSlide`. */
 export const OPENING_PRESET_SIDE_SLIDE = "sideSlide";
+/** Screen in from the top-left, camera in from the bottom-right, both converging. */
+export const OPENING_PRESET_CONVERGE = "converge";
+
+export type OpeningPreset = typeof OPENING_PRESET_SIDE_SLIDE | typeof OPENING_PRESET_CONVERGE;
+
+export const OPENING_KNOWN_PRESETS: readonly OpeningPreset[] = [
+	OPENING_PRESET_SIDE_SLIDE,
+	OPENING_PRESET_CONVERGE,
+];
+
+/**
+ * Is this one of the presets we can actually render?
+ *
+ * The parser is an ALLOWLIST, not a "is it a non-empty string" check, and that distinction is
+ * the whole point: both halves of the contract must render the same thing for the same
+ * document. A parser that stored `preset: "light3d"` verbatim would have the app read back a
+ * value it recognises while the native side quietly repaired it to `sideSlide` — the document
+ * would say one thing and the picture another. Unknown names are normalised HERE, so what is
+ * stored is always what is drawn.
+ */
+export function isKnownOpeningPreset(value: unknown): value is OpeningPreset {
+	return typeof value === "string" && (OPENING_KNOWN_PRESETS as readonly string[]).includes(value);
+}
 
 /** The only curve this round ships: `1 - (1 - p)^4`, an ease-out quart. */
 export const OPENING_CURVE_SWIFT = "swift";
@@ -53,7 +76,8 @@ export type OpeningElement = typeof OPENING_ELEMENT_SCREEN | typeof OPENING_ELEM
  */
 export interface OpeningSequence {
 	enabled: boolean;
-	preset: string;
+	/** Always one of `OPENING_KNOWN_PRESETS` after parsing — see `isKnownOpeningPreset`. */
+	preset: OpeningPreset;
 	durationSec: number;
 	staggerSec: number;
 	curve: string;
@@ -146,7 +170,8 @@ export function parseOpeningSequence(value: unknown): OpeningSequence {
 
 	return {
 		enabled: raw.enabled === true,
-		preset: typeof raw.preset === "string" && raw.preset ? raw.preset : OPENING_PRESET_SIDE_SLIDE,
+		// Allowlist, not "is a non-empty string": see `isKnownOpeningPreset`.
+		preset: isKnownOpeningPreset(raw.preset) ? raw.preset : OPENING_PRESET_SIDE_SLIDE,
 		durationSec,
 		staggerSec,
 		curve: typeof raw.curve === "string" && raw.curve ? raw.curve : OPENING_CURVE_SWIFT,

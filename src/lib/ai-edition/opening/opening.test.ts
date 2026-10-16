@@ -17,6 +17,8 @@ import {
 	OPENING_CURVE_SWIFT,
 	OPENING_ELEMENT_CAMERA,
 	OPENING_ELEMENT_SCREEN,
+	OPENING_KNOWN_PRESETS,
+	OPENING_PRESET_CONVERGE,
 	OPENING_PRESET_SIDE_SLIDE,
 	parseOpeningSequence,
 } from "@/lib/ai-edition/opening/opening";
@@ -144,6 +146,72 @@ describe("opening: element lists are cleaned up", () => {
 		expect(opening.includedElements).toEqual([]);
 		// Nothing selected → identity, so a corrupt list cannot animate a project by accident.
 		expect(isOpeningIdentity(opening)).toBe(true);
+	});
+});
+
+describe("opening: the preset is an allowlist", () => {
+	it("reads the two presets this build ships", () => {
+		expect(parseOpeningSequence({ preset: OPENING_PRESET_SIDE_SLIDE }).preset).toBe(
+			OPENING_PRESET_SIDE_SLIDE,
+		);
+		expect(parseOpeningSequence({ preset: OPENING_PRESET_CONVERGE }).preset).toBe(
+			OPENING_PRESET_CONVERGE,
+		);
+	});
+
+	it("normalises an unknown name to the default rather than storing it", () => {
+		// The point of the allowlist. Storing `"light3d"` verbatim would leave the app showing a
+		// value it recognises while the native side repaired the same document to `sideSlide` —
+		// the document would say one thing and the picture another. What is stored is what is
+		// drawn, so the repair happens here too.
+		for (const name of ["light3d", "Sticker", "side-slide", "CONVERGE", "converge ", ""]) {
+			expect(parseOpeningSequence({ preset: name }).preset).toBe(OPENING_PRESET_SIDE_SLIDE);
+		}
+		for (const value of [null, undefined, 7, {}, [], true]) {
+			expect(parseOpeningSequence({ preset: value }).preset).toBe(OPENING_PRESET_SIDE_SLIDE);
+		}
+	});
+
+	it("agrees with itself on every name in the allowlist", () => {
+		// A parse that changed its mind would make save/reopen differ from the live document.
+		for (const preset of OPENING_KNOWN_PRESETS) {
+			const once = parseOpeningSequence({ enabled: true, preset });
+			expect(once.preset).toBe(preset);
+			expect(parseOpeningSequence(JSON.parse(JSON.stringify(once)))).toEqual(once);
+		}
+	});
+
+	it("keeps a converge opening through a save and reopen", () => {
+		const stored = {
+			enabled: true,
+			preset: OPENING_PRESET_CONVERGE,
+			durationSec: 3.4,
+			staggerSec: 0.42,
+			curve: OPENING_CURVE_SWIFT,
+			elementOrder: ["camera", "screen"],
+			includedElements: ["screen", "camera"],
+		};
+		expect(parseOpeningSequence(JSON.parse(JSON.stringify(stored)))).toEqual(stored);
+	});
+
+	it("does not make the preset a reason to change the other fields", () => {
+		// A preset owns the departure geometry and nothing else: parsing the same object with a
+		// different preset must leave duration, stagger and both lists identical.
+		const base = {
+			enabled: true,
+			durationSec: 4,
+			staggerSec: 0.5,
+			elementOrder: ["camera", "screen"],
+			includedElements: ["screen"],
+		};
+		const slide = parseOpeningSequence({ ...base, preset: OPENING_PRESET_SIDE_SLIDE });
+		const converge = parseOpeningSequence({ ...base, preset: OPENING_PRESET_CONVERGE });
+		expect(converge.durationSec).toBe(slide.durationSec);
+		expect(converge.staggerSec).toBe(slide.staggerSec);
+		expect(converge.elementOrder).toEqual(slide.elementOrder);
+		expect(converge.includedElements).toEqual(slide.includedElements);
+		expect(converge.curve).toBe(slide.curve);
+		expect(converge.preset).not.toBe(slide.preset);
 	});
 });
 

@@ -969,8 +969,9 @@ pub struct SceneOpening {
     /// Le seul interrupteur qui compte. Absent/false → identité.
     #[serde(default)]
     pub enabled: bool,
-    /// Nom du preset. Seul `sideSlide` existe ; tout autre nom (ou absent) y retombe, comme
-    /// côté TS, pour qu'un preset retiré ne fige pas la scène.
+    /// Nom du preset : `sideSlide` (défaut) ou `converge`. Tout autre nom — ou absent —
+    /// retombe sur `sideSlide`, comme côté TS, pour qu'un preset retiré ne fige pas la scène
+    /// et surtout pour que le natif ne rende jamais un effet que l'app n'a pas enregistré.
     #[serde(default = "default_opening_preset")]
     pub preset: String,
     /// Durée TOTALE de l'ouverture, en secondes — les deux éléments finissent à cet instant.

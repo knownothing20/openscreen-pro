@@ -2,7 +2,14 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/contexts/I18nContext";
-import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
+import {
+	defaultOpeningSequence,
+	OPENING_CURVE_SWIFT,
+	OPENING_ELEMENT_CAMERA,
+	OPENING_ELEMENT_SCREEN,
+	OPENING_PRESET_CONVERGE,
+	OPENING_PRESET_SIDE_SLIDE,
+} from "@/lib/ai-edition/opening/opening";
 import { DEFAULT_TEXT_PLATE } from "../annotations/background";
 import {
 	CAMERA_MOTION_DEFAULT_TARGET,
@@ -201,6 +208,80 @@ describe("useTimeline.insertClipAt background duration probe", () => {
 			timelineStartSec: 10,
 			timelineEndSec: 15,
 		});
+	});
+});
+
+describe("useTimeline.setOpening — a preset is a patch, not a reset", () => {
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			// Deliberately not the defaults: if switching preset reset anything, a fixture that
+			// already matched the defaults would hide it.
+			document: {
+				...sampleDoc,
+				opening: {
+					enabled: true,
+					preset: OPENING_PRESET_SIDE_SLIDE,
+					durationSec: 4,
+					staggerSec: 0.5,
+					curve: OPENING_CURVE_SWIFT,
+					elementOrder: [OPENING_ELEMENT_CAMERA, OPENING_ELEMENT_SCREEN],
+					includedElements: [OPENING_ELEMENT_SCREEN],
+				},
+			},
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("changes only the preset", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.setOpening({ preset: OPENING_PRESET_CONVERGE });
+		});
+
+		const after = useProjectStore.getState().document?.opening;
+		expect(after?.preset).toBe(OPENING_PRESET_CONVERGE);
+		// Everything the preset does not own is untouched — the whole point of keeping duration,
+		// stagger, selection and order out of it.
+		expect(after?.enabled).toBe(true);
+		expect(after?.durationSec).toBe(4);
+		expect(after?.staggerSec).toBe(0.5);
+		expect(after?.curve).toBe(OPENING_CURVE_SWIFT);
+		expect(after?.elementOrder).toEqual([OPENING_ELEMENT_CAMERA, OPENING_ELEMENT_SCREEN]);
+		expect(after?.includedElements).toEqual([OPENING_ELEMENT_SCREEN]);
+	});
+
+	it("switches back, and the second switch is not affected by the first", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.setOpening({ preset: OPENING_PRESET_CONVERGE });
+		});
+		await act(async () => {
+			await result.current.setOpening({ preset: OPENING_PRESET_SIDE_SLIDE });
+		});
+		const after = useProjectStore.getState().document?.opening;
+		expect(after?.preset).toBe(OPENING_PRESET_SIDE_SLIDE);
+		expect(after?.durationSec).toBe(4);
+	});
+
+	it("writes one save per switch, so a switch is one undo step", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.setOpening({ preset: OPENING_PRESET_CONVERGE });
+		});
+		expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
 	});
 });
 

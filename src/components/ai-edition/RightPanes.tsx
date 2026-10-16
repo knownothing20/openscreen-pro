@@ -75,7 +75,10 @@ import {
 	maxStaggerForDuration,
 	OPENING_ELEMENT_CAMERA,
 	OPENING_ELEMENT_SCREEN,
+	OPENING_PRESET_CONVERGE,
+	OPENING_PRESET_SIDE_SLIDE,
 	type OpeningElement,
+	type OpeningPreset,
 } from "@/lib/ai-edition/opening/opening";
 import {
 	type AxcutAsset,
@@ -2370,6 +2373,27 @@ function OpeningSection() {
 			</div>
 			{opening.enabled ? (
 				<>
+					{/* How they arrive. A preset owns ONLY the departure geometry — duration,
+					    stagger, elements and their order are the same controls underneath, and
+					    switching preset leaves every one of them alone. */}
+					<ChoiceRow<OpeningPreset>
+						label={ts("effects.openingPreset")}
+						options={[
+							{
+								value: OPENING_PRESET_SIDE_SLIDE,
+								label: ts("effects.openingPresetSideSlide"),
+								title: ts("effects.openingPresetSideSlideTip"),
+							},
+							{
+								value: OPENING_PRESET_CONVERGE,
+								label: ts("effects.openingPresetConverge"),
+								title: ts("effects.openingPresetConvergeTip"),
+							},
+						]}
+						value={opening.preset}
+						disabled={!hasDocument}
+						onChange={(preset) => void tl.setOpening({ preset })}
+					/>
 					<div className={styles.sliderGrid}>
 						<SliderCell
 							label={ts("effects.openingDuration")}

@@ -3412,7 +3412,8 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             }
             None => s_dst,
         };
-        let s_dst_prev = match screen_sample_prev {
+        // `mut` for the global opening below — see the note on `s_base`.
+        let mut s_dst_prev = match screen_sample_prev {
             Some(sample) => {
                 zoom_rotation_prev = [
                     zoom_rotation_prev[0] + sample.rotation[0],
@@ -3487,20 +3488,49 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // autour de leur propre centre, donc la boîte zoomée et sa boîte au repos gardent
         // leur écart en se déplaçant.
         //
-        // Aucune caméra → `has_webcam` est faux et seul l'écran entre. `repaired` ne peut pas
-        // échouer, donc un réglage absurde se répare ici plutôt que de noircir le cadre.
+        // Aucune caméra → seul l'écran entre. `repaired` ne peut pas échouer, donc un réglage
+        // absurde se répare ici plutôt que de noircir le cadre.
+        //
+        // « Aucune caméra » se lit sur la SCÈNE ENTIÈRE, pas sur `lp.has_webcam` : à l'export
+        // ce dernier est réévalué clip par clip (`timeline_walk`), donc un programme dont seul
+        // le premier clip porte une caméra verrait la liste des participants — et donc les
+        // rangs d'entrée — changer à la coupe. L'ouverture est globale : sa chorégraphie se
+        // décide une fois pour le programme, comme le `participatingElements()` de DogSC.
+        let opening_has_camera = match scene {
+            Some(s) => s
+                .clips
+                .iter()
+                .any(|c| webcam_is_real(&c.webcam_path, &c.screen_path)),
+            None => lp.has_webcam,
+        };
         let opening_programme_t = input.programme_time.unwrap_or(frame / FPS);
         let opening = crate::opening::OpeningSequence::repaired(
             &scene.map(|s| s.opening.clone()).unwrap_or_default(),
         );
         if !opening.is_identity() {
-            let opening_frame = opening.sample_at(opening_programme_t, lp.has_webcam);
+            // Le pas d'UNE frame de sortie — la même convention que `source_t_prev` plus haut,
+            // que le zoom, les mouvements d'écran et de caméra suivent tous. L'ouverture doit
+            // traîner exactement pareil, sinon le flou de mouvement dessine un fantôme sur la
+            // seule ouverture et pas sur ce qui bouge à côté.
+            let opening_step_sec = 1.0 / FPS;
+            let opening_frame = opening.sample_at(opening_programme_t, opening_has_camera);
+            let opening_frame_prev =
+                opening.sample_at(opening_programme_t - opening_step_sec, opening_has_camera);
             if let Some(sample) = opening_frame.screen {
                 s_dst = crate::opening::opening_rect(s_dst, &sample);
                 s_base = crate::opening::opening_rect(s_base, &sample);
             }
+            if let Some(sample) = opening_frame_prev.screen {
+                // La frame d'avant porte la MÊME transformation, un pas plus tôt. Sans ça le
+                // flou de mouvement part de la position d'arrivée et la traînée fait toute la
+                // largeur du cadre au lieu de la distance parcourue en une frame.
+                s_dst_prev = crate::opening::opening_rect(s_dst_prev, &sample);
+            }
             if let Some(sample) = opening_frame.camera {
                 w_dst = crate::opening::opening_rect(w_dst, &sample);
+            }
+            if let Some(sample) = opening_frame_prev.camera {
+                w_dst_prev = crate::opening::opening_rect(w_dst_prev, &sample);
             }
         }
 
