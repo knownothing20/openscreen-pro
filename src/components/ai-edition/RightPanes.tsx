@@ -76,6 +76,7 @@ import {
 	OPENING_ELEMENT_CAMERA,
 	OPENING_ELEMENT_SCREEN,
 	OPENING_PRESET_CONVERGE,
+	OPENING_PRESET_LIGHT_3D,
 	OPENING_PRESET_SIDE_SLIDE,
 	type OpeningElement,
 	type OpeningPreset,
@@ -2388,6 +2389,11 @@ function OpeningSection() {
 								value: OPENING_PRESET_CONVERGE,
 								label: ts("effects.openingPresetConverge"),
 								title: ts("effects.openingPresetConvergeTip"),
+							},
+							{
+								value: OPENING_PRESET_LIGHT_3D,
+								label: ts("effects.openingPresetLight3D"),
+								title: ts("effects.openingPresetLight3DTip"),
 							},
 						]}
 						value={opening.preset}

@@ -138,6 +138,8 @@
 		"openingPresetSideSlideTip": "螢幕從左側滑入，攝影機從右側滑入",
 		"openingPresetConverge": "聚攏",
 		"openingPresetConvergeTip": "螢幕從左上方、攝影機從右下方縮小聚攏入場",
+		"openingPresetLight3D": "輕三維",
+		"openingPresetLight3DTip": "螢幕以真實三維傾斜入場，攝影機平面滑入",
 		"roundness": "圓角",
 		"frameStyle": "樣式",
 		"windowNone": "無",

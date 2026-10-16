@@ -19,6 +19,7 @@ import {
 	OPENING_ELEMENT_SCREEN,
 	OPENING_KNOWN_PRESETS,
 	OPENING_PRESET_CONVERGE,
+	OPENING_PRESET_LIGHT_3D,
 	OPENING_PRESET_SIDE_SLIDE,
 	parseOpeningSequence,
 } from "@/lib/ai-edition/opening/opening";
@@ -157,6 +158,16 @@ describe("opening: the preset is an allowlist", () => {
 		expect(parseOpeningSequence({ preset: OPENING_PRESET_CONVERGE }).preset).toBe(
 			OPENING_PRESET_CONVERGE,
 		);
+		expect(parseOpeningSequence({ preset: OPENING_PRESET_LIGHT_3D }).preset).toBe(
+			OPENING_PRESET_LIGHT_3D,
+		);
+	});
+
+	it("ships exactly the three presets, spelled the way the native side spells them", () => {
+		// The strings are a wire contract with `opening.rs`'s `PRESET_*` constants: a rename on
+		// either side silently becomes "unknown", which the parser repairs to sideSlide — the app
+		// would show one thing and the compositor draw another.
+		expect([...OPENING_KNOWN_PRESETS]).toEqual(["sideSlide", "converge", "light3D"]);
 	});
 
 	it("normalises an unknown name to the default rather than storing it", () => {

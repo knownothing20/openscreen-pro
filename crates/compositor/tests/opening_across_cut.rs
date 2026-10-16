@@ -473,6 +473,330 @@ fn converge_composes_with_camera_motion_instead_of_overriding_it() {
     assert_ne!(cam(&moved_on, 5.0), base, "la cible n'est pas retombée sur la mise en page de base");
 }
 
+// ── Light 3D ─────────────────────────────────────────────────────────────────
+
+/// Longueur d'une arête, en px.
+fn edge_len(a: (f32, f32), b: (f32, f32)) -> f32 {
+    ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+}
+
+/// Light 3D doit produire une VRAIE projection : le quad de `screen_tilt` est un trapèze, pas un
+/// rectangle.
+///
+/// C'est le seul contrôle qui distingue « projection 3D » de « mise à l'échelle + translation
+/// déguisées » : une transformation 2D quelconque garde les arêtes opposées parallèles et de même
+/// longueur, donc le haut et le bas restent égaux. Sous une perspective finie avec tangage et
+/// lacet, le côté proche est plus grand que le côté loin, et l'écart se mesure en dizaines de px.
+#[test]
+fn light3d_really_projects_a_trapezoid() {
+    let cfg = config::all().pop().expect("au moins une config");
+    let off = Scene::from_json(&motion_scene(false, "light3D", "[]", "[]")).expect("sans ouverture");
+    let on = Scene::from_json(&motion_scene(true, "light3D", "[]", "[]")).expect("light3d");
+
+    let cfg_ref = &cfg;
+    let quad = |s: &Scene, t: f32| {
+        let g = plan_frame(&input_moving(s, cfg_ref, t));
+        let s_px = [g.s_dst[2] * 1920.0, g.s_dst[3] * 1080.0];
+        (g.tilted(), g.screen_tilt(s_px))
+    };
+
+    // Au repos il n'y a AUCUNE inclinaison : c'est ce qui garantit qu'un écran posé reste plat.
+    assert!(!quad(&off, 0.0).0, "garde : sans ouverture l'écran ne doit pas être incliné");
+    let (tilted_at_rest, rest_quad) = quad(&on, 4.0);
+    assert!(!tilted_at_rest, "à 4 s l'ouverture doit rendre un écran PLAT, pas « presque plat »");
+    assert!(rest_quad.is_none(), "et aucun quad incliné ne doit être produit");
+
+    // En vol, l'inclinaison existe et le quad est un vrai trapèze.
+    for t in [0.25_f32, 0.5, 1.0, 1.5] {
+        let (tilted, maybe) = quad(&on, t);
+        assert!(tilted, "à t={t} l'écran doit être incliné");
+        let q = maybe.expect("un quad incliné doit être produit");
+        assert_ne!(q.rot, [0.0; 3], "les angles doivent être RÉELLEMENT dessinés à t={t}");
+        assert!(q.perspective > 0.0, "une perspective finie doit être en jeu à t={t}");
+
+        let c = q.corners;
+        let (top, bottom) = (edge_len(c[0], c[1]), edge_len(c[3], c[2]));
+        let (left, right) = (edge_len(c[0], c[3]), edge_len(c[1], c[2]));
+        // Un rectangle (donc toute transformation 2D) a haut == bas et gauche == droite.
+        assert!(
+            (top - bottom).abs() > 20.0,
+            "à t={t} le haut et le bas doivent différer — sinon ce n'est qu'un 2D (haut {top}, bas {bottom})"
+        );
+        assert!(
+            (left - right).abs() > 5.0,
+            "à t={t} la gauche et la droite doivent différer (gauche {left}, droite {right})"
+        );
+        // Et les angles dessinés sont bien ceux annoncés, pas une autre pose.
+        let want = expected_screen_angles(t);
+        assert!(
+            (q.rot[0] - want[0]).abs() < 0.01 && (q.rot[1] - want[1]).abs() < 0.01,
+            "à t={t} : angles dessinés {:?}, attendus {want:?}",
+            q.rot
+        );
+    }
+}
+
+/// Les angles que le preset doit produire à `t`, en degrés : `swift_ease` porte la position et
+/// l'échelle, la progression LINÉAIRE porte les angles (durée 4 s, décalage 0,5 s, écran premier).
+fn expected_screen_angles(t: f32) -> [f32; 2] {
+    let linear = (t / (4.0 - 0.5)).clamp(0.0, 1.0);
+    let remaining = (1.0 - linear).powf(1.5);
+    [9.0 * remaining, -22.0 * remaining]
+}
+
+/// Le zoom de `geometry_scene`, mais AVEC sa rotation `left` (-12°, -18°, -2°).
+///
+/// Il en faut une : une scène dont la rotation existante est nulle ne peut pas distinguer
+/// « l'ouverture s'ajoute » de « l'ouverture remplace », puisque les deux donnent le même résultat.
+fn zoomed_rotated_scene(with_opening: bool, preset: &str) -> String {
+    geometry_scene(with_opening, true, preset).replace(r#""rotation":"none""#, r#""rotation":"left""#)
+}
+
+/// Light 3D s'AJOUTE à la rotation du zoom et des mouvements d'écran, il ne la remplace pas.
+#[test]
+fn light3d_composes_with_zoom_and_screen_motion() {
+    let cfg = config::all().pop().expect("au moins une config");
+    let zoom_off = Scene::from_json(&zoomed_rotated_scene(false, "light3D")).expect("zoom seul");
+    let zoom_on = Scene::from_json(&zoomed_rotated_scene(true, "light3D")).expect("zoom + light3d");
+    let motion_off =
+        Scene::from_json(&motion_scene(false, "light3D", SCREEN_MOTION, "[]")).expect("mouvement seul");
+    let motion_on =
+        Scene::from_json(&motion_scene(true, "light3D", SCREEN_MOTION, "[]")).expect("mouvement + light3d");
+
+    let g = |s: &Scene, t: f32| plan_frame(&input_moving(s, &cfg, t));
+
+    // Zoom : la cible est intacte après l'ouverture, angles compris.
+    for t in [4.0_f32, 5.0, 12.0] {
+        let a = g(&zoom_on, t);
+        let b = g(&zoom_off, t);
+        assert_eq!((a.s_dst, a.zoom_rotation), (b.s_dst, b.zoom_rotation), "zoom à t={t}");
+    }
+    // Pendant le vol, les deux rotations coexistent : celle du zoom ET celle de l'ouverture.
+    let zoom_rot_during = g(&zoom_on, 1.0).zoom_rotation;
+    let zoom_rot_alone = g(&zoom_off, 1.0).zoom_rotation;
+    assert_ne!(zoom_rot_during, zoom_rot_alone, "l'ouverture doit ajouter son angle");
+    assert_ne!(zoom_rot_during, [0.0; 3], "et le zoom ne doit pas disparaître");
+
+    // Mouvement d'écran : les deux contributions se somment axe par axe.
+    for t in [4.0_f32, 5.0, 12.0] {
+        let a = g(&motion_on, t);
+        let b = g(&motion_off, t);
+        assert_eq!((a.s_dst, a.zoom_rotation), (b.s_dst, b.zoom_rotation), "mouvement à t={t}");
+    }
+    let motion_rot = g(&motion_off, 1.0).zoom_rotation;
+    assert_ne!(motion_rot, [0.0; 3], "garde : le mouvement d'écran doit déjà tourner");
+    let both = g(&motion_on, 1.0).zoom_rotation;
+    assert_ne!(both, motion_rot, "l'ouverture doit s'ajouter à la rotation du mouvement");
+    // ...et la différence entre « avec » et « sans » ouverture EST exactement l'angle du preset.
+    let want = expected_screen_angles(1.0);
+    for axis in 0..2 {
+        assert!(
+            ((both[axis] - motion_rot[axis]) - want[axis]).abs() < 1e-3,
+            "axe {axis} : la contribution de l'ouverture doit être {}°, obtenue {}°",
+            want[axis],
+            both[axis] - motion_rot[axis]
+        );
+    }
+    // Même contrôle du côté du zoom, dans SA famille de scènes : la rotation de l'ouverture
+    // s'ajoute à celle du zoom au lieu de la remplacer.
+    let zoom_rot_alone = g(&zoom_off, 1.0).zoom_rotation;
+    assert_ne!(zoom_rot_alone, [0.0; 3], "garde : le zoom doit déjà tourner");
+    let zoom_with_opening = g(&zoom_on, 1.0).zoom_rotation;
+    for axis in 0..2 {
+        assert!(
+            ((zoom_with_opening[axis] - zoom_rot_alone[axis]) - want[axis]).abs() < 1e-3,
+            "axe {axis} : contribution de l'ouverture sur le zoom, obtenue {}°",
+            zoom_with_opening[axis] - zoom_rot_alone[axis]
+        );
+    }
+}
+
+/// La rotation de la frame PRÉCÉDENTE suit celle de la frame courante, un pas plus tôt.
+#[test]
+fn light3d_previous_frame_rotation_is_in_step() {
+    let cfg = config::all().pop().expect("au moins une config");
+    let off = Scene::from_json(&motion_scene(false, "light3D", "[]", "[]")).expect("sans ouverture");
+    let on = Scene::from_json(&motion_scene(true, "light3D", "[]", "[]")).expect("light3d");
+    let g = |s: &Scene, t: f32| plan_frame(&input_moving(s, &cfg, t));
+
+    // Repère : au repos, les deux rotations sont exactement nulles.
+    let still = g(&off, 1.0);
+    assert_eq!(still.zoom_rotation, [0.0; 3]);
+    assert_eq!(still.zoom_rotation_prev, [0.0; 3]);
+
+    // En vol : les deux existent, et l'angle d'avant est PLUS grand (il se décroît), d'un pas de
+    // frame seulement. Une prev restée plate ferait un écart de tout l'angle.
+    let moving = g(&on, 1.0);
+    assert!(moving.zoom_rotation[0] > 0.0, "l'angle courant doit exister");
+    assert!(
+        moving.zoom_rotation_prev[0] > moving.zoom_rotation[0],
+        "l'angle d'avant doit être plus ouvert ({:?} vs {:?})",
+        moving.zoom_rotation_prev,
+        moving.zoom_rotation
+    );
+    let delta = moving.zoom_rotation_prev[0] - moving.zoom_rotation[0];
+    assert!(
+        delta < 1.0,
+        "l'écart doit couvrir UNE frame, pas toute l'entrée (écart = {delta}°, courant = {}°, prev = {}°)",
+        moving.zoom_rotation[0],
+        moving.zoom_rotation_prev[0]
+    );
+
+    // Après l'ouverture : exactement nul des deux côtés, plus aucun fantôme de rotation.
+    let settled = g(&on, 4.0);
+    assert_eq!(settled.zoom_rotation, [0.0; 3], "l'angle doit s'éteindre EXACTEMENT");
+    assert_eq!(settled.zoom_rotation_prev, [0.0; 3]);
+    assert!(!settled.tilted(), "et l'écran doit redevenir plat");
+}
+
+/// Un programme coupé en deux clips dont les fenêtres source ne se touchent pas ne rejoue PAS
+/// l'ouverture au second clip, angles compris.
+#[test]
+fn light3d_does_not_restart_across_a_cut() {
+    let cfg = config::all().pop().expect("au moins une config");
+    let scene = Scene::from_json(&light3d_crosscut_scene()).expect("deux clips");
+    let g = |t: f32| plan_frame(&input_moving(&scene, &cfg, t));
+
+    // Durée 4 s : à la sortie 1,1 s, l'ouverture est à 1,1/3,5 de sa course.
+    let linear = 1.1_f32 / 3.5;
+    let remaining = (1.0 - linear).powf(1.5);
+    let at_110 = g(1.1).zoom_rotation;
+    assert!(
+        (at_110[0] - 9.0 * remaining).abs() < 0.05,
+        "attendu {}° pour un temps programme de 1,1 s, obtenu {:?}",
+        9.0 * remaining,
+        at_110
+    );
+
+    // Ce qu'un redémarrage sur le temps SOURCE du clip B (0,1212 s) produirait : l'angle serait
+    // presque intact. L'écart est franc, donc la mesure tranche.
+    let restart_linear = 0.1212_f32 / 3.5;
+    let restart = 9.0 * (1.0 - restart_linear).powf(1.5);
+    assert!(
+        (at_110[0] - restart).abs() > 3.0,
+        "angle mesuré {}° trop proche d'un redémarrage ({restart}°)",
+        at_110[0]
+    );
+
+    // Et la mise en page, elle, tranche sans ambiguïté (cf. le test 4-B.1 équivalent).
+    assert!(at_110[0] > 0.0 && at_110[0] < 9.0, "en vol, pas au départ ni posé");
+}
+
+/// Le rect de l'écran pour le programme à deux clips non contigus, en Light 3D.
+fn light3d_crosscut_scene() -> String {
+    geometry_scene(true, false, "light3D").replace(
+        r#""clips": [{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":30,"webcamOffsetSec":0,"hasAudio":false}]"#,
+        r#""clips": [{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":3,"sourceEndSec":4,"webcamOffsetSec":0,"hasAudio":false},{"screenPath":"/s.mp4","webcamPath":"/w.mp4","sourceStartSec":0,"sourceEndSec":5,"webcamOffsetSec":0,"hasAudio":false}]"#,
+    )
+}
+
+/// Rien n'est mémorisé : le même temps redonne le même état, dans n'importe quel ordre.
+///
+/// La scène de ce fichier a une ouverture de 4 s, donc 3,0 s et 2,5 s sont EN VOL (l'écran se
+/// pose à 3,5 s) — l'assertion suit le modèle au lieu de supposer « 2,2 s comme le projet de
+/// l'app ». Ce qui est testé ici, c'est la reproductibilité, pas un état particulier.
+#[test]
+fn light3d_seek_is_stateless() {
+    let cfg = config::all().pop().expect("au moins une config");
+    let on = Scene::from_json(&motion_scene(true, "light3D", "[]", "[]")).expect("light3d");
+    let g = |t: f32| plan_frame(&input_moving(&on, &cfg, t));
+
+    // Chaque temps rend EXACTEMENT l'angle du modèle — y compris après un saut.
+    for t in [3.0_f32, 0.5, 2.5, 0.5, 3.0] {
+        let got = g(t).zoom_rotation;
+        let want = expected_screen_angles(t);
+        assert!(
+            (got[0] - want[0]).abs() < 1e-3 && (got[1] - want[1]).abs() < 1e-3,
+            "à t={t} : obtenu {got:?}, attendu {want:?}"
+        );
+    }
+
+    // 3,0 -> 0,5 -> 2,5 : trois sauts, sans avoir joué les frames intermédiaires.
+    let a = (g(3.0).s_dst, g(3.0).zoom_rotation);
+    let b = (g(0.5).s_dst, g(0.5).zoom_rotation);
+    let c = (g(2.5).s_dst, g(2.5).zoom_rotation);
+    assert!(b.1[1] < c.1[1], "à 0,5 s l'écran est plus de biais qu'à 2,5 s");
+    assert!(c.1[1] < a.1[1], "à 2,5 s plus de biais qu'à 3,0 s");
+    // Revenir en arrière redonne EXACTEMENT l'état d'avant, angle compris.
+    assert_eq!((g(0.5).s_dst, g(0.5).zoom_rotation), b);
+    assert_eq!((g(3.0).s_dst, g(3.0).zoom_rotation), a);
+    // Et passé la durée, plus rien ne bouge : posé ET plat.
+    assert_eq!(g(4.0).zoom_rotation, [0.0; 3]);
+    assert_eq!(g(9.0).zoom_rotation, [0.0; 3]);
+    assert_eq!(g(4.0).s_dst, g(9.0).s_dst);
+}
+
+/// Une scène zoomée dont la caméra 3D est en ORBITE — la seule valeur qui active une Camera Pose
+/// réelle (`regions.rs`), et donc le seul chemin qui court-circuite les angles fixes.
+fn orbited_scene(with_opening: bool) -> String {
+    geometry_scene(with_opening, true, "light3D").replace(r#""rotation":"none""#, r#""rotation":"orbit""#)
+}
+
+/// Le point de conflit que ce tour devait trancher, CONSTATÉ au lieu d'être caché.
+///
+/// `screen_tilt()` rend le quad de la Camera Pose RÉELLE **avant** de regarder les angles fixes
+/// (`if let Some(pose) = self.camera { return Some(camera::View::new(...).quad(...)) }`). Une
+/// orbite de zoom active court-circuite donc l'inclinaison de Light 3D : l'angle est bien calculé
+/// et bien présent dans `zoom_rotation`, mais il n'est pas DESSINÉ tant que l'orbite est là.
+///
+/// Stratégie retenue : ne rien casser. La pose de la caméra réelle est une homographie mesurée, et
+/// la remplacer par des angles fixes ferait sauter l'écran à l'entrée en orbite. C'est donc
+/// l'ouverture qui s'efface — et seulement son INCLINAISON : sa translation et son échelle
+/// continuent de s'appliquer, l'écran entre bien, il entre à plat.
+///
+/// Ce test existe pour que la limite soit mesurée et datée, pas pour la justifier.
+#[test]
+fn a_real_camera_pose_wins_over_the_opening_rotation() {
+    let cfg = config::all().pop().expect("au moins une config");
+    let orbit_off = Scene::from_json(&orbited_scene(false)).expect("orbite seule");
+    let orbit_on = Scene::from_json(&orbited_scene(true)).expect("orbite + light3d");
+
+    let g = |s: &Scene, t: f32| {
+        let fg = plan_frame(&input_moving(s, &cfg, t));
+        let s_px = [fg.s_dst[2] * 1920.0, fg.s_dst[3] * 1080.0];
+        (fg.s_dst, fg.zoom_rotation, fg.screen_tilt(s_px).map(|q| (q.rot, q.projective)))
+    };
+
+    // 1. L'angle du preset EST bien calculé et présent dans la géométrie.
+    let during = g(&orbit_on, 1.0);
+    assert!(
+        during.1[1].abs() > 5.0,
+        "l'angle du preset doit bien être dans zoom_rotation ({:?})",
+        during.1
+    );
+
+    // 2. ...mais le quad RENDU est celui de la caméra, pas celui des angles fixes.
+    let (quad_rot, projective) = during.2.expect("une pose réelle produit toujours un quad");
+    assert!(
+        (quad_rot[1] - during.1[1]).abs() > 1.0,
+        "la pose réelle doit COURT-CIRCUITER l'angle fixe (quad {quad_rot:?} vs zoom_rotation {:?})",
+        during.1
+    );
+    assert!(projective, "une pose réelle passe par l'homographie exacte, pas le warp bilinéaire");
+
+    // 3. La translation et l'échelle, elles, s'appliquent quand même : l'écran entre.
+    assert_ne!(during.0, g(&orbit_off, 1.0).0, "l'écran doit quand même entrer");
+
+    // 4. L'orbite, de son côté, n'a rien perdu : passé l'ouverture, la scène est EXACTEMENT celle
+    //    sans ouverture — pose, rotation et quad compris.
+    for t in [4.0_f32, 5.0, 12.0] {
+        let a = g(&orbit_on, t);
+        let b = g(&orbit_off, t);
+        assert_eq!((a.0, a.1), (b.0, b.1), "orbite à t={t}");
+        assert_eq!(a.2, b.2, "quad d'orbite à t={t}");
+    }
+
+    // 5. Le témoin qui donne son sens au « ça ne s'incline pas » ci-dessus : SANS orbite, la même
+    //    scène Light 3D produit bel et bien un quad incliné.
+    let plain = Scene::from_json(&geometry_scene(true, true, "light3D")).expect("light3d");
+    let fg = plan_frame(&input_moving(&plain, &cfg, 1.0));
+    let plain_px = [fg.s_dst[2] * 1920.0, fg.s_dst[3] * 1080.0];
+    assert!(
+        fg.screen_tilt(plain_px).is_some(),
+        "garde : sans orbite, Light 3D doit produire un quad incliné"
+    );
+}
+
 /// Partie horloge : le VRAI `ProgrammeClock` de la preview, sur une vraie source décodée.
 ///
 /// La CI ne la joue pas (il faut D3D11 et une source), comme `programme_time_seek.rs` :

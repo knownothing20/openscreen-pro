@@ -17,12 +17,18 @@
 export const OPENING_PRESET_SIDE_SLIDE = "sideSlide";
 /** Screen in from the top-left, camera in from the bottom-right, both converging. */
 export const OPENING_PRESET_CONVERGE = "converge";
+/** Screen in from the top-left in real 3D (pitch + yaw under the native perspective). */
+export const OPENING_PRESET_LIGHT_3D = "light3D";
 
-export type OpeningPreset = typeof OPENING_PRESET_SIDE_SLIDE | typeof OPENING_PRESET_CONVERGE;
+export type OpeningPreset =
+	| typeof OPENING_PRESET_SIDE_SLIDE
+	| typeof OPENING_PRESET_CONVERGE
+	| typeof OPENING_PRESET_LIGHT_3D;
 
 export const OPENING_KNOWN_PRESETS: readonly OpeningPreset[] = [
 	OPENING_PRESET_SIDE_SLIDE,
 	OPENING_PRESET_CONVERGE,
+	OPENING_PRESET_LIGHT_3D,
 ];
 
 /**

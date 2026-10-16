@@ -3519,12 +3519,23 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             if let Some(sample) = opening_frame.screen {
                 s_dst = crate::opening::opening_rect(s_dst, &sample);
                 s_base = crate::opening::opening_rect(s_base, &sample);
+                // Light 3D : l'inclinaison s'AJOUTE à la rotation déjà là. `zoom_rotation` est le
+                // point de passage unique de l'écran, de son ombre, du curseur et du masque de
+                // flou (`screen_tilt`), donc l'ajouter ici fait suivre les quatre — et un zoom
+                // incliné ou un mouvement d'écran tourné pendant l'ouverture garde ses angles au
+                // lieu d'en perdre. Même unité que lui : des DEGRÉS.
+                for axis in 0..3 {
+                    zoom_rotation[axis] += sample.rotation_deg[axis];
+                }
             }
             if let Some(sample) = opening_frame_prev.screen {
                 // La frame d'avant porte la MÊME transformation, un pas plus tôt. Sans ça le
                 // flou de mouvement part de la position d'arrivée et la traînée fait toute la
                 // largeur du cadre au lieu de la distance parcourue en une frame.
                 s_dst_prev = crate::opening::opening_rect(s_dst_prev, &sample);
+                for axis in 0..3 {
+                    zoom_rotation_prev[axis] += sample.rotation_deg[axis];
+                }
             }
             if let Some(sample) = opening_frame.camera {
                 w_dst = crate::opening::opening_rect(w_dst, &sample);

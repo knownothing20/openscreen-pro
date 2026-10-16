@@ -138,6 +138,8 @@
 		"openingPresetSideSlideTip": "The screen slides in from the left, the camera from the right",
 		"openingPresetConverge": "Converge",
 		"openingPresetConvergeTip": "The screen comes in from the top-left and the camera from the bottom-right, both smaller",
+		"openingPresetLight3D": "Light 3D",
+		"openingPresetLight3DTip": "The screen enters tilted in real 3D; the camera slides in flat",
 		"roundness": "모서리 둥글기",
 		"frameStyle": "스타일",
 		"windowNone": "없음",

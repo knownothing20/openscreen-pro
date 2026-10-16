@@ -55,6 +55,9 @@ const MIN_SLIDE_SEC: f32 = 0.05;
 pub const PRESET_SIDE_SLIDE: &str = "sideSlide";
 /// Nom du preset « convergence » : chacun entre par un coin opposé, en plus petit.
 pub const PRESET_CONVERGE: &str = "converge";
+/// Nom du preset « Light 3D » : l'écran entre en VRAI trois dimensions (tangage + lacet sous la
+/// perspective native), la caméra en deux dimensions.
+pub const PRESET_LIGHT_3D: &str = "light3D";
 
 /// Échelles de départ du Side Slide, reprises de DogSC : l'écran part à 94 %, la caméra à
 /// 88 %, et les deux finissent à 100 %. Une caméra part de plus loin parce qu'elle est plus
@@ -73,11 +76,33 @@ const CONVERGE_SCREEN_FROM: [f32; 2] = [-1.05, -0.62];
 const CONVERGE_CAMERA_FROM_SCALE: f32 = 0.58;
 const CONVERGE_CAMERA_FROM: [f32; 2] = [1.12, 0.72];
 
+/// Light 3D — l'écran entre par le haut-gauche EN PERSPECTIVE : il est tangue de 9° et lacé de
+/// −22°, et ces deux angles s'éteignent pendant qu'il rejoint sa place. La caméra, elle, reste en
+/// deux dimensions (le preset ne lui donne aucun angle) : une vignette de 300 px prise de biais
+/// ne se lit pas comme un plan, seulement comme une déformation.
+///
+/// Les angles sont en DEGRÉS, l'unité de `zoom_rotation` et de
+/// `regions::rotated_quad_corners_px` — c'est ce qui permet de les AJOUTER à la rotation du zoom
+/// et des mouvements d'écran au lieu de la remplacer.
+const LIGHT3D_SCREEN_FROM_SCALE: f32 = 0.80;
+const LIGHT3D_SCREEN_FROM: [f32; 2] = [-1.05, 0.08];
+const LIGHT3D_SCREEN_ROTATION: [f32; 3] = [9.0, -22.0, 0.0];
+const LIGHT3D_CAMERA_FROM_SCALE: f32 = 0.72;
+const LIGHT3D_CAMERA_FROM: [f32; 2] = [1.10, 0.16];
+
+/// L'exposant de l'extinction des angles. DogSC s'en sert pour que le plan soit encore NETTEMENT
+/// de biais quand il entre à l'écran : avec l'ease-out `swift`, 80 % de la trajectoire est
+/// parcourue en un tiers du temps, donc des angles indexés sur la progression ADOUCIE auraient
+/// déjà presque disparu au moment où l'écran devient visible — on ne verrait jamais le 3D, juste
+/// un plan qui glisse. L'extinction suit donc la progression LINÉAIRE.
+const LIGHT3D_ROTATION_DECAY_EXP: f32 = 1.5;
+
 /// Les presets que ce module sait animer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpeningPreset {
     SideSlide,
     Converge,
+    Light3D,
 }
 
 impl OpeningPreset {
@@ -86,6 +111,7 @@ impl OpeningPreset {
     pub fn from_name(name: &str) -> Self {
         match name {
             PRESET_CONVERGE => Self::Converge,
+            PRESET_LIGHT_3D => Self::Light3D,
             _ => Self::SideSlide,
         }
     }
@@ -94,6 +120,7 @@ impl OpeningPreset {
         match self {
             Self::SideSlide => PRESET_SIDE_SLIDE,
             Self::Converge => PRESET_CONVERGE,
+            Self::Light3D => PRESET_LIGHT_3D,
         }
     }
 }
@@ -119,6 +146,21 @@ pub struct OpeningSample {
     /// Échelle au repos de l'élément, à `eased = 0`.
     pub from_scale: f32,
     pub motion: OpeningMotion,
+    /// Rotation 3D EN COURS, en degrés (X = tangage, Y = lacet, Z = roulis). Déjà éteinte : vaut
+    /// exactement `[0.0; 3]` dès que l'élément est posé, et pour les presets qui n'en ont pas.
+    ///
+    /// L'appelant l'AJOUTE à la rotation qu'il a déjà (`zoom_rotation`), il ne la remplace pas :
+    /// un zoom incliné ou un mouvement d'écran tourné pendant l'ouverture garde ses deux angles.
+    pub rotation_deg: [f32; 3],
+}
+
+/// Ce qu'un preset dit d'un élément au départ. Regroupé pour que `departure` retourne une chose
+/// et pas un triplet de valeurs sans nom.
+struct Departure {
+    from_scale: f32,
+    motion: OpeningMotion,
+    /// Rotation initiale, en degrés.
+    rotation_deg: [f32; 3],
 }
 
 /// Les deux éléments, échantillonnés au même instant. `None` = cet élément n'entre pas
@@ -275,35 +317,68 @@ impl OpeningSequence {
             (rank * self.stagger_sec, self.slide_sec)
         };
         let progress = ((t - start) / slide.max(MIN_SLIDE_SEC)).clamp(0.0, 1.0);
-        let (from_scale, motion) = self.departure(camera);
+        let departure = self.departure(camera);
+        // Les angles s'éteignent sur la progression LINÉAIRE, pas sur la progression adoucie —
+        // voir `LIGHT3D_ROTATION_DECAY_EXP`. À `progress = 1` l'exposant vaut 0, donc la rotation
+        // est exactement nulle et `is_identity_rotation` reste vrai pour une scène sans autre
+        // rotation : c'est ce qui garantit qu'un écran posé n'est pas « légèrement incliné ».
+        let remaining = (1.0 - progress).powf(LIGHT3D_ROTATION_DECAY_EXP);
         OpeningSample {
             eased: swift_ease(progress),
-            from_scale,
-            motion,
+            from_scale: departure.from_scale,
+            motion: departure.motion,
+            rotation_deg: [
+                departure.rotation_deg[0] * remaining,
+                departure.rotation_deg[1] * remaining,
+                departure.rotation_deg[2] * remaining,
+            ],
         }
     }
 
     /// Géométrie de départ : le seul endroit où les presets divergent.
-    fn departure(&self, camera: bool) -> (f32, OpeningMotion) {
+    fn departure(&self, camera: bool) -> Departure {
+        let none = [0.0; 3];
         match (self.preset, camera) {
-            (OpeningPreset::SideSlide, false) => {
-                (SCREEN_FROM_SCALE, OpeningMotion::SideSlide { side: -1.0 })
-            }
-            (OpeningPreset::SideSlide, true) => {
-                (CAMERA_FROM_SCALE, OpeningMotion::SideSlide { side: 1.0 })
-            }
-            (OpeningPreset::Converge, false) => (
-                CONVERGE_SCREEN_FROM_SCALE,
-                OpeningMotion::Converge {
+            (OpeningPreset::SideSlide, false) => Departure {
+                from_scale: SCREEN_FROM_SCALE,
+                motion: OpeningMotion::SideSlide { side: -1.0 },
+                rotation_deg: none,
+            },
+            (OpeningPreset::SideSlide, true) => Departure {
+                from_scale: CAMERA_FROM_SCALE,
+                motion: OpeningMotion::SideSlide { side: 1.0 },
+                rotation_deg: none,
+            },
+            (OpeningPreset::Converge, false) => Departure {
+                from_scale: CONVERGE_SCREEN_FROM_SCALE,
+                motion: OpeningMotion::Converge {
                     from: CONVERGE_SCREEN_FROM,
                 },
-            ),
-            (OpeningPreset::Converge, true) => (
-                CONVERGE_CAMERA_FROM_SCALE,
-                OpeningMotion::Converge {
+                rotation_deg: none,
+            },
+            (OpeningPreset::Converge, true) => Departure {
+                from_scale: CONVERGE_CAMERA_FROM_SCALE,
+                motion: OpeningMotion::Converge {
                     from: CONVERGE_CAMERA_FROM,
                 },
-            ),
+                rotation_deg: none,
+            },
+            (OpeningPreset::Light3D, false) => Departure {
+                from_scale: LIGHT3D_SCREEN_FROM_SCALE,
+                motion: OpeningMotion::Converge {
+                    from: LIGHT3D_SCREEN_FROM,
+                },
+                rotation_deg: LIGHT3D_SCREEN_ROTATION,
+            },
+            // La caméra du Light 3D est en DEUX dimensions : même géométrie d'entrée que
+            // Converge, aucun angle. Voir le commentaire de `LIGHT3D_SCREEN_ROTATION`.
+            (OpeningPreset::Light3D, true) => Departure {
+                from_scale: LIGHT3D_CAMERA_FROM_SCALE,
+                motion: OpeningMotion::Converge {
+                    from: LIGHT3D_CAMERA_FROM,
+                },
+                rotation_deg: none,
+            },
         }
     }
 }
@@ -412,6 +487,17 @@ mod tests {
         OpeningSequence::repaired(&SceneOpening {
             enabled: true,
             preset: PRESET_CONVERGE.to_string(),
+            duration_sec: duration,
+            stagger_sec: stagger,
+            ..Default::default()
+        })
+    }
+
+    /// La même chose, en Light 3D.
+    fn light3d(duration: f32, stagger: f32) -> OpeningSequence {
+        OpeningSequence::repaired(&SceneOpening {
+            enabled: true,
+            preset: PRESET_LIGHT_3D.to_string(),
             duration_sec: duration,
             stagger_sec: stagger,
             ..Default::default()
@@ -932,8 +1018,7 @@ mod tests {
     }
 
     #[test]
-    fn converge_survives_absurd_settings() {
-        for raw in [
+    fn converge_survives_absurd_settings() {        for raw in [
             SceneOpening {
                 enabled: true,
                 preset: PRESET_CONVERGE.to_string(),
@@ -960,5 +1045,212 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ── Light 3D ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn light3d_starts_at_its_own_scales_and_rotation() {
+        let s = light3d(2.2, 0.16);
+        let screen = s.sample_at(0.0, true).screen.expect("screen enters");
+        assert_eq!(screen.from_scale, LIGHT3D_SCREEN_FROM_SCALE);
+        assert_eq!(
+            screen.rotation_deg, LIGHT3D_SCREEN_ROTATION,
+            "l'écran doit entrer tangue de 9° et lacé de -22°"
+        );
+        assert_eq!(
+            screen.motion,
+            OpeningMotion::Converge {
+                from: LIGHT3D_SCREEN_FROM
+            }
+        );
+
+        let camera = s.sample_at(0.0, true).camera.expect("camera enters");
+        assert_eq!(camera.from_scale, LIGHT3D_CAMERA_FROM_SCALE);
+        assert_eq!(camera.rotation_deg, [0.0; 3], "la caméra du Light 3D reste en 2D");
+    }
+
+    #[test]
+    fn light3d_starts_the_screen_off_canvas_on_the_left() {
+        let s = light3d(2.2, 0.16);
+        let out = opening_rect([0.1, 0.1, 0.8, 0.8], &s.sample_at(0.0, true).screen.unwrap());
+        assert!(out[0] + out[2] <= 0.0, "écran entièrement à gauche: {out:?}");
+    }
+
+    #[test]
+    fn light3d_starts_the_camera_off_canvas_on_the_right() {
+        let s = light3d(2.2, 0.16);
+        let out = opening_rect([0.62, 0.62, 0.3, 0.3], &s.sample_at(0.0, true).camera.unwrap());
+        assert!(out[0] >= 1.0, "caméra entièrement à droite: {out:?}");
+    }
+
+    #[test]
+    fn light3d_angles_fade_on_the_LINEAR_progress_not_the_eased_one() {
+        // Le point du preset. Avec `swift`, les 80 % de la trajectoire sont faits en un tiers du
+        // temps : des angles indexés sur la progression ADOUCIE auraient déjà disparu quand
+        // l'écran devient visible, et le 3D ne se verrait jamais.
+        let s = light3d(2.2, 0.16);
+        let slide = 2.2 - 0.16;
+        let t = 0.5_f32;
+        let linear = t / slide;
+        let eased = swift_ease(linear);
+
+        let screen = s.sample_at(t, true).screen.unwrap();
+        let on_linear = (1.0 - linear).powf(1.5);
+        assert!((screen.rotation_deg[0] - 9.0 * on_linear).abs() < 1e-5, "{}", screen.rotation_deg[0]);
+        assert!((screen.rotation_deg[1] - -22.0 * on_linear).abs() < 1e-5, "{}", screen.rotation_deg[1]);
+
+        // ...et surtout : ce n'est PAS ce que donnerait la progression adoucie. Les deux sont
+        // loin l'un de l'autre, sinon ce test ne prouverait rien.
+        let on_eased = (1.0 - eased).powf(1.5);
+        let on_one_minus_eased = 1.0 - eased;
+        assert!(
+            (screen.rotation_deg[0] - 9.0 * on_eased).abs() > 1.0,
+            "linéaire et adouci doivent donner des angles très différents ({} vs {})",
+            screen.rotation_deg[0],
+            9.0 * on_eased
+        );
+        assert!((screen.rotation_deg[0] - 9.0 * on_one_minus_eased).abs() > 1.0);
+        // Avec la progression linéaire, l'angle reste NETTEMENT non nul à mi-vol.
+        assert!(
+            screen.rotation_deg[0] > 5.0,
+            "à t=0.5 l'écran doit encore être franchement de biais: {}",
+            screen.rotation_deg[0]
+        );
+    }
+
+    #[test]
+    fn light3d_keeps_a_visible_angle_through_the_middle() {
+        let s = light3d(2.2, 0.16);
+        // À chaque instant de vol, l'angle existe et décroît sans jamais changer de signe.
+        let mut previous_yaw = LIGHT3D_SCREEN_ROTATION[1].abs();
+        for i in 0..=20 {
+            let t = i as f32 * 0.1;
+            let r = s.sample_at(t, true).screen.unwrap().rotation_deg;
+            assert!(r[0] <= LIGHT3D_SCREEN_ROTATION[0] + 1e-6, "t={t}");
+            assert!(r[1] >= LIGHT3D_SCREEN_ROTATION[1] - 1e-6, "t={t}");
+            assert!(r[1].abs() <= previous_yaw + 1e-6, "l'angle ne doit pas repartir à t={t}");
+            previous_yaw = r[1].abs();
+            assert_eq!(r[2], 0.0, "aucun roulis: t={t}");
+        }
+        // À mi-vol, l'angle vaut EXACTEMENT le modèle — pas « environ la moitié », qui serait une
+        // supposition sur la forme de la décroissance et non une vérification.
+        let slide = 2.2 - 0.16;
+        for t in [1.0_f32, 1.5] {
+            let linear = t / slide;
+            let want = -22.0 * (1.0 - linear).powf(1.5);
+            let got = s.sample_at(t, true).screen.unwrap().rotation_deg[1];
+            assert!((got - want).abs() < 1e-4, "à t={t} : {got} vs {want}");
+        }
+        // ...et il reste franchement mesurable, pas une fraction négligeable : c'est ce qui fait
+        // qu'on VOIT le 3D plutôt qu'un plan qui glisse.
+        let mid = s.sample_at(1.0, true).screen.unwrap().rotation_deg;
+        assert!(mid[1].abs() > 6.0, "à mi-vol le lacet doit encore se voir: {}", mid[1]);
+    }
+
+    #[test]
+    fn light3d_rotation_reaches_exactly_zero_and_stays() {
+        let s = light3d(2.2, 0.16);
+        for t in [2.2_f32, 2.21, 3.0, 60.0] {
+            let frame = s.sample_at(t, true);
+            assert_eq!(frame.screen.unwrap().rotation_deg, [0.0; 3], "écran à t={t}");
+            assert_eq!(frame.camera.unwrap().rotation_deg, [0.0; 3], "caméra à t={t}");
+            // ...et la géométrie redevient exactement le rect de base.
+            let base = [0.1, 0.1, 0.8, 0.8];
+            assert_eq!(opening_rect(base, &frame.screen.unwrap()), base);
+        }
+    }
+
+    #[test]
+    fn light3d_rotation_is_exactly_zero_at_the_last_instant_of_flight() {
+        // Juste avant la fin, l'angle est minuscule mais nul n'est pas atteint : c'est ce qui
+        // rend « exactement zéro » vérifiable plutôt que probable.
+        //
+        // Attention au moment : l'écran part à 0 et glisse sur `duration - stagger` (2,04 s ici),
+        // pas sur `duration` — c'est la CAMÉRA qui finit à 2,2 s, puisqu'elle part à `stagger`.
+        let s = light3d(2.2, 0.16);
+        let screen_lands = 2.2 - 0.16;
+        let just_before = s.sample_at(screen_lands - 0.01, true).screen.unwrap().rotation_deg;
+        assert!(just_before[0] > 0.0 && just_before[0] < 0.01, "{just_before:?}");
+        assert_eq!(s.sample_at(screen_lands, true).screen.unwrap().rotation_deg, [0.0; 3]);
+    }
+
+    #[test]
+    fn only_light3d_rotates() {
+        // Les deux presets précédents n'ont AUCUN angle : leurs scènes déjà enregistrées ne
+        // doivent pas se mettre à pencher.
+        for s in [with(2.2, 0.16), converge(2.2, 0.16)] {
+            for t in [0.0_f32, 0.5, 1.0, 2.0] {
+                let frame = s.sample_at(t, true);
+                assert_eq!(frame.screen.unwrap().rotation_deg, [0.0; 3], "t={t}");
+                assert_eq!(frame.camera.unwrap().rotation_deg, [0.0; 3], "t={t}");
+            }
+        }
+    }
+
+    #[test]
+    fn light3d_shares_the_timing_and_the_schedule() {
+        // Le troisième preset n'a ni sa propre horloge ni son propre ordre : c'est exactement la
+        // même chorégraphie, seul le départ change (comme Converge au tour précédent).
+        let slide = with(2.2, 0.16);
+        let light = light3d(2.2, 0.16);
+        for i in 0..=22 {
+            let t = i as f32 * 0.1;
+            let a = slide.sample_at(t, true);
+            let b = light.sample_at(t, true);
+            assert_eq!(a.screen.unwrap().eased, b.screen.unwrap().eased, "t={t}");
+            assert_eq!(a.camera.unwrap().eased, b.camera.unwrap().eased, "t={t}");
+        }
+        // Et les règles de participants s'appliquent telles quelles.
+        let lone = OpeningSequence::repaired(&SceneOpening {
+            enabled: true,
+            preset: PRESET_LIGHT_3D.to_string(),
+            duration_sec: 2.2,
+            stagger_sec: 0.16,
+            included_elements: vec!["screen".into()],
+            ..Default::default()
+        });
+        let half = lone.sample_at(1.1, false).screen.unwrap();
+        assert!((half.eased - swift_ease(0.5)).abs() < 1e-6, "{}", half.eased);
+        assert!(lone.sample_at(1.1, false).camera.is_none());
+    }
+
+    #[test]
+    fn light3d_survives_absurd_settings() {
+        for raw in [
+            SceneOpening {
+                enabled: true,
+                preset: PRESET_LIGHT_3D.to_string(),
+                duration_sec: f32::NAN,
+                ..Default::default()
+            },
+            SceneOpening {
+                enabled: true,
+                preset: PRESET_LIGHT_3D.to_string(),
+                stagger_sec: f32::INFINITY,
+                ..Default::default()
+            },
+        ] {
+            let s = OpeningSequence::repaired(&raw);
+            for t in [-1.0_f32, 0.0, 0.5, 2.2, 10.0, f32::NAN, f32::INFINITY] {
+                for sample in [s.sample_at(t, true).screen, s.sample_at(t, true).camera]
+                    .into_iter()
+                    .flatten()
+                {
+                    assert!(sample.rotation_deg.iter().all(|v| v.is_finite()), "t={t} {raw:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn disabled_light3d_is_the_identity() {
+        let s = OpeningSequence::repaired(&SceneOpening {
+            enabled: false,
+            preset: PRESET_LIGHT_3D.to_string(),
+            ..Default::default()
+        });
+        assert!(s.is_identity());
+        assert!(s.sample_at(0.0, true).is_identity());
     }
 }
