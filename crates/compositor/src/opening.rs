@@ -30,6 +30,15 @@ use crate::scene::SceneOpening;
 pub const ELEMENT_SCREEN: &str = "screen";
 /// Nom d'élément : la caméra.
 pub const ELEMENT_CAMERA: &str = "camera";
+/// Nom d'élément : le GROUPE de stickers. Un seul nom pour toutes les images qui entrent : elles
+/// partagent un échantillon unique et gardent chacune sa position, sa taille, son image et son
+/// ordre de calque. Les fusionner en une seule image serait une autre fonctionnalité.
+pub const ELEMENT_STICKERS: &str = "stickers";
+
+/// Durée minimale qu'un élément doit garder pour entrer, quand le décalage doit être resserré
+/// faute de place. Reprise de DogSC (`0.18 s`) : en dessous, l'entrée se lit comme un « pop ».
+/// Elle ne sert QU'À partir de trois participants — voir `schedule_of`.
+const MIN_ELEMENT_SEC: f32 = 0.18;
 
 /// Bornes du réglage « durée ». Un cran plus court ne se lit pas comme une entrée, un cran plus
 /// long n'est plus une ouverture — c'est une animation, et ça n'est pas ce preset.
@@ -58,6 +67,19 @@ pub const PRESET_CONVERGE: &str = "converge";
 /// Nom du preset « Light 3D » : l'écran entre en VRAI trois dimensions (tangage + lacet sous la
 /// perspective native), la caméra en deux dimensions.
 pub const PRESET_LIGHT_3D: &str = "light3D";
+
+/// Géométrie de départ des STICKERS, par preset : (échelle, déplacement en fractions du canevas).
+///
+/// Toutes les valeurs viennent de `FrameScene.swift` de DogSC. Les trois départs sont des points
+/// FIXES, comme Converge et Light 3D — un sticker n'a pas de « côté » à lui, il vient toujours de
+/// la gauche. Aucune rotation : le sticker reste une image PLATE dans les trois presets, y
+/// compris Light 3D, parce que le preset de DogSC y est plat lui aussi.
+const STICKER_SIDE_SLIDE: (f32, [f32; 2]) = (0.90, [-1.35, 0.0]);
+const STICKER_CONVERGE: (f32, [f32; 2]) = (0.62, [-1.30, -0.70]);
+const STICKER_LIGHT_3D: (f32, [f32; 2]) = (0.76, [-1.30, -0.12]);
+
+/// Le fondu d'un sticker atteint 1 à cette fraction de sa progression : `1 / 1.65`.
+const STICKER_FADE_RATE: f32 = 1.65;
 
 /// Échelles de départ du Side Slide, reprises de DogSC : l'écran part à 94 %, la caméra à
 /// 88 %, et les deux finissent à 100 %. Une caméra part de plus loin parce qu'elle est plus
@@ -152,6 +174,10 @@ pub struct OpeningSample {
     /// L'appelant l'AJOUTE à la rotation qu'il a déjà (`zoom_rotation`), il ne la remplace pas :
     /// un zoom incliné ou un mouvement d'écran tourné pendant l'ouverture garde ses deux angles.
     pub rotation_deg: [f32; 3],
+    /// Opacité à appliquer, 0..1. Vaut EXACTEMENT 1.0 pour l'écran et la caméra, et dès qu'un
+    /// élément est posé : l'appelant peut donc toujours multiplier par elle sans jamais assombrir
+    /// ce qui n'a pas à l'être. Seul le groupe de stickers s'en sert.
+    pub opacity: f32,
 }
 
 /// Ce qu'un preset dit d'un élément au départ. Regroupé pour que `departure` retourne une chose
@@ -163,18 +189,25 @@ struct Departure {
     rotation_deg: [f32; 3],
 }
 
-/// Les deux éléments, échantillonnés au même instant. `None` = cet élément n'entre pas
-/// (désactivé, ou pas de caméra dans ce projet).
+/// Les trois éléments, échantillonnés au même instant. `None` = cet élément n'entre pas
+/// (désactivé, pas de caméra dans ce projet, ou aucune image participante).
+///
+/// `stickers` est un échantillon UNIQUE pour tout le groupe : les images d'un même projet entrent
+/// ensemble, à la même échelle et au même déplacement depuis leur propre position finale. Ce qui
+/// les distingue — position, taille, image, zIndex — ne passe jamais par ici.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct OpeningFrame {
     pub screen: Option<OpeningSample>,
     pub camera: Option<OpeningSample>,
+    pub stickers: Option<OpeningSample>,
 }
 
 impl OpeningFrame {
     /// Aucun élément ne bouge : le rendu doit être celui d'avant l'ouverture.
     pub fn is_identity(&self) -> bool {
-        self.screen.is_none() && self.camera.is_none()
+        // `stickers` en fait partie : sans cette ligne, une ouverture dont seul un sticker entre
+        // se déclarerait identité et le sticker ne bougerait jamais.
+        self.screen.is_none() && self.camera.is_none() && self.stickers.is_none()
     }
 }
 
@@ -263,19 +296,32 @@ impl OpeningSequence {
     /// projet, il n'y a pas de second élément à faire entrer. Le passer explicitement plutôt
     /// que de le deviner ici garde cette fonction testable sans construire une scène.
     pub fn sample_at(&self, t_sec: f32, has_camera: bool) -> OpeningFrame {
+        self.sample_at_with_stickers(t_sec, has_camera, false)
+    }
+
+    /// Même chose, en sachant s'il y a des stickers dans ce programme.
+    ///
+    /// `has_stickers` arrive d'AILLEURS que du document : c'est la liste de membres figée au
+    /// calcul de la scène (première frame de sortie), pas une lecture des annotations de la frame
+    /// courante. Un sticker qui apparaît plus tard ne doit pas rejoindre la chorégraphie en cours
+    /// et décaler les rangs de l'écran et de la caméra.
+    pub fn sample_at_with_stickers(&self, t_sec: f32, has_camera: bool, has_stickers: bool) -> OpeningFrame {
         if self.is_identity() {
             return OpeningFrame::default();
         }
         // Un temps non fini ne doit pas se propager en NaN dans une géométrie.
         let t = if t_sec.is_finite() { t_sec } else { 0.0 };
 
-        let entering = self.entering(has_camera);
+        let entering = self.entering(has_camera, has_stickers);
         let mut frame = OpeningFrame::default();
         if entering.contains(&ELEMENT_SCREEN) {
             frame.screen = Some(self.sample_element(ELEMENT_SCREEN, t, &entering));
         }
         if entering.contains(&ELEMENT_CAMERA) {
             frame.camera = Some(self.sample_element(ELEMENT_CAMERA, t, &entering));
+        }
+        if entering.contains(&ELEMENT_STICKERS) {
+            frame.stickers = Some(self.sample_element(ELEMENT_STICKERS, t, &entering));
         }
         frame
     }
@@ -292,37 +338,69 @@ impl OpeningSequence {
     /// condamnait l'écran à attendre `stagger` secondes pour un élément qui n'existe pas, sur
     /// un projet sans caméra. Le rang se lit donc sur les participants, comme le
     /// `participatingElements()` de DogSC.
-    fn entering(&self, has_camera: bool) -> Vec<&str> {
+    fn entering(&self, has_camera: bool, has_stickers: bool) -> Vec<&str> {
         self.order
             .iter()
             .map(String::as_str)
             .filter(|name| *name != ELEMENT_CAMERA || has_camera)
+            .filter(|name| *name != ELEMENT_STICKERS || has_stickers)
             .filter(|name| self.includes(name))
             .collect()
+    }
+
+    /// Quand et sur combien de temps un participant entre. Séparé de `sample_element` parce que
+    /// c'est la seule règle qui dépend du NOMBRE de participants, et qu'elle doit rester
+    /// vérifiable sans construire d'échantillon.
+    ///
+    /// À deux participants, la formule est celle d'origine AU BIT PRÈS (`rank × stagger`, et le
+    /// glissement déjà borné à l'analyse) : c'est ce qui garantit que Side Slide, Converge et
+    /// Light 3D ne bougent pas d'un poil tant qu'on ne rajoute pas de sticker.
+    ///
+    /// À trois, il faut resserrer le décalage, sinon le dernier élément entamerait sa course après
+    /// la fin : le décalage est borné pour laisser `MIN_ELEMENT_SEC` à chacun. Ce resserrement ne
+    /// s'applique QU'À partir de trois participants.
+    fn schedule_of(&self, rank: usize, participants: usize) -> (f32, f32) {
+        if participants <= 1 {
+            // Un seul élément : rien à décaler, et il dispose de TOUTE la durée. Garder
+            // `duration - stagger` lui laisserait un trou mort à la fin, sans second élément
+            // pour l'y occuper.
+            return (0.0, self.duration_sec);
+        }
+        if participants == 2 {
+            return (rank as f32 * self.stagger_sec, self.slide_sec);
+        }
+        let gaps = participants as f32 - 1.0;
+        let stagger = self
+            .stagger_sec
+            .min(((self.duration_sec - MIN_ELEMENT_SEC) / gaps).max(MIN_SLIDE_SEC));
+        (rank as f32 * stagger, (self.duration_sec - stagger * gaps).max(MIN_SLIDE_SEC))
     }
 
     fn sample_element(&self, element: &str, t: f32, entering: &[&str]) -> OpeningSample {
         let camera = element == ELEMENT_CAMERA;
         // Rang parmi les participants. Un nom absent de la liste (impossible : on n'arrive ici
         // que pour un participant) part à 0.
-        let rank = entering.iter().position(|name| *name == element).unwrap_or(0) as f32;
-        let (start, slide) = if entering.len() <= 1 {
-            // Un seul élément : rien à décaler, et il dispose de TOUTE la durée. Garder
-            // `duration - stagger` lui laisserait un trou mort à la fin, sans second élément
-            // pour l'y occuper.
-            (0.0, self.duration_sec)
-        } else {
-            // Deux éléments ou plus : le premier part à 0, le suivant à `stagger`, et les deux
-            // glissent sur le même temps — la chorégraphie d'origine, inchangée.
-            (rank * self.stagger_sec, self.slide_sec)
-        };
+        let rank = entering.iter().position(|name| *name == element).unwrap_or(0);
+        let (start, slide) = self.schedule_of(rank, entering.len());
         let progress = ((t - start) / slide.max(MIN_SLIDE_SEC)).clamp(0.0, 1.0);
-        let departure = self.departure(camera);
+        let sticker = element == ELEMENT_STICKERS;
+        let departure = self.departure(camera, sticker);
         // Les angles s'éteignent sur la progression LINÉAIRE, pas sur la progression adoucie —
         // voir `LIGHT3D_ROTATION_DECAY_EXP`. À `progress = 1` l'exposant vaut 0, donc la rotation
         // est exactement nulle et `is_identity_rotation` reste vrai pour une scène sans autre
         // rotation : c'est ce qui garantit qu'un écran posé n'est pas « légèrement incliné ».
         let remaining = (1.0 - progress).powf(LIGHT3D_ROTATION_DECAY_EXP);
+        // Le fondu du sticker, sur la même progression LINÉAIRE que ses angles — et sur la MÊME
+        // horloge que sa position, puisqu'il est calculé ici. `MIN_SLIDE_SEC` a déjà interdit une
+        // pente infinie, donc ce min() suffit.
+        //
+        // À `progress = 1`, `swift_ease(1) = 1` exactement : l'alpha retrouve 1 au bit près, ce
+        // qui est la condition pour que « l'ouverture n'assombrit jamais une image posée ».
+        let opacity = if sticker {
+            swift_ease((progress * STICKER_FADE_RATE).min(1.0))
+        } else {
+            1.0
+        };
         OpeningSample {
             eased: swift_ease(progress),
             from_scale: departure.from_scale,
@@ -332,12 +410,28 @@ impl OpeningSequence {
                 departure.rotation_deg[1] * remaining,
                 departure.rotation_deg[2] * remaining,
             ],
+            opacity,
         }
     }
 
     /// Géométrie de départ : le seul endroit où les presets divergent.
-    fn departure(&self, camera: bool) -> Departure {
+    fn departure(&self, camera: bool, stickers: bool) -> Departure {
         let none = [0.0; 3];
+        if stickers {
+            // Le sticker suit le preset, mais toujours en point fixe : il n'a pas de « côté », il
+            // vient de la gauche dans les trois. Aucune rotation, y compris en Light 3D — le
+            // preset de DogSC y est plat.
+            let (scale, from) = match self.preset {
+                OpeningPreset::SideSlide => STICKER_SIDE_SLIDE,
+                OpeningPreset::Converge => STICKER_CONVERGE,
+                OpeningPreset::Light3D => STICKER_LIGHT_3D,
+            };
+            return Departure {
+                from_scale: scale,
+                motion: OpeningMotion::Converge { from },
+                rotation_deg: none,
+            };
+        }
         match (self.preset, camera) {
             (OpeningPreset::SideSlide, false) => Departure {
                 from_scale: SCREEN_FROM_SCALE,
@@ -427,7 +521,7 @@ pub fn opening_rect(base: [f32; 4], sample: &OpeningSample) -> [f32; 4] {
 
 /// `true` si le nom désigne un élément que ce preset sait animer.
 pub fn is_known_element(name: &str) -> bool {
-    name == ELEMENT_SCREEN || name == ELEMENT_CAMERA
+    name == ELEMENT_SCREEN || name == ELEMENT_CAMERA || name == ELEMENT_STICKERS
 }
 
 /// Ramène une durée dans ses bornes. Une valeur non finie (NaN, ±Inf) retombe sur le défaut :
@@ -453,7 +547,10 @@ fn sanitize_names(raw: &[String], fill_missing: bool) -> Vec<String> {
         }
     }
     if fill_missing {
-        for element in [ELEMENT_SCREEN, ELEMENT_CAMERA] {
+        // `stickers` complète l'ORDRE, jamais la SÉLECTION : un projet écrit avant les stickers
+        // garde `includedElements = [screen, camera]` et n'anime donc rien de plus. L'ordre n'est
+        // qu'un classement, et un classement complet évite qu'un nom absent laisse un trou.
+        for element in [ELEMENT_SCREEN, ELEMENT_CAMERA, ELEMENT_STICKERS] {
             if !out.iter().any(|n| n == element) {
                 out.push(element.to_string());
             }
@@ -739,13 +836,18 @@ mod tests {
             included_elements: vec!["sticker".into(), "screen".into(), "screen".into()],
             ..Default::default()
         });
-        // `sticker` n'existe pas encore : ignoré, pas de panique.
-        assert_eq!(s.order(), &["camera".to_string(), "screen".to_string()]);
+        // `sticker` (au SINGULIER) n'existe pas : ignoré, pas de panique. Le nom connu est le
+        // pluriel `stickers`, un seul pour tout le groupe.
+        assert_eq!(
+            s.order(),
+            &["camera".to_string(), "screen".to_string(), "stickers".to_string()]
+        );
         // Dédoublonné, et l'écran reste le seul élément retenu.
         assert_eq!(s.included(), &["screen".to_string()]);
         let frame = s.sample_at(0.0, true);
         assert!(frame.screen.is_some());
         assert_eq!(frame.camera, None, "camera was not selected");
+        assert_eq!(frame.stickers, None, "un nom inconnu ne doit rien sélectionner");
     }
 
     #[test]
@@ -755,7 +857,17 @@ mod tests {
             element_order: vec![],
             ..Default::default()
         });
-        assert_eq!(s.order(), &["screen".to_string(), "camera".to_string()]);
+        // L'ORDRE se complète à trois : c'est un classement, pas une sélection.
+        assert_eq!(
+            s.order(),
+            &["screen".to_string(), "camera".to_string(), "stickers".to_string()]
+        );
+        // ...et la SÉLECTION, elle, ne bouge pas : c'est elle qui décide qui entre. Un projet
+        // écrit avant les stickers garde `[screen, camera]` et n'anime donc rien de plus, même
+        // si son ordre nomme maintenant `stickers`.
+        assert_eq!(s.included(), &["screen".to_string(), "camera".to_string()]);
+        let frame = s.sample_at_with_stickers(0.0, true, true);
+        assert_eq!(frame.stickers, None, "ordonné mais non sélectionné : il n'entre pas");
     }
 
     #[test]
@@ -1252,5 +1364,249 @@ mod tests {
         });
         assert!(s.is_identity());
         assert!(s.sample_at(0.0, true).is_identity());
+    }
+
+    // ── Stickers ─────────────────────────────────────────────────────────────
+
+    /// Le groupe de stickers seul, qui dispose donc de toute la durée.
+    fn stickers_only(duration: f32, preset: &str) -> OpeningSequence {
+        OpeningSequence::repaired(&SceneOpening {
+            enabled: true,
+            preset: preset.to_string(),
+            duration_sec: duration,
+            stagger_sec: 0.16,
+            included_elements: vec![ELEMENT_STICKERS.into()],
+            ..Default::default()
+        })
+    }
+
+    fn all_three(preset: &str) -> OpeningSequence {
+        OpeningSequence::repaired(&SceneOpening {
+            enabled: true,
+            preset: preset.to_string(),
+            duration_sec: 2.2,
+            stagger_sec: 0.16,
+            included_elements: vec![
+                ELEMENT_SCREEN.into(),
+                ELEMENT_CAMERA.into(),
+                ELEMENT_STICKERS.into(),
+            ],
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn each_preset_gives_the_sticker_its_own_departure() {
+        for (preset, scale, from) in [
+            (PRESET_SIDE_SLIDE, STICKER_SIDE_SLIDE.0, STICKER_SIDE_SLIDE.1),
+            (PRESET_CONVERGE, STICKER_CONVERGE.0, STICKER_CONVERGE.1),
+            (PRESET_LIGHT_3D, STICKER_LIGHT_3D.0, STICKER_LIGHT_3D.1),
+        ] {
+            let s = stickers_only(2.2, preset);
+            let sample = s
+                .sample_at_with_stickers(0.0, false, true)
+                .stickers
+                .expect("le sticker entre");
+            assert_eq!(sample.from_scale, scale, "{preset}");
+            assert_eq!(sample.motion, OpeningMotion::Converge { from }, "{preset}");
+        }
+    }
+
+    #[test]
+    fn the_sticker_is_flat_in_every_preset_including_light3d() {
+        // Le sticker reste une image 2D : le preset de DogSC y est plat lui aussi.
+        for preset in [PRESET_SIDE_SLIDE, PRESET_CONVERGE, PRESET_LIGHT_3D] {
+            let s = stickers_only(2.2, preset);
+            for t in [0.0_f32, 0.5, 1.0, 2.0] {
+                assert_eq!(
+                    s.sample_at_with_stickers(t, false, true).stickers.unwrap().rotation_deg,
+                    [0.0; 3],
+                    "{preset} à t={t}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_sticker_group_fades_in_then_is_exactly_opaque() {
+        let s = stickers_only(2.2, PRESET_SIDE_SLIDE);
+        // Un seul participant : il glisse sur toute la durée, donc la progression est t / 2,2.
+        let opacity_at = |t: f32| s.sample_at_with_stickers(t, false, true).stickers.unwrap().opacity;
+        assert_eq!(opacity_at(0.0), 0.0, "un sticker ne peut pas être opaque à l'instant zéro");
+        assert!(opacity_at(0.3) > 0.0 && opacity_at(0.3) < 1.0, "{}", opacity_at(0.3));
+        // `swift_ease(min(p × 1,65, 1))` atteint 1 bien avant la fin, et y RESTE : 1 - (1-1)^4 = 1.
+        assert_eq!(opacity_at(2.2 / 1.65), 1.0);
+        assert_eq!(opacity_at(2.2), 1.0, "alpha exactement 1 à la fin");
+        assert_eq!(s.sample_at_with_stickers(5.0, false, true).stickers.unwrap().opacity, 1.0);
+        // ...et l'écran et la caméra, eux, ne sont JAMAIS assombris.
+        for t in [0.0_f32, 0.5, 2.2] {
+            let f = s.sample_at_with_stickers(t, true, true);
+            assert_eq!(f.screen, None, "l'écran n'est pas sélectionné ici");
+            assert_eq!(f.camera, None);
+        }
+        let three = all_three(PRESET_SIDE_SLIDE);
+        for t in [0.0_f32, 0.5, 1.0, 3.0] {
+            let f = three.sample_at_with_stickers(t, true, true);
+            assert_eq!(f.screen.unwrap().opacity, 1.0, "écran à t={t}");
+            assert_eq!(f.camera.unwrap().opacity, 1.0, "caméra à t={t}");
+        }
+    }
+
+    #[test]
+    fn the_sticker_lands_exactly_home_and_stops() {
+        let s = stickers_only(2.2, PRESET_SIDE_SLIDE);
+        let base = [0.3, 0.2, 0.25, 0.2];
+        let sample = s.sample_at_with_stickers(2.2, false, true).stickers.unwrap();
+        assert_eq!(sample.eased, 1.0);
+        assert_eq!(opening_rect(base, &sample), base, "le sticker doit se poser AU BIT PRÈS");
+        assert_eq!(opening_rect(base, &s.sample_at_with_stickers(9.0, false, true).stickers.unwrap()), base);
+        // À t = 0, il est hors cadre à gauche.
+        let out = opening_rect(base, &s.sample_at_with_stickers(0.0, false, true).stickers.unwrap());
+        assert!(out[0] + out[2] <= 0.0, "{out:?}");
+    }
+
+    #[test]
+    fn two_elements_keep_their_timing_exactly_when_a_sticker_joins() {
+        // La promesse de compatibilité du tour : tant qu'il n'y a pas de sticker, les trois
+        // presets gardent leur chorégraphie AU BIT PRÈS.
+        for preset in [PRESET_SIDE_SLIDE, PRESET_CONVERGE, PRESET_LIGHT_3D] {
+            let two = OpeningSequence::repaired(&SceneOpening {
+                enabled: true,
+                preset: preset.to_string(),
+                duration_sec: 2.2,
+                stagger_sec: 0.16,
+                included_elements: vec![ELEMENT_SCREEN.into(), ELEMENT_CAMERA.into()],
+                ..Default::default()
+            });
+            for i in 0..=22 {
+                let t = i as f32 * 0.1;
+                let a = two.sample_at_with_stickers(t, true, true);
+                let b = two.sample_at_with_stickers(t, true, false);
+                assert_eq!(a, b, "{preset} à t={t} : `stickers` déclaré mais non sélectionné");
+            }
+            // Et une fois le sticker sélectionné, l'écran et la caméra gardent LEURS départs : ce
+            // qui change, c'est le temps de glissement commun, pas la géométrie de chacun.
+            let three = all_three(preset);
+            let s2 = two.sample_at(0.0, true);
+            let s3 = three.sample_at_with_stickers(0.0, true, true);
+            assert_eq!(s2.screen.unwrap().from_scale, s3.screen.unwrap().from_scale, "{preset}");
+            assert_eq!(s2.camera.unwrap().from_scale, s3.camera.unwrap().from_scale, "{preset}");
+            assert_eq!(s2.screen.unwrap().motion, s3.screen.unwrap().motion, "{preset}");
+        }
+    }
+
+    #[test]
+    fn three_elements_leave_everyone_enough_time() {
+        let s = all_three(PRESET_SIDE_SLIDE);
+        // `elementDuration = duration - stagger × (n - 1)` : 2,2 - 0,16 × 2 = 1,88.
+        let first = s.sample_at_with_stickers(0.0, true, true).screen.unwrap();
+        let last = s.sample_at_with_stickers(0.0, true, true).stickers.unwrap();
+        assert_eq!(first.from_scale, SCREEN_FROM_SCALE);
+        assert_eq!(last.from_scale, STICKER_SIDE_SLIDE.0);
+        // Le dernier part APRÈS les autres, et tout le monde est posé à la fin.
+        for (t, done) in [(0.0_f32, false), (0.16, false), (0.32, false), (2.2, true)] {
+            let f = s.sample_at_with_stickers(t, true, true);
+            for name in ["écran", "caméra", "sticker"] {
+                let sample = match name {
+                    "écran" => f.screen,
+                    "caméra" => f.camera,
+                    _ => f.stickers,
+                }
+                .unwrap();
+                assert_eq!(
+                    sample.eased >= 1.0 - 1e-6,
+                    done,
+                    "{name} à t={t} : posé={}",
+                    sample.eased
+                );
+            }
+        }
+        // Le décalage est resserré pour que le DERNIER garde au moins MIN_ELEMENT_SEC, et jamais
+        // au point de faire disparaître la course.
+        let t0 = 0.32_f32;
+        let last_at_start = s.sample_at_with_stickers(t0, true, true).stickers.unwrap();
+        assert!(last_at_start.eased < 1e-6, "le sticker ne doit pas avoir bougé avant son rang");
+        let almost = s.sample_at_with_stickers(2.2 - 1e-4, true, true).stickers.unwrap();
+        assert!(almost.eased > 0.99, "il doit finir pile à la durée : {}", almost.eased);
+    }
+
+    #[test]
+    fn a_three_element_stagger_is_tightened_only_where_it_has_to_be() {
+        // Un décalage énorme avec trois participants doit être ramené pour laisser
+        // `MIN_ELEMENT_SEC` au dernier — et le resserrement ne s'applique QU'À trois.
+        let s = OpeningSequence::repaired(&SceneOpening {
+            enabled: true,
+            preset: PRESET_SIDE_SLIDE.to_string(),
+            duration_sec: 2.2,
+            stagger_sec: 1.2,
+            included_elements: vec![
+                ELEMENT_SCREEN.into(),
+                ELEMENT_CAMERA.into(),
+                ELEMENT_STICKERS.into(),
+            ],
+            ..Default::default()
+        });
+        // Le dernier part à 2 × 1,01 = 2,02 s et dispose donc de 0,18 s — exactement la borne.
+        // À son instant de départ son `eased` vaut 0 : c'est le sens de « il a eu le temps », pas
+        // « il est arrivé ».
+        let at_start = s.sample_at_with_stickers(2.02, true, true).stickers.unwrap();
+        assert_eq!(at_start.eased, 0.0, "il ne doit pas avoir bougé avant son rang");
+        let half_way = s.sample_at_with_stickers(2.02 + 0.09, true, true).stickers.unwrap();
+        assert!((half_way.eased - swift_ease(0.5)).abs() < 1e-4, "{}", half_way.eased);
+        assert_eq!(s.sample_at_with_stickers(2.2, true, true).stickers.unwrap().eased, 1.0);
+        let gap = 1.2_f32.min((2.2 - MIN_ELEMENT_SEC) / 2.0);
+        assert!((gap - 1.01).abs() < 1e-6, "{gap}");
+        // Et à deux participants, ce même décalage n'est PAS resserré par cette règle : c'est
+        // `slide_sec`, déjà borné à l'analyse, qui s'applique.
+        let two = OpeningSequence::repaired(&SceneOpening {
+            enabled: true,
+            preset: PRESET_SIDE_SLIDE.to_string(),
+            duration_sec: 2.2,
+            stagger_sec: 1.2,
+            included_elements: vec![ELEMENT_SCREEN.into(), ELEMENT_CAMERA.into()],
+            ..Default::default()
+        });
+        let cam = two.sample_at(1.2, true).camera.unwrap();
+        let expected = swift_ease(0.0);
+        assert!((cam.eased - expected).abs() < 1e-6, "la caméra part bien à `stagger` : {}", cam.eased);
+    }
+
+    #[test]
+    fn stickers_never_enter_by_themselves() {
+        // Non sélectionné, ou projet sans sticker : rien ne bouge.
+        let untouched = with(2.2, 0.16);
+        let f = untouched.sample_at_with_stickers(0.0, true, true);
+        assert_eq!(f.stickers, None, "un projet sans sticker sélectionné n'en fait pas entrer");
+        let s = stickers_only(2.2, PRESET_SIDE_SLIDE);
+        assert_eq!(
+            s.sample_at_with_stickers(0.0, false, false).stickers,
+            None,
+            "aucun membre dans la scène → l'élément n'entre pas, même sélectionné"
+        );
+        assert!(s.sample_at_with_stickers(0.0, false, true).stickers.is_some());
+    }
+
+    #[test]
+    fn stickers_order_is_clamped_and_deduplicated() {
+        let s = OpeningSequence::repaired(&SceneOpening {
+            enabled: true,
+            element_order: vec![
+                "stickers".into(),
+                "stickers".into(),
+                "nope".into(),
+                "screen".into(),
+            ],
+            included_elements: vec!["stickers".into(), "screen".into()],
+            ..Default::default()
+        });
+        // Dédoublonné, l'inconnu écarté, et `camera` complété à la fin (l'ordre se remplit).
+        assert_eq!(
+            s.order(),
+            &["stickers".to_string(), "screen".to_string(), "camera".to_string()]
+        );
+        // Le sticker passe en premier : c'est ce que dit l'ordre, et le rang suit l'ordre.
+        let f = s.sample_at_with_stickers(0.0, true, true);
+        assert!(f.stickers.is_some() && f.screen.is_some());
+        assert_eq!(f.camera, None, "la caméra n'est pas sélectionnée");
     }
 }

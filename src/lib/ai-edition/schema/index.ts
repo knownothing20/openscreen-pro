@@ -463,6 +463,12 @@ export const annotationRegionSchema = endGteStart(
 		content: z.string().default(""),
 		textContent: z.string().optional(),
 		imageContent: z.string().optional(),
+		// Let this image enter with the opening. Optional, so every project written before it loads
+		// untouched, and `undefined` means "ordinary overlay" — the whole compatibility promise.
+		// Only meaningful on `type: "image"`, and only when the timeline's Opening has actually
+		// selected the sticker element AND the image is present on the output's first frame; see
+		// `openingStickerIds` in `native/sceneDescription.ts` for the eligibility rule.
+		openingSticker: z.boolean().optional(),
 		// The box `position`, `size` and the text size are measured against. `"frame"`, the output
 		// frame: where text, images and arrows are placed, so padding and the footage's size never
 		// move them. Absent, the footage (screen rect): a privacy blur always, since it must stay on

@@ -1892,6 +1892,8 @@ pub struct FrameGeometry {
     /// La rotation de base une frame d'écran plus tôt : avec `s_dst_prev` et `camera_prev`, le
     /// zoom d'AVANT, que le mode 8 floute (`tilt_trail`).
     pub zoom_rotation_prev: [f32; 3],
+    /// L'échantillon du groupe de stickers d'ouverture, ou `None`. Voir `plan_frame`.
+    pub opening_sticker: Option<crate::opening::OpeningSample>,
     /// La caméra réelle une frame plus tôt (poids, visée, orbite, zoom), `None` si elle n'y était
     /// pas active — même quand elle l'est à cette frame-ci, ou l'inverse.
     pub camera_prev: Option<crate::camera::CameraPose>,
@@ -3034,6 +3036,12 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // incliné y ajoute sa rotation de base et le poids de la caméra réelle (`tilt_trail`).
         let mut zoom_rotation = [0.0f32; 3];
         let mut zoom_rotation_prev = [0.0f32; 3];
+        // L'échantillon du GROUPE de stickers, recopié tel quel sur la géométrie. Les trois
+        // backends le lisent dans leur branche `"image"` : ils transforment le rect de destination
+        // par `opening_rect` et multiplient l'alpha par `opacity`. Un échantillon pour tout le
+        // groupe — ce qui distingue deux images (position, taille, contenu, zIndex) ne passe
+        // jamais par ici. `None` = aucune image n'entre, ou l'ouverture est finie.
+        let mut opening_sticker: Option<crate::opening::OpeningSample> = None;
         let mut zoom_tilt = 0.0f32;
         let mut zoom_camera = 0.0f32;
         let mut zoom_camera_prev = 0.0f32;
@@ -3503,6 +3511,12 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
                 .any(|c| webcam_is_real(&c.webcam_path, &c.screen_path)),
             None => lp.has_webcam,
         };
+        // Les stickers sont GLOBAUX : la liste des membres est figée par l'app à la première frame
+        // de sortie et voyage à part des `annotations`, que la projection filtre clip par clip.
+        // La lire sur la scène ENTIÈRE rend donc la même réponse à chaque frame, à chaque clip, et
+        // après n'importe quel seek — ce qui est exactement ce qu'il faut pour que les rangs de
+        // l'écran et de la caméra ne bougent pas au milieu de l'ouverture.
+        let opening_has_stickers = scene.is_some_and(|s| !s.opening_stickers.is_empty());
         let opening_programme_t = input.programme_time.unwrap_or(frame / FPS);
         let opening = crate::opening::OpeningSequence::repaired(
             &scene.map(|s| s.opening.clone()).unwrap_or_default(),
@@ -3513,9 +3527,13 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             // traîner exactement pareil, sinon le flou de mouvement dessine un fantôme sur la
             // seule ouverture et pas sur ce qui bouge à côté.
             let opening_step_sec = 1.0 / FPS;
-            let opening_frame = opening.sample_at(opening_programme_t, opening_has_camera);
-            let opening_frame_prev =
-                opening.sample_at(opening_programme_t - opening_step_sec, opening_has_camera);
+            let opening_frame =
+                opening.sample_at_with_stickers(opening_programme_t, opening_has_camera, opening_has_stickers);
+            let opening_frame_prev = opening.sample_at_with_stickers(
+                opening_programme_t - opening_step_sec,
+                opening_has_camera,
+                opening_has_stickers,
+            );
             if let Some(sample) = opening_frame.screen {
                 s_dst = crate::opening::opening_rect(s_dst, &sample);
                 s_base = crate::opening::opening_rect(s_base, &sample);
@@ -3543,6 +3561,7 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             if let Some(sample) = opening_frame_prev.camera {
                 w_dst_prev = crate::opening::opening_rect(w_dst_prev, &sample);
             }
+            opening_sticker = opening_frame.stickers;
         }
 
         // Aucun contre-étirement ici : le render target porte la géométrie de sortie, rien n'est
@@ -3693,6 +3712,7 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         zoom_rotation_dyn,
         camera,
         zoom_rotation_prev,
+        opening_sticker,
         camera_prev,
         padding_scale,
         cut,
@@ -7924,6 +7944,7 @@ mod tests {
             zoom_rotation_dyn: [0.0, 0.0, 0.0],
             camera: None,
             zoom_rotation_prev: [0.0, 0.0, 0.0],
+            opening_sticker: None,
             camera_prev: None,
             padding_scale: 1.0,
             cut: [0.0, 0.0, 1.0, 1.0],

@@ -50,6 +50,16 @@ export const OPENING_CURVE_SWIFT = "swift";
 
 export const OPENING_ELEMENT_SCREEN = "screen";
 export const OPENING_ELEMENT_CAMERA = "camera";
+/** One name for the whole group: every participating image enters together, each from its own
+ *  final place. Splitting images into per-sticker elements is a different feature. */
+export const OPENING_ELEMENT_STICKERS = "stickers";
+
+/**
+ * The shortest an element may take to enter once the stagger has to be tightened to fit three
+ * of them. DogSC's number; below it the entrance reads as a pop. Only ever used from three
+ * participants up — see `openingSchedule`.
+ */
+export const MIN_OPENING_ELEMENT_SEC = 0.18;
 
 export const DEFAULT_OPENING_DURATION_SEC = 2.2;
 export const DEFAULT_OPENING_STAGGER_SEC = 0.16;
@@ -71,9 +81,13 @@ export const OPENING_STAGGER_DURATION_FRACTION = 0.8;
 export const OPENING_KNOWN_ELEMENTS: readonly string[] = [
 	OPENING_ELEMENT_SCREEN,
 	OPENING_ELEMENT_CAMERA,
+	OPENING_ELEMENT_STICKERS,
 ];
 
-export type OpeningElement = typeof OPENING_ELEMENT_SCREEN | typeof OPENING_ELEMENT_CAMERA;
+export type OpeningElement =
+	| typeof OPENING_ELEMENT_SCREEN
+	| typeof OPENING_ELEMENT_CAMERA
+	| typeof OPENING_ELEMENT_STICKERS;
 
 /**
  * A stored opening. Every field is always present after parsing — a half-written object is
@@ -101,7 +115,7 @@ export function defaultOpeningSequence(): OpeningSequence {
 		durationSec: DEFAULT_OPENING_DURATION_SEC,
 		staggerSec: DEFAULT_OPENING_STAGGER_SEC,
 		curve: OPENING_CURVE_SWIFT,
-		elementOrder: [OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA],
+		elementOrder: [OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA, OPENING_ELEMENT_STICKERS],
 		includedElements: [OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA],
 	};
 }
@@ -136,7 +150,11 @@ function repairElements(value: unknown, fillMissing: boolean): OpeningElement[] 
 		}
 	}
 	if (fillMissing) {
-		for (const element of [OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA] as const) {
+		for (const element of [
+			OPENING_ELEMENT_SCREEN,
+			OPENING_ELEMENT_CAMERA,
+			OPENING_ELEMENT_STICKERS,
+		] as const) {
 			if (!out.includes(element)) out.push(element);
 		}
 	}

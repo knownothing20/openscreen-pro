@@ -75,6 +75,7 @@ import {
 	maxStaggerForDuration,
 	OPENING_ELEMENT_CAMERA,
 	OPENING_ELEMENT_SCREEN,
+	OPENING_ELEMENT_STICKERS,
 	OPENING_PRESET_CONVERGE,
 	OPENING_PRESET_LIGHT_3D,
 	OPENING_PRESET_SIDE_SLIDE,
@@ -2347,17 +2348,50 @@ function OpeningSection() {
 	// the native side keys on (`LiveParams::has_webcam`), so the two agree by construction.
 	const screenIncluded = opening.includedElements.includes(OPENING_ELEMENT_SCREEN);
 	const cameraIncluded = opening.includedElements.includes(OPENING_ELEMENT_CAMERA);
+	const stickerIncluded = opening.includedElements.includes(OPENING_ELEMENT_STICKERS);
 	const setIncluded = (element: OpeningElement, on: boolean) => {
 		const kept = opening.includedElements.filter((name) => name !== element);
 		// Written in the canonical order, so a stored value never depends on click order.
 		const next: OpeningElement[] = [];
-		for (const name of [OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA] as const) {
+		for (const name of [
+			OPENING_ELEMENT_SCREEN,
+			OPENING_ELEMENT_CAMERA,
+			OPENING_ELEMENT_STICKERS,
+		] as const) {
 			if (name === element ? on : kept.includes(name)) next.push(name);
 		}
 		void tl.setOpening({ includedElements: next });
 	};
 
+	// The sticker switch is only offered when the project HAS an image that would enter it: an
+	// enabled control that does nothing is worse than no control, the same rule as the camera.
+	//
+	// Annotations are authored in raw document time and the output starts at 0, so "present on
+	// the first output frame" reads as `startMs <= 0` here. The scene builder tests the PROJECTED
+	// source window instead (`openingStickerIds` in native/sceneDescription.ts), because there the
+	// clip's own source offset matters — the first clip may start at source 3 s. The two agree for
+	// every timeline that starts at zero, which is all this switch needs to be honest.
+	const hasStickerImage = useMemo(
+		() =>
+			(document?.annotations ?? []).some(
+				(a) => a.type === "image" && a.openingSticker === true && a.startMs <= 0,
+			),
+		[document],
+	);
+
 	const cameraFirst = opening.elementOrder[0] === OPENING_ELEMENT_CAMERA;
+	// Three elements need more than one bit of order, so the sticker gets a compact up/down pair
+	// rather than a drag timeline. The screen/camera button above still swaps those two, so the
+	// six orders are all reachable without touching a control that already worked.
+	const stickerRank = opening.elementOrder.indexOf(OPENING_ELEMENT_STICKERS);
+	const moveSticker = (delta: number) => {
+		const order = [...opening.elementOrder];
+		const to = stickerRank + delta;
+		if (stickerRank < 0 || to < 0 || to >= order.length) return;
+		const [moved] = order.splice(stickerRank, 1);
+		order.splice(to, 0, moved);
+		void tl.setOpening({ elementOrder: order });
+	};
 
 	return (
 		<>
@@ -2451,6 +2485,45 @@ function OpeningSection() {
 								disabled={!hasDocument}
 								onChange={(v) => setIncluded(OPENING_ELEMENT_CAMERA, v)}
 							/>
+						</div>
+					) : null}
+					<div className={styles.paneRow}>
+						<span className={styles.label} title={ts("effects.openingStickersTip")}>
+							{ts("effects.openingStickers")}
+						</span>
+						<Toggle
+							checked={stickerIncluded}
+							ariaLabel={ts("effects.openingStickers")}
+							tooltip={
+								hasStickerImage
+									? ts("effects.openingStickersTip")
+									: ts("effects.openingStickersUnavailable")
+							}
+							disabled={!hasDocument || !hasStickerImage}
+							onChange={(v) => setIncluded(OPENING_ELEMENT_STICKERS, v)}
+						/>
+					</div>
+					{stickerIncluded && opening.elementOrder.length > 1 ? (
+						<div className={styles.paneRow}>
+							<span className={styles.label}>{ts("effects.openingStickerPosition")}</span>
+							<button
+								type="button"
+								className={styles.linkBtn}
+								aria-label={ts("effects.openingStickerLater")}
+								disabled={!hasDocument || stickerRank >= opening.elementOrder.length - 1}
+								onClick={() => moveSticker(1)}
+							>
+								▼
+							</button>
+							<button
+								type="button"
+								className={styles.linkBtn}
+								aria-label={ts("effects.openingStickerEarlier")}
+								disabled={!hasDocument || stickerRank <= 0}
+								onClick={() => moveSticker(-1)}
+							>
+								▲
+							</button>
 						</div>
 					) : null}
 					{/* Only worth offering when both can enter: with one element there is no

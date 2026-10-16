@@ -2629,8 +2629,30 @@ impl Compositor {
                 annotation.w,
                 annotation.h,
             );
+            // Sticker d'ouverture. La transformation s'applique au rect de DESTINATION et AVANT le
+            // calcul `object-contain` de la branche image : le rapport de containment se lit sur
+            // la boîte, qu'une mise à l'échelle uniforme ne change pas, donc l'image est rétrécie
+            // uniformément et son rapport largeur/hauteur ne bouge pas.
+            //
+            // Trois conditions, et il faut les trois : le type est `image` (le drapeau n'a de sens
+            // que là), `scene.opening_stickers` est la liste FIGÉE par l'app à la première frame de
+            // sortie — elle seule décide qui participe, et elle voyage à part des annotations que
+            // `for_clip_window` filtre clip par clip — et le drapeau de l'image, qui suit l'image
+            // même si son identifiant changeait un jour. Une image absente de la liste n'entre
+            // jamais, même marquée : c'est ce qui empêche une image apparue à 3 s de rejoindre la
+            // chorégraphie en cours et de décaler les rangs de l'écran et de la caméra.
+            let (dst, sticker_alpha) = match g.opening_sticker {
+                Some(sample)
+                    if annotation.kind == "image"
+                        && annotation.opening_sticker
+                        && scene.opening_stickers.iter().any(|id| *id == annotation.id) =>
+                {
+                    (crate::opening::opening_rect(dst, &sample), sample.opacity)
+                }
+                _ => (dst, 1.0),
+            };
             let quad_px = [dst[2] * self.rw(), dst[3] * self.rh()];
-            if quad_px[0] <= 0.0 || quad_px[1] <= 0.0 {
+            if quad_px[0] <= 0.0 || quad_px[1] <= 0.0 || sticker_alpha <= 0.0 {
                 continue;
             }
             match annotation.kind.as_str() {
@@ -2758,7 +2780,12 @@ impl Compositor {
                         // exactement ce qu'il faut ici, donc aucun shader de plus. `fx` est son
                         // rect de clip — plein cadre, pour ne rien découper.
                         mode: 7.0,
-                        color: [1.0, 1.0, 1.0, 1.0],
+                        // L'alpha du sticker d'ouverture se pose ICI, sur le multiplicateur global
+                        // que le shader applique déjà au sprite : l'alpha propre du PNG est
+                        // conservé, aucun tampon intermédiaire n'est créé, et une image ordinaire
+                        // reçoit exactement 1.0. Plafonné à 1 par construction (`swift_ease` d'un
+                        // argument déjà borné à 1), donc jamais de saturation à l'envers.
+                        color: [1.0, 1.0, 1.0, sticker_alpha],
                         fx: [0.0, 0.0, 1.0, 1.0],
                         ..Default::default()
                     });

@@ -2917,7 +2917,9 @@ describe("opening — the scene contract", () => {
 		expect(scene.opening.preset).toBe("sideSlide");
 		expect(scene.opening.curve).toBe("swift");
 		expect(scene.opening.durationSec).toBe(2.2);
-		expect(scene.opening.elementOrder).toEqual(["screen", "camera"]);
+		// The order names all three now; the SELECTION is untouched, so nothing new enters.
+		expect(scene.opening.elementOrder).toEqual(["screen", "camera", "stickers"]);
+		expect(scene.openingStickers).toEqual([]);
 	});
 
 	it("sends the stored opening through unchanged", () => {
@@ -2968,5 +2970,179 @@ describe("opening — the scene contract", () => {
 		};
 		expect(buildSceneDescription(doc).opening.preset).toBe("converge");
 		expect(buildSceneDescription(doc).opening).toEqual(doc.opening);
+	});
+});
+
+// --- opening stickers -------------------------------------------------------
+
+describe("buildSceneDescription.openingStickers", () => {
+	const style = {
+		color: "#ffffff",
+		backgroundColor: "transparent",
+		fontSize: 32,
+		fontFamily: "Inter",
+		fontWeight: "bold" as const,
+		fontStyle: "normal" as const,
+		textDecoration: "none" as const,
+		textAlign: "center" as const,
+	};
+
+	function stickerDoc(annotations: unknown[], clips?: AxcutDocument["timeline"]["clips"]) {
+		return makeDoc({
+			assets: [makeAsset({ id: "a1", originalPath: "/tmp/a1.mp4", durationSec: 30 })],
+			clips: clips ?? [
+				makeClip({
+					id: "c1",
+					assetId: "a1",
+					sourceStartSec: 0,
+					sourceEndSec: 30,
+					timelineStartSec: 0,
+					timelineEndSec: 30,
+				}),
+			],
+			annotations: annotations as AxcutDocument["annotations"],
+		});
+	}
+
+	function image(over: Record<string, unknown> = {}) {
+		return {
+			id: "ann_img",
+			startMs: 0,
+			endMs: 6000,
+			type: "image",
+			content: "",
+			imageContent: "data:image/png;base64,iVBORw0KGgo=",
+			position: { x: 10, y: 10 },
+			size: { width: 20, height: 20 },
+			style,
+			zIndex: 1,
+			...over,
+		};
+	}
+
+	it("ships an empty list for any project written before stickers", () => {
+		// The compatibility promise in one assertion: no flag anywhere means nothing enters,
+		// and the field is still present so the native side has a list to read.
+		expect(buildSceneDescription(stickerDoc([image()])).openingStickers).toEqual([]);
+		expect(buildSceneDescription(stickerDoc([])).openingStickers).toEqual([]);
+	});
+
+	it("selects the image that is present on the first output frame", () => {
+		const scene = buildSceneDescription(stickerDoc([image({ openingSticker: true })]));
+		expect(scene.openingStickers).toHaveLength(1);
+		// The id it lists is the PROJECTED one, which is what the compositor matches.
+		const flagged = scene.annotations.filter((a) => a.openingSticker);
+		expect(flagged).toHaveLength(1);
+		expect(scene.openingStickers).toEqual([flagged[0].id]);
+	});
+
+	it("leaves an image that only appears later out of the queue", () => {
+		const scene = buildSceneDescription(
+			stickerDoc([image({ openingSticker: true, startMs: 3000, endMs: 6000 })]),
+		);
+		expect(scene.openingStickers).toEqual([]);
+	});
+
+	it("leaves an image that is already gone at frame zero out of the queue", () => {
+		// A negative start is not expressible, so the only way to be gone at 0 is to end at 0.
+		const scene = buildSceneDescription(
+			stickerDoc([image({ openingSticker: true, startMs: 0, endMs: 0 })]),
+		);
+		expect(scene.openingStickers).toEqual([]);
+	});
+
+	it("never lets text, figure or blur in, whatever their flag says", () => {
+		// The flag is only meaningful on an image; a hand-edited file that sets it elsewhere
+		// must still not put a subtitle into the opening.
+		const scene = buildSceneDescription(
+			stickerDoc([
+				image({ id: "t1", type: "text", textContent: "hi", openingSticker: true }),
+				image({ id: "f1", type: "figure", openingSticker: true }),
+				image({ id: "b1", type: "blur", openingSticker: true }),
+			]),
+		);
+		expect(scene.openingStickers).toEqual([]);
+	});
+
+	it("keeps every flagged image, one entry each, and never merges them", () => {
+		const scene = buildSceneDescription(
+			stickerDoc([
+				image({ id: "a", openingSticker: true }),
+				image({ id: "b", openingSticker: true, position: { x: 60, y: 60 } }),
+				image({ id: "c" }),
+			]),
+		);
+		expect(scene.openingStickers).toHaveLength(2);
+		// Two separate draws, so two separate rects: merging them into one image would be a
+		// different feature, and the assertion is that both survived as their own annotation.
+		expect(scene.annotations.filter((a) => a.openingSticker)).toHaveLength(2);
+	});
+
+	it("keeps a sticker that straddles a cut coming in on both sides", () => {
+		// Clip A is source 3-4 s at output 0-1 s and clip B source 0-5 s at output 1-6 s: the
+		// source windows do not touch, which is the fixture the whole opening work uses. An
+		// image at 0 that spans both is TWO projected pieces with two ids, and both must enter —
+		// otherwise the entrance would restart at the cut.
+		const scene = buildSceneDescription(
+			stickerDoc(
+				[image({ openingSticker: true, startMs: 0, endMs: 6000 })],
+				[
+					makeClip({
+						id: "ca",
+						assetId: "a1",
+						sourceStartSec: 3,
+						sourceEndSec: 4,
+						timelineStartSec: 0,
+						timelineEndSec: 1,
+					}),
+					makeClip({
+						id: "cb",
+						assetId: "a1",
+						sourceStartSec: 0,
+						sourceEndSec: 5,
+						timelineStartSec: 1,
+						timelineEndSec: 6,
+					}),
+				],
+			),
+		);
+		expect(scene.clips).toHaveLength(2);
+		// Both pieces are members, and they are distinct annotations.
+		expect(scene.openingStickers.length).toBeGreaterThanOrEqual(2);
+		const members = scene.annotations.filter((a) => a.openingSticker);
+		expect(members.length).toBe(scene.openingStickers.length);
+		// ...and it enters ON THE FIRST CLIP, whose source window starts at 3 s — the check must
+		// not have assumed source 0, which is what a naive rule would have done.
+		const first = members.find((a) => a.clipIndex === 0);
+		expect(first?.startSec).toBe(3);
+	});
+
+	it("does not queue an image that starts after the first clip begins", () => {
+		// Same two-clip programme, but the image starts at 1.5 s of output: it is on clip B only,
+		// so it must wait for its own entrance rather than joining the programme's.
+		const scene = buildSceneDescription(
+			stickerDoc(
+				[image({ openingSticker: true, startMs: 1500, endMs: 6000 })],
+				[
+					makeClip({
+						id: "ca",
+						assetId: "a1",
+						sourceStartSec: 3,
+						sourceEndSec: 4,
+						timelineStartSec: 0,
+						timelineEndSec: 1,
+					}),
+					makeClip({
+						id: "cb",
+						assetId: "a1",
+						sourceStartSec: 0,
+						sourceEndSec: 5,
+						timelineStartSec: 1,
+						timelineEndSec: 6,
+					}),
+				],
+			),
+		);
+		expect(scene.openingStickers).toEqual([]);
 	});
 });

@@ -295,6 +295,10 @@ export interface SceneAnnotation {
 	};
 	/** Present for `kind: "image"` — the authored `imageContent` (path or data URI). */
 	imagePath?: string;
+	/** Set by the user on an image to let it enter with the opening. Absent = an ordinary overlay.
+	 *  Only meaningful on `kind: "image"`; `openingStickers` on the scene is what actually decides
+	 *  who enters, so this flag alone never animates anything. */
+	openingSticker?: boolean;
 	/** Present for `kind: "figure"`. */
 	figure?: {
 		direction:
@@ -631,6 +635,12 @@ export interface SceneDescription {
 	 * decide whether to short-circuit, and a project with no opening sends it disabled.
 	 */
 	opening: OpeningSequence;
+	/**
+	 * Projected ids of the images that enter with the opening, **frozen at the programme's first
+	 * output frame**. The native side reads this list and never decides membership per frame; an
+	 * image whose id is absent never animates, whatever its own flag says. Empty = no sticker.
+	 */
+	openingStickers: string[];
 	/** Webcam background effect. Omitted when the mode is "none". */
 	webcamEffect?: SceneWebcamEffect;
 }
@@ -854,6 +864,60 @@ export function webcamBoxSourceSize(
 }
 
 /** Serialize a document into a {@link SceneDescription}. Pure — no per-frame math. */
+/**
+ * The image annotations that join the opening, by PROJECTED id.
+ *
+ * Membership is frozen here, once, for the whole programme: the native side reads the list and
+ * never re-decides per frame. Without that, a sticker that appears at 3 s would join a running
+ * opening and shift the entry ranks of the screen and the camera.
+ *
+ * Three conditions, all required:
+ *
+ *  - the annotation carries `openingSticker`. Absent — every project written before this — means
+ *    an ordinary overlay, which is the entire compatibility promise.
+ *  - the kind is `image`. The flag is meaningless on text, figure, blur and auto captions, and
+ *    none of those may enter the choreography.
+ *  - it is PRESENT on the programme's first output frame — decided from the projected SOURCE
+ *    window, never from `sourceTime = 0`: the first visible clip may well start at source 3 s
+ *    (the cross-cut fixture does), and a sticker on clip B sits at source 0 while being a second
+ *    into the programme.
+ *
+ * The projected pieces supply the ids because the compositor matches projected ids. A piece on a
+ * clip other than the first is still a member: a cut splits one image into two pieces, and both
+ * must keep entering.
+ *
+ * Known limit: a trim that removes the very beginning of the first clip is not accounted for, so
+ * "present at frame 0" is read conservatively from the clip's own source start. The compositor's
+ * visibility test still gates the DRAWING, so the worst case is a sticker entering a frame late,
+ * never entering when it should not.
+ */ function openingStickerIds(
+	annotations: ReadonlyArray<{
+		id: string;
+		type: string;
+		startMs: number;
+		endMs: number;
+		clipIndex?: number;
+		openingSticker?: boolean;
+	}>,
+	visibleClips: ReadonlyArray<{ sourceStartSec: number }>,
+): string[] {
+	return annotations
+		.filter((a) => a.type === "image" && a.openingSticker === true)
+		.filter((a) => {
+			// Per PIECE, and always against the window of the piece's OWN clip: a piece belongs to
+			// the group when it was already running when that clip started.
+			//
+			// Clip 0 only would have dropped the continuation piece of an image that straddles a
+			// cut: the projection emits one piece per clip, the later one gets a new id, and the
+			// entrance would then stop dead at the cut. Testing every piece against source 0 would
+			// have pulled in an image that only begins later — the other failure this prevents.
+			const clip = visibleClips[a.clipIndex ?? 0];
+			if (!clip) return false;
+			return a.startMs / 1000 <= clip.sourceStartSec + 1e-6 && a.endMs / 1000 > clip.sourceStartSec;
+		})
+		.map((a) => a.id);
+}
+
 export function buildSceneDescription(
 	document: AxcutDocument,
 	webcamSourceSize: { width: number; height: number } | null = null,
@@ -1450,6 +1514,14 @@ export function buildSceneDescription(
 					w: region.size.width / 100,
 					h: region.size.height / 100,
 					zIndex: region.zIndex,
+					// Carried ONLY for an image that asked, so an ordinary annotation keeps emitting
+					// exactly the keys it always has. Without this line the native
+					// `SceneAnnotation::opening_sticker` stayed false for every project and the
+					// compositor's guard rejected every sticker — the scene would list members and
+					// then refuse to draw a single one.
+					...(region.type === "image" && region.openingSticker === true
+						? { openingSticker: true as const }
+						: {}),
 				} as const;
 				if (region.type === "text") {
 					return {
@@ -1619,6 +1691,15 @@ export function buildSceneDescription(
 		// clock, continuous across cuts, so a clip that starts at 1 s plays the opening's
 		// second half rather than restarting it.
 		opening: document.opening ?? defaultOpeningSequence(),
+		// Which images enter with the opening, **frozen here** — see the comment on the native
+		// `Scene::opening_stickers`. The list is computed once, from the projected annotations and
+		// the programme's FIRST output frame, and never recomputed per clip: a sticker that starts
+		// at 3 s must not join a running opening and shift the screen and camera ranks.
+		//
+		// Ids are the PROJECTED ones (`projectRegionsToSource` mints new ids), and the annotation
+		// keeps its own `openingSticker` flag, so an image that straddles a cut stays a member on
+		// both sides — the projection emits one piece per clip, and both carry the flag.
+		openingStickers: openingStickerIds(projectedAnnotations, visibleClips),
 		// Omitted rather than sent as `{mode:"none"}`: the Rust side defaults the field, and
 		// every project without a webcam effect would otherwise carry it for nothing.
 		...(settings.webcamBackgroundMode !== "none"

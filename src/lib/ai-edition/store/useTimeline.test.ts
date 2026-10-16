@@ -7,6 +7,7 @@ import {
 	OPENING_CURVE_SWIFT,
 	OPENING_ELEMENT_CAMERA,
 	OPENING_ELEMENT_SCREEN,
+	OPENING_ELEMENT_STICKERS,
 	OPENING_PRESET_CONVERGE,
 	OPENING_PRESET_SIDE_SLIDE,
 } from "@/lib/ai-edition/opening/opening";
@@ -259,7 +260,11 @@ describe("useTimeline.setOpening — a preset is a patch, not a reset", () => {
 		expect(after?.durationSec).toBe(4);
 		expect(after?.staggerSec).toBe(0.5);
 		expect(after?.curve).toBe(OPENING_CURVE_SWIFT);
-		expect(after?.elementOrder).toEqual([OPENING_ELEMENT_CAMERA, OPENING_ELEMENT_SCREEN]);
+		expect(after?.elementOrder).toEqual([
+			OPENING_ELEMENT_CAMERA,
+			OPENING_ELEMENT_SCREEN,
+			OPENING_ELEMENT_STICKERS,
+		]);
 		expect(after?.includedElements).toEqual([OPENING_ELEMENT_SCREEN]);
 	});
 

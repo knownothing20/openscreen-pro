@@ -9,6 +9,7 @@ import {
 	DEFAULT_OPENING_DURATION_SEC,
 	DEFAULT_OPENING_STAGGER_SEC,
 	defaultOpeningSequence,
+	isKnownOpeningElement,
 	isOpeningIdentity,
 	MAX_OPENING_DURATION_SEC,
 	MAX_OPENING_STAGGER_SEC,
@@ -17,6 +18,8 @@ import {
 	OPENING_CURVE_SWIFT,
 	OPENING_ELEMENT_CAMERA,
 	OPENING_ELEMENT_SCREEN,
+	OPENING_ELEMENT_STICKERS,
+	OPENING_KNOWN_ELEMENTS,
 	OPENING_KNOWN_PRESETS,
 	OPENING_PRESET_CONVERGE,
 	OPENING_PRESET_LIGHT_3D,
@@ -32,7 +35,11 @@ describe("opening: a project without one", () => {
 		expect(opening.curve).toBe(OPENING_CURVE_SWIFT);
 		expect(opening.durationSec).toBe(DEFAULT_OPENING_DURATION_SEC);
 		expect(opening.staggerSec).toBe(DEFAULT_OPENING_STAGGER_SEC);
-		expect(opening.elementOrder).toEqual([OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA]);
+		expect(opening.elementOrder).toEqual([
+			OPENING_ELEMENT_SCREEN,
+			OPENING_ELEMENT_CAMERA,
+			OPENING_ELEMENT_STICKERS,
+		]);
 		expect(opening.includedElements).toEqual([OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA]);
 	});
 
@@ -106,7 +113,11 @@ describe("opening: element lists are cleaned up", () => {
 			includedElements: ["converge", "screen"],
 		});
 		// `sticker` / `converge` are later rounds; unknown, so ignored rather than kept.
-		expect(opening.elementOrder).toEqual([OPENING_ELEMENT_CAMERA, OPENING_ELEMENT_SCREEN]);
+		expect(opening.elementOrder).toEqual([
+			OPENING_ELEMENT_CAMERA,
+			OPENING_ELEMENT_SCREEN,
+			OPENING_ELEMENT_STICKERS,
+		]);
 		expect(opening.includedElements).toEqual([OPENING_ELEMENT_SCREEN]);
 	});
 
@@ -115,7 +126,11 @@ describe("opening: element lists are cleaned up", () => {
 			elementOrder: ["screen", "screen", "camera"],
 			includedElements: ["screen", "screen"],
 		});
-		expect(opening.elementOrder).toEqual([OPENING_ELEMENT_SCREEN, OPENING_ELEMENT_CAMERA]);
+		expect(opening.elementOrder).toEqual([
+			OPENING_ELEMENT_SCREEN,
+			OPENING_ELEMENT_CAMERA,
+			OPENING_ELEMENT_STICKERS,
+		]);
 		expect(opening.includedElements).toEqual([OPENING_ELEMENT_SCREEN]);
 	});
 
@@ -123,16 +138,22 @@ describe("opening: element lists are cleaned up", () => {
 		expect(parseOpeningSequence({ elementOrder: [] }).elementOrder).toEqual([
 			OPENING_ELEMENT_SCREEN,
 			OPENING_ELEMENT_CAMERA,
+			OPENING_ELEMENT_STICKERS,
 		]);
 		expect(parseOpeningSequence({ elementOrder: ["camera"] }).elementOrder).toEqual([
 			OPENING_ELEMENT_CAMERA,
 			OPENING_ELEMENT_SCREEN,
+			OPENING_ELEMENT_STICKERS,
 		]);
 	});
 
 	it("keeps an order swap", () => {
 		const opening = parseOpeningSequence({ elementOrder: ["camera", "screen"] });
-		expect(opening.elementOrder).toEqual([OPENING_ELEMENT_CAMERA, OPENING_ELEMENT_SCREEN]);
+		expect(opening.elementOrder).toEqual([
+			OPENING_ELEMENT_CAMERA,
+			OPENING_ELEMENT_SCREEN,
+			OPENING_ELEMENT_STICKERS,
+		]);
 	});
 
 	it("leaves the selection alone when only one element is chosen", () => {
@@ -199,7 +220,7 @@ describe("opening: the preset is an allowlist", () => {
 			durationSec: 3.4,
 			staggerSec: 0.42,
 			curve: OPENING_CURVE_SWIFT,
-			elementOrder: ["camera", "screen"],
+			elementOrder: ["camera", "screen", "stickers"],
 			includedElements: ["screen", "camera"],
 		};
 		expect(parseOpeningSequence(JSON.parse(JSON.stringify(stored)))).toEqual(stored);
@@ -212,7 +233,7 @@ describe("opening: the preset is an allowlist", () => {
 			enabled: true,
 			durationSec: 4,
 			staggerSec: 0.5,
-			elementOrder: ["camera", "screen"],
+			elementOrder: ["camera", "screen", "stickers"],
 			includedElements: ["screen"],
 		};
 		const slide = parseOpeningSequence({ ...base, preset: OPENING_PRESET_SIDE_SLIDE });
@@ -234,7 +255,7 @@ describe("opening: a round-trip through JSON keeps every field", () => {
 			durationSec: 3.4,
 			staggerSec: 0.42,
 			curve: OPENING_CURVE_SWIFT,
-			elementOrder: ["camera", "screen"],
+			elementOrder: ["camera", "screen", "stickers"],
 			includedElements: ["screen"],
 		};
 		// save: what the writer serialises. load: what the parser reads back.
@@ -246,5 +267,58 @@ describe("opening: a round-trip through JSON keeps every field", () => {
 		const once = parseOpeningSequence({ enabled: true, durationSec: 1.5, staggerSec: 0.9 });
 		const twice = parseOpeningSequence(JSON.parse(JSON.stringify(once)));
 		expect(twice).toEqual(once);
+	});
+});
+
+describe("opening elements — the sticker group", () => {
+	it("knows exactly three elements, spelled the way the native side spells them", () => {
+		// Wire contract with `opening.rs`'s `ELEMENT_*`. A rename on either side becomes
+		// "unknown", which the parser drops — the app would offer a switch that does nothing.
+		expect([...OPENING_KNOWN_ELEMENTS]).toEqual(["screen", "camera", "stickers"]);
+		expect(isKnownOpeningElement("stickers")).toBe(true);
+		// The singular is NOT an element, and never was.
+		expect(isKnownOpeningElement("sticker")).toBe(false);
+	});
+
+	it("fills the ORDER to three but leaves the SELECTION alone", () => {
+		// The compatibility promise: an old project's order gains a name it does not use, and
+		// its selection is untouched, so nothing new animates.
+		const parsed = parseOpeningSequence({ enabled: true, includedElements: ["screen", "camera"] });
+		expect(parsed.elementOrder).toEqual(["screen", "camera", "stickers"]);
+		expect(parsed.includedElements).toEqual(["screen", "camera"]);
+	});
+
+	it("keeps an explicit selection that names the stickers", () => {
+		const parsed = parseOpeningSequence({
+			enabled: true,
+			elementOrder: ["stickers", "screen", "camera"],
+			includedElements: ["stickers", "screen"],
+		});
+		expect(parsed.elementOrder).toEqual(["stickers", "screen", "camera"]);
+		expect(parsed.includedElements).toEqual(["stickers", "screen"]);
+	});
+
+	it("de-duplicates and drops unknown names on both lists", () => {
+		const parsed = parseOpeningSequence({
+			enabled: true,
+			elementOrder: ["stickers", "stickers", "sticker", "camera"],
+			includedElements: ["stickers", "nope", "stickers"],
+		});
+		expect(parsed.elementOrder).toEqual(["stickers", "camera", "screen"]);
+		expect(parsed.includedElements).toEqual(["stickers"]);
+	});
+
+	it("survives a JSON round-trip with three elements", () => {
+		const written = {
+			enabled: true,
+			preset: "light3D",
+			durationSec: 2.2,
+			staggerSec: 0.16,
+			curve: "swift",
+			elementOrder: ["stickers", "camera", "screen"],
+			includedElements: ["stickers", "screen", "camera"],
+		};
+		const parsed = parseOpeningSequence(JSON.parse(JSON.stringify(written)));
+		expect(parsed).toEqual(written);
 	});
 });

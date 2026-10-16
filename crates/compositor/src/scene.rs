@@ -382,6 +382,15 @@ pub struct SceneAnnotation {
     pub text: Option<SceneAnnotationText>,
     #[serde(default)]
     pub image_path: Option<String>,
+    /// Cette image participe-t-elle à l'entrée du programme ?
+    ///
+    /// Porté par l'ANNOTATION et pas seulement par une liste d'identifiants : la projection
+    /// recopie les annotations clip par clip et peut leur donner un nouvel identifiant, donc un
+    /// drapeau qui voyage avec l'image est la seule identité qui survive à la coupe. La liste des
+    /// MEMBRES figés vit à côté (`Scene::opening_stickers`), et c'est elle qui décide — ce
+    /// drapeau n'est qu'un pré-filtre.
+    #[serde(default)]
+    pub opening_sticker: bool,
     #[serde(default)]
     pub figure: Option<SceneAnnotationFigure>,
     #[serde(default)]
@@ -1076,6 +1085,17 @@ pub struct Scene {
     /// bit pour bit le même rendu qu'avant, sans bump de `schemaVersion` ni migration.
     #[serde(default)]
     pub opening: SceneOpening,
+    /// Les identifiants des images qui entrent avec l'ouverture — **figée à la première frame de
+    /// sortie** par l'app, jamais recalculée par frame ni par clip.
+    ///
+    /// C'est la réponse à un piège réel : une image qui apparaît à 3 s ne doit pas rejoindre la
+    /// chorégraphie en cours et décaler les rangs de l'écran et de la caméra. La liste voyage donc
+    /// à part des `annotations`, que `Scene::for_clip_window` filtre clip par clip — sans quoi un
+    /// sticker visible seulement sur le premier clip disparaîtrait de l'ouverture au premier cut.
+    ///
+    /// Vide = aucune image n'entre. `#[serde(default)]` : absente de tout JSON antérieur.
+    #[serde(default)]
+    pub opening_stickers: Vec<String>,
     pub output: SceneOutput,
 }
 

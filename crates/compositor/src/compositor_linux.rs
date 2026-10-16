@@ -2615,6 +2615,23 @@ impl Compositor {
                 let anchor = a.anchor_rect(g.s_ann);
                 let dst = crate::frame_geometry::annotation_dst_in(anchor, a.x, a.y, a.w, a.h);
                 let quad_px = [dst[2] * rw, dst[3] * rh];
+                // Sticker d'ouverture — MÊME contrat que `compositor_windows`, pour que les trois backends
+                // dessinent la même chose. Les trois conditions (type `image`, drapeau de l'image, et
+                // appartenance à la liste FIGÉE `scene.opening_stickers`) sont détaillées là-bas.
+                let (dst, sticker_alpha) = match g.opening_sticker {
+                    Some(sample)
+                        if a.kind == "image"
+                            && a.opening_sticker
+                            && scene.opening_stickers.iter().any(|id| *id == a.id) =>
+                    {
+                        (crate::opening::opening_rect(dst, &sample), sample.opacity)
+                    }
+                    _ => (dst, 1.0),
+                };
+                let quad_px = [dst[2] * rw, dst[3] * rh];
+                if quad_px[0] <= 0.0 || quad_px[1] <= 0.0 || sticker_alpha <= 0.0 {
+                    continue;
+                }
                 // Une boite degeneree ferait un atlas 0x0 et un draw invisible ;
                 // macOS l'ecarte de la meme facon.
                 if quad_px[0] <= 0.0 || quad_px[1] <= 0.0 {
@@ -2738,7 +2755,7 @@ impl Compositor {
                             src: [0.0, 0.0, 1.0, 1.0],
                             quad_px: [fit_w * rw, fit_h * rh],
                             mode: 7.0,
-                            color: [1.0, 1.0, 1.0, 1.0],
+                            color: [1.0, 1.0, 1.0, sticker_alpha],
                             // Mode 7 clippe sur `fx` : un rect qui couvre tout le
                             // cadre = pas de clip.
                             fx: [0.0, 0.0, 1.0, 1.0],

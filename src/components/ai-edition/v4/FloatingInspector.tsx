@@ -84,6 +84,7 @@ import {
 	CursorPane,
 	LayoutPane,
 	SliderCell,
+	Toggle,
 	TranscriptPane,
 	VideoEffectsPane,
 } from "../RightPanes";
@@ -1067,6 +1068,29 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									reader.readAsDataURL(file);
 								}}
 							/>
+							{/* The flag says ONLY "allowed to enter". Whether it actually enters also needs
+							    the timeline's Opening to have selected the sticker element, and the image
+							    to exist on the output's first frame — the hint says so, so the switch is
+							    never a lie when the image stays still. */}
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "space-between",
+									gap: 8,
+								}}
+							>
+								<span>{ts("annotation.openingSticker")}</span>
+								<Toggle
+									checked={region.openingSticker === true}
+									ariaLabel={ts("annotation.openingSticker")}
+									tooltip={ts("annotation.openingStickerTip")}
+									onChange={(v) => {
+										tl.updateAnnotationLive(region.id, { openingSticker: v });
+										void tl.commitAnnotationChange();
+									}}
+								/>
+							</div>
 						</div>
 					) : null}
 					{region.type === "figure" ? (
