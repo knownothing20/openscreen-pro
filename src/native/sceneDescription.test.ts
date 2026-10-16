@@ -25,6 +25,7 @@ import { getFocusBoundsForScale } from "@/lib/zoomMath/focusUtils";
 import {
 	annotationFootageRect,
 	buildSceneDescription,
+	documentHasOpeningSticker,
 	wallpaperAcceptsMotion,
 	zoomScaleLimit,
 } from "./sceneDescription";
@@ -3115,6 +3116,86 @@ describe("buildSceneDescription.openingStickers", () => {
 		// not have assumed source 0, which is what a naive rule would have done.
 		const first = members.find((a) => a.clipIndex === 0);
 		expect(first?.startSec).toBe(3);
+	});
+
+	it("keeps an image that begins exactly at the second clip's cut out of the queue", () => {
+		// THE case the per-clip test got wrong. This image's only piece sits flush against clip B's
+		// window start — indistinguishable, piece by piece, from a continuation — but the image
+		// begins at 1 s of output, not on the programme's first frame, so it must not enter.
+		const scene = buildSceneDescription(
+			stickerDoc(
+				[image({ openingSticker: true, startMs: 1000, endMs: 6000 })],
+				[
+					makeClip({
+						id: "ca",
+						assetId: "a1",
+						sourceStartSec: 3,
+						sourceEndSec: 4,
+						timelineStartSec: 0,
+						timelineEndSec: 1,
+					}),
+					makeClip({
+						id: "cb",
+						assetId: "a1",
+						sourceStartSec: 0,
+						sourceEndSec: 5,
+						timelineStartSec: 1,
+						timelineEndSec: 6,
+					}),
+				],
+			),
+		);
+		// It exists, and its piece really does start at the clip's own window start...
+		expect(scene.annotations.find((a) => a.clipIndex === 1)?.startSec).toBe(0);
+		// ...and it still does not join.
+		expect(scene.openingStickers).toEqual([]);
+	});
+
+	it("moves the first-frame test when the first segment is trimmed", () => {
+		// A trim takes the beginning of the first clip out of the programme, so the first output
+		// frame now comes from 0.5 s of raw time: an image that had already ended is no longer on
+		// it, and one still running through it is.
+		const clips = [
+			makeClip({
+				id: "c1",
+				assetId: "a1",
+				sourceStartSec: 0,
+				sourceEndSec: 10,
+				timelineStartSec: 0,
+				timelineEndSec: 10,
+			}),
+		];
+		const withTrim = (annotations: unknown[]) =>
+			buildSceneDescription(
+				makeDoc({
+					assets: [makeAsset({ id: "a1", originalPath: "/tmp/a1.mp4", durationSec: 30 })],
+					clips,
+					timeline: { trimRanges: [{ id: "t1", clipId: "c1", startSec: 0, endSec: 0.5 }] as never },
+					annotations: annotations as never,
+				}),
+			);
+		expect(
+			withTrim([image({ openingSticker: true, startMs: 0, endMs: 400 })]).openingStickers,
+		).toEqual([]);
+		expect(
+			withTrim([image({ openingSticker: true, startMs: 0, endMs: 6000 })]).openingStickers,
+		).toHaveLength(1);
+	});
+
+	it("agrees with the UI on who is eligible", () => {
+		// One predicate, two callers: a switch offered for an image the compositor then refuses
+		// would be a lie, so the two are asserted to move together.
+		const onFirst = image({ openingSticker: true, startMs: 0, endMs: 6000 });
+		const later = image({ openingSticker: true, startMs: 2500, endMs: 6000 });
+		const unmarked = image();
+		for (const [doc, expected] of [
+			[stickerDoc([onFirst]), true],
+			[stickerDoc([later]), false],
+			[stickerDoc([unmarked]), false],
+		] as const) {
+			expect(documentHasOpeningSticker(doc)).toBe(expected);
+			expect(buildSceneDescription(doc).openingStickers.length > 0).toBe(expected);
+		}
 	});
 
 	it("does not queue an image that starts after the first clip begins", () => {

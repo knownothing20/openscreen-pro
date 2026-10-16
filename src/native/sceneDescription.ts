@@ -47,7 +47,7 @@ import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
 import { removedRawSpans } from "@/lib/ai-edition/timeline/programme-time";
 import { takeProgramme } from "@/lib/ai-edition/timeline/take-programme";
-import { projectRegionsToSource } from "@/lib/ai-edition/timeline/timelineMap";
+import { projectRegionsToSource, segmentRawSpanSec } from "@/lib/ai-edition/timeline/timelineMap";
 import {
 	MAGNIFICATION_REFERENCE_PX,
 	MAX_ZOOM_SCALE,
@@ -865,57 +865,86 @@ export function webcamBoxSourceSize(
 
 /** Serialize a document into a {@link SceneDescription}. Pure — no per-frame math. */
 /**
- * The image annotations that join the opening, by PROJECTED id.
+ * The RAW document time the programme's FIRST output frame comes from.
  *
- * Membership is frozen here, once, for the whole programme: the native side reads the list and
- * never re-decides per frame. Without that, a sticker that appears at 3 s would join a running
- * opening and shift the entry ranks of the screen and the camera.
+ * Zero for a timeline that starts at zero — and NOT zero as soon as the first segment is
+ * trimmed, which is the whole reason this is computed instead of assumed. `segmentRawSpanSec` is
+ * the same function the region projection uses to place a segment on the raw ruler, so the two
+ * cannot drift apart.
+ */
+export function firstOutputRawSec(document: AxcutDocument): number {
+	const segments = resolveVisibleClips(document);
+	const first = segments[0];
+	if (!first) return 0;
+	return Math.max(0, segmentRawSpanSec(first, document.timeline.clips).startSec);
+}
+
+/** An image annotation, as far as opening-sticker eligibility is concerned. */
+type OpeningStickerCandidate = {
+	id: string;
+	type: string;
+	startMs: number;
+	endMs: number;
+	openingSticker?: boolean;
+};
+
+/**
+ * Is this image present on the programme's FIRST output frame?
  *
- * Three conditions, all required:
+ * One rule, used by the scene builder and by the UI, so a switch that is offered is a switch that
+ * does something. The test is in RAW document time against `firstOutputRawSec`: true for an image
+ * that is already running when the programme begins, false for one that begins later — INCLUDING
+ * one that begins exactly at a cut, which is the case a per-clip test gets wrong, because such an
+ * image's piece sits flush against its clip's window start exactly like a continuation does.
+ */
+export function isOpeningStickerPresentAtStart(
+	annotation: OpeningStickerCandidate,
+	outputStartRawSec: number,
+): boolean {
+	return (
+		annotation.type === "image" &&
+		annotation.openingSticker === true &&
+		annotation.startMs / 1000 <= outputStartRawSec + 1e-6 &&
+		annotation.endMs / 1000 > outputStartRawSec
+	);
+}
+
+/** Does this project hold at least one image that would join the opening? Drives the UI switch. */
+export function documentHasOpeningSticker(document: AxcutDocument): boolean {
+	const at = firstOutputRawSec(document);
+	return (document.annotations ?? []).some((a) =>
+		isOpeningStickerPresentAtStart(a as OpeningStickerCandidate, at),
+	);
+}
+
+/**
+ * The projected ids of the images that join the opening.
  *
- *  - the annotation carries `openingSticker`. Absent — every project written before this — means
- *    an ordinary overlay, which is the entire compatibility promise.
- *  - the kind is `image`. The flag is meaningless on text, figure, blur and auto captions, and
- *    none of those may enter the choreography.
- *  - it is PRESENT on the programme's first output frame — decided from the projected SOURCE
- *    window, never from `sourceTime = 0`: the first visible clip may well start at source 3 s
- *    (the cross-cut fixture does), and a sticker on clip B sits at source 0 while being a second
- *    into the programme.
+ * Computed ONCE, for the whole programme, and shipped on `Scene::opening_stickers`: the native
+ * side reads the list and never re-decides per frame, so an image appearing at 3 s cannot join a
+ * running opening and shift the screen and camera ranks.
  *
- * The projected pieces supply the ids because the compositor matches projected ids. A piece on a
- * clip other than the first is still a member: a cut splits one image into two pieces, and both
- * must keep entering.
- *
- * Known limit: a trim that removes the very beginning of the first clip is not accounted for, so
- * "present at frame 0" is read conservatively from the clip's own source start. The compositor's
- * visibility test still gates the DRAWING, so the worst case is a sticker entering a frame late,
- * never entering when it should not.
- */ function openingStickerIds(
-	annotations: ReadonlyArray<{
-		id: string;
-		type: string;
-		startMs: number;
-		endMs: number;
-		clipIndex?: number;
-		openingSticker?: boolean;
-	}>,
-	visibleClips: ReadonlyArray<{ sourceStartSec: number }>,
+ * Eligibility is decided on the RAW annotation (`isOpeningStickerPresentAtStart`), then EVERY
+ * projected piece of an eligible image is included. A cut splits one image into several pieces,
+ * the later ones with fresh ids, and all of them must keep entering — otherwise the entrance stops
+ * dead at the cut. `stickerOriginId` is what carries the annotation's identity across the
+ * projection; it is added for the projection only and never reaches the scene payload, whose
+ * annotation mapping is a whitelist.
+ */
+function openingStickerIds(
+	pieces: ReadonlyArray<{ id: string; type: string; stickerOriginId?: string }>,
+	raw: ReadonlyArray<OpeningStickerCandidate>,
+	outputStartRawSec: number,
 ): string[] {
-	return annotations
-		.filter((a) => a.type === "image" && a.openingSticker === true)
-		.filter((a) => {
-			// Per PIECE, and always against the window of the piece's OWN clip: a piece belongs to
-			// the group when it was already running when that clip started.
-			//
-			// Clip 0 only would have dropped the continuation piece of an image that straddles a
-			// cut: the projection emits one piece per clip, the later one gets a new id, and the
-			// entrance would then stop dead at the cut. Testing every piece against source 0 would
-			// have pulled in an image that only begins later — the other failure this prevents.
-			const clip = visibleClips[a.clipIndex ?? 0];
-			if (!clip) return false;
-			return a.startMs / 1000 <= clip.sourceStartSec + 1e-6 && a.endMs / 1000 > clip.sourceStartSec;
+	const byId = new Map(raw.map((a) => [a.id, a]));
+	return pieces
+		.filter((piece) => {
+			if (piece.type !== "image" || !piece.stickerOriginId) return false;
+			const annotation = byId.get(piece.stickerOriginId);
+			if (!annotation) return false;
+			return isOpeningStickerPresentAtStart(annotation, outputStartRawSec);
 		})
-		.map((a) => a.id);
+		.map((piece) => piece.id);
 }
 
 export function buildSceneDescription(
@@ -1177,11 +1206,14 @@ export function buildSceneDescription(
 		captionSettings,
 		captionAspect,
 	);
+	// `stickerOriginId` rides the projection so a piece can be traced back to the annotation it
+	// came from — `projectRegionsToSource` spreads what it is given, and the scene's annotation
+	// mapping below is a whitelist, so the marker never leaves this function.
 	const projectedAnnotations = projectRegionsToSource(
 		[
-			...(document.annotations ?? []),
+			...(document.annotations ?? []).map((a) => ({ ...a, stickerOriginId: a.id })),
 			...(captionRegions as unknown as NonNullable<AxcutDocument["annotations"]>),
-		],
+		] as (NonNullable<AxcutDocument["annotations"]>[number] & { stickerOriginId?: string })[],
 		visibleClips,
 		document.timeline.clips,
 		() => createId("ann"),
@@ -1699,7 +1731,11 @@ export function buildSceneDescription(
 		// Ids are the PROJECTED ones (`projectRegionsToSource` mints new ids), and the annotation
 		// keeps its own `openingSticker` flag, so an image that straddles a cut stays a member on
 		// both sides — the projection emits one piece per clip, and both carry the flag.
-		openingStickers: openingStickerIds(projectedAnnotations, visibleClips),
+		openingStickers: openingStickerIds(
+			projectedAnnotations,
+			document.annotations ?? [],
+			firstOutputRawSec(document),
+		),
 		// Omitted rather than sent as `{mode:"none"}`: the Rust side defaults the field, and
 		// every project without a webcam effect would otherwise carry it for nothing.
 		...(settings.webcamBackgroundMode !== "none"

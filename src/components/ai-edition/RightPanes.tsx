@@ -163,7 +163,7 @@ import {
 	segmentCameraFrame,
 } from "@/native/compositorViewClient";
 import { ROUNDNESS_SLIDER_MAX_PX } from "@/native/paramUnits";
-import { wallpaperAcceptsMotion } from "@/native/sceneDescription";
+import { documentHasOpeningSticker, wallpaperAcceptsMotion } from "@/native/sceneDescription";
 import { ASPECT_RATIO_PRESETS, type AspectRatio } from "@/utils/aspectRatioUtils";
 import { useCanSegmentCamera } from "../../native/hooks/useSegmentationSupport";
 import { CaptionsPane } from "./CaptionsPane";
@@ -2366,16 +2366,12 @@ function OpeningSection() {
 	// The sticker switch is only offered when the project HAS an image that would enter it: an
 	// enabled control that does nothing is worse than no control, the same rule as the camera.
 	//
-	// Annotations are authored in raw document time and the output starts at 0, so "present on
-	// the first output frame" reads as `startMs <= 0` here. The scene builder tests the PROJECTED
-	// source window instead (`openingStickerIds` in native/sceneDescription.ts), because there the
-	// clip's own source offset matters — the first clip may start at source 3 s. The two agree for
-	// every timeline that starts at zero, which is all this switch needs to be honest.
+	// The predicate below is the SAME one the scene builder uses to fill the scene sticker list,
+	// deliberately: a switch whose idea of eligible differed from the compositor would be offered
+	// for an image that then never moves. It lives next to the scene builder because that is
+	// where the raw start of the programme first output frame is computed.
 	const hasStickerImage = useMemo(
-		() =>
-			(document?.annotations ?? []).some(
-				(a) => a.type === "image" && a.openingSticker === true && a.startMs <= 0,
-			),
+		() => (document ? documentHasOpeningSticker(document) : false),
 		[document],
 	);
 
