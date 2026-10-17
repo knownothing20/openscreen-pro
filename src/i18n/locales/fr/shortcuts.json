@@ -18,6 +18,7 @@
 		"openApp": "Ouvrir l'application",
 		"addZoom": "Ajouter un zoom",
 		"addTrim": "Ajouter une coupe",
+		"splitAtPlayhead": "Split at playhead",
 		"addSpeed": "Ajouter une vitesse",
 		"addAnnotation": "Ajouter une annotation",
 		"addAudio": "Ajouter un audio",

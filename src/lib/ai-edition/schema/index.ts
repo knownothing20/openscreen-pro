@@ -227,6 +227,11 @@ export const clipSchema = z
 		// that as the identity region {x:0,y:0,width:1,height:1} rather than
 		// storing the identity explicitly, so untouched clips stay lean.
 		cropRegion: clipCropRegionSchema.optional(),
+		// A cut the USER asked for. `joinContiguous` repairs accidental adjacency — two clips of the
+		// same media that happen to be contiguous get folded back into one — which is exactly what a
+		// split produces, so without this a split would be undone by the next clip edit. Optional:
+		// absent everywhere else, so every stored clip reads back unchanged.
+		hardCutAfter: z.boolean().optional(),
 	})
 	.refine((data) => data.timelineEndSec >= data.timelineStartSec, {
 		message: "timelineEndSec must be greater than or equal to timelineStartSec",

@@ -1297,6 +1297,8 @@ function joinContiguous(clips: AxcutClip[]): {
  *  carries that two otherwise-identical neighbours could legitimately disagree on, so it is
  *  the whole of the guard. */
 function joinable(left: AxcutClip, right: AxcutClip): boolean {
+	// A deliberate cut survives every later clip edit: the user said these are two shots.
+	if (left.hardCutAfter === true) return false;
 	return (
 		left.assetId === right.assetId &&
 		left.sourceEndSec !== undefined &&

@@ -11,6 +11,7 @@ import {
 	Music,
 	Pencil,
 	Scissors,
+	Slice,
 	Sparkles,
 	Trash2,
 	Wand2,
@@ -96,7 +97,7 @@ type TimelineApi = ReturnType<typeof useTimeline>;
 
 const ASSET_MIME = "application/x-axcut-asset";
 
-type ToolId = "cut" | "comment" | "speed";
+type ToolId = "split" | "cut" | "comment" | "speed";
 
 // "Nice" ruler steps, from a 20th of a second up to an hour. The one that gets
 // used depends on the zoom (see rulerTicks), so the ladder has to cover both a
@@ -1628,6 +1629,12 @@ export function V4Timeline({
 	// these actions can be remapped, and a key written into a translation would then lie.
 	const tools: Array<{ id: ToolId; label: string; shortcut: string; icon: React.ReactNode }> = [
 		{
+			id: "split",
+			label: t("buttons.split"),
+			shortcut: formatBinding(shortcuts.splitAtPlayhead, isMac),
+			icon: <Slice size={16} />,
+		},
+		{
 			id: "cut",
 			label: t("buttons.addTrim"),
 			shortcut: formatBinding(shortcuts.addTrim, isMac),
@@ -2003,6 +2010,7 @@ export function V4Timeline({
 												if (tool.id === "speed") void tl.addSpeed(dur);
 												if (tool.id === "comment") void tl.addAnnotation(dur);
 												if (tool.id === "cut") void tl.addTrim(dur);
+												if (tool.id === "split") void tl.splitClipAtPlayhead();
 											}}
 										>
 											{tool.icon}

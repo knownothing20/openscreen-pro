@@ -2,6 +2,7 @@ export const SHORTCUT_ACTIONS = [
 	"openApp",
 	"addZoom",
 	"addTrim",
+	"splitAtPlayhead",
 	"addSpeed",
 	"addCameraFullscreen",
 	"addScreenMotion",
@@ -114,6 +115,9 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	openApp: { key: "o", ctrl: true, shift: true },
 	addZoom: { key: "z" },
 	addTrim: { key: "t" },
+	// `x`, not `b`: `b` is contractually free (a stale Add Blur binding used to squat on it), and
+	// the razor keys of other editors are taken here — `s` is speed, `c` is the camera.
+	splitAtPlayhead: { key: "x" },
 	addSpeed: { key: "s" },
 	addCameraFullscreen: { key: "c" },
 	// `n` for the "motio**n**" in Screen Motion — the first letters are gone (`s` is
@@ -137,6 +141,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	openApp: "Open App",
 	addZoom: "Add Zoom",
 	addTrim: "Add Trim",
+	splitAtPlayhead: "Split at playhead",
 	addSpeed: "Add Speed",
 	addCameraFullscreen: "Add Full Camera",
 	addScreenMotion: "Add Screen Motion",

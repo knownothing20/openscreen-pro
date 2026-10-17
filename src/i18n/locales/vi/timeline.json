@@ -53,6 +53,7 @@
 		"autoFocusAllTip": "Mọi thu phóng đều theo con trỏ. Tắt: bạn chọn điểm lấy nét cho từng thu phóng.",
 		"clearTimeline": "Xóa mọi thu phóng, đoạn cắt, thay đổi tốc độ, chú thích và Camera Toàn màn hình. Clip, âm thanh và phụ đề được giữ lại.",
 		"addTrim": "Thêm cắt: xóa một đoạn video tại thời điểm hiện tại",
+		"split": "Split",
 		"addAnnotation": "Thêm văn bản, mũi tên, hình ảnh hoặc làm mờ tại thời điểm hiện tại",
 		"addSpeed": "Thêm thay đổi tốc độ tại thời điểm hiện tại",
 		"addCameraFullscreen": "Thêm Camera Toàn màn hình: hiển thị camera toàn màn hình tại thời điểm hiện tại",

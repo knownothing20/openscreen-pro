@@ -263,6 +263,7 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "addTrim", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addZoom", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addZoomsBulk", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "splitClipAtPlayhead", "save", "gesture"),
 	// The Clear timeline button: every edit region in one write, so one undo step.
 	w("src/lib/ai-edition/store/useTimeline.ts", "clearTimeline", "save", "gesture"),
 	// The two drag commits. One undo step per gesture, recorded on release and only

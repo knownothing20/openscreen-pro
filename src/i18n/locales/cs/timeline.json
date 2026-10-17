@@ -53,6 +53,7 @@
 		"autoFocusAllTip": "Všechna přiblížení sledují kurzor. Vypnuto: zaostření každého přiblížení volíte sami.",
 		"clearTimeline": "Odstranit všechna přiblížení, oříznutí, změny rychlosti, anotace a Celou kameru. Klipy, zvuk a titulky zůstanou.",
 		"addTrim": "Přidat oříznutí: odstraní část videa v aktuálním čase",
+		"split": "Split",
 		"addAnnotation": "Přidat text, šipku, obrázek nebo rozmazání v aktuálním čase",
 		"addSpeed": "Přidat změnu rychlosti v aktuálním čase",
 		"addCameraFullscreen": "Přidat Celou kameru: zobrazí kameru na celou obrazovku v aktuálním čase",

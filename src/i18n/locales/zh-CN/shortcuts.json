@@ -18,6 +18,7 @@
 		"openApp": "打开应用",
 		"addZoom": "添加缩放",
 		"addTrim": "添加剪辑",
+		"splitAtPlayhead": "在播放头分割",
 		"addSpeed": "添加速度",
 		"addAnnotation": "添加标注",
 		"addAudio": "添加音频",

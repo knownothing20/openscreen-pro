@@ -1440,6 +1440,11 @@ export function NewEditorShell() {
 				void tl.addTrim(newRegionDurationSec());
 				return;
 			}
+			if (matchesShortcut(e, shortcuts.splitAtPlayhead, isMac)) {
+				e.preventDefault();
+				void tl.splitClipAtPlayhead();
+				return;
+			}
 			if (matchesShortcut(e, shortcuts.addAnnotation, isMac)) {
 				e.preventDefault();
 				void tl.addAnnotation(newRegionDurationSec());

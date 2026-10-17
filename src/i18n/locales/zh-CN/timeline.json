@@ -53,6 +53,7 @@
 		"autoFocusAllTip": "所有缩放都跟随光标。关：每个缩放的对焦由你选择。",
 		"clearTimeline": "移除所有缩放、剪辑、速度、标注和全屏摄像头。片段、音频和字幕会保留。",
 		"addTrim": "添加剪辑：在当前时间移除一段视频",
+		"split": "分割",
 		"addAnnotation": "在当前时间添加文字、箭头、图片或模糊",
 		"addSpeed": "在当前时间添加速度变化",
 		"addCameraFullscreen": "添加全屏摄像头：在当前时间全屏显示摄像头",

@@ -18,6 +18,7 @@
 		"openApp": "アプリを開く",
 		"addZoom": "ズームを追加",
 		"addTrim": "トリムを追加",
+		"splitAtPlayhead": "Split at playhead",
 		"addSpeed": "速度を追加",
 		"addAnnotation": "注釈を追加",
 		"addAudio": "音声を追加",

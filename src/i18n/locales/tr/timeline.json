@@ -53,6 +53,7 @@
 		"autoFocusAllTip": "Tüm yakınlaştırmalar imleci takip eder. Kapalı: her yakınlaştırmanın odağını siz seçersiniz.",
 		"clearTimeline": "Tüm yakınlaştırma, kırpma, hız, açıklama ve Tam Ekran Kamera öğelerini kaldır. Klipler, ses ve altyazılar kalır.",
 		"addTrim": "Kırpma ekle: videonun bir bölümünü şu anki zamanda çıkarır",
+		"split": "Split",
 		"addAnnotation": "Şu anki zamanda metin, ok, resim veya bulanıklık ekle",
 		"addSpeed": "Şu anki zamanda hız değişikliği ekle",
 		"addCameraFullscreen": "Tam Ekran Kamera ekle: kamerayı şu anki zamanda tam ekran gösterir",

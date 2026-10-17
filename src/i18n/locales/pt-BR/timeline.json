@@ -53,6 +53,7 @@
 		"autoFocusAllTip": "Todos os zooms seguem o cursor. Desativado: você escolhe o foco de cada zoom.",
 		"clearTimeline": "Remover todos os zooms, recortes, velocidades, anotações e Câmera em Tela Cheia. Clipes, áudio e legendas permanecem.",
 		"addTrim": "Adicionar um recorte: remove uma parte do vídeo no momento atual",
+		"split": "Split",
 		"addAnnotation": "Adicionar texto, seta, imagem ou desfoque no momento atual",
 		"addSpeed": "Adicionar uma mudança de velocidade no momento atual",
 		"addCameraFullscreen": "Adicionar Câmera em Tela Cheia: mostra a câmera em tela cheia no momento atual",
