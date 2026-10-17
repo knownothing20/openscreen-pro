@@ -34,11 +34,13 @@ else
 fi
 readonly BUILD_ROOT
 
+CPU_ONLY=0
 CLEAN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --clean) CLEAN=1; shift ;;
+    --cpu-only) CPU_ONLY=1; shift ;;
     -h|--help)
       cat <<-EOF
 		Usage: $0 [--clean]
@@ -46,6 +48,13 @@ while [[ $# -gt 0 ]]; do
 		\`electron/native/bin/<os>-<arch>/\`.
 
 		--clean   Wipe the build cache before configuring.
+
+		--cpu-only
+		          Build with no GPU backend: no Vulkan on Windows/Linux, no Metal on
+		          macOS arm64. The result still transcribes; it just uses ggml's CPU
+		          backend, which is what gpuDetector.ts already falls back to. Use it on
+		          a host without the Vulkan SDK. It stages into its own build cache
+		          (build-<tag>-cpu), so it can never inherit a Vulkan CMakeCache.
 		EOF
       exit 0
       ;;
@@ -80,6 +89,12 @@ readonly MACOS_DEPLOYMENT_TARGET="13.0"
 
 # Determine the default backend flag for this host.
 backend_flag_for_host() {
+  # --cpu-only wins over the host default: the point is a binary that does not need a
+  # GPU backend SDK to build or to run.
+  if [[ "${CPU_ONLY}" -eq 1 ]]; then
+    echo ""
+    return 0
+  fi
   case "${OS_ARCH}" in
     darwin-arm64) echo "-DOSC_ENABLE_METAL=ON" ;;
     darwin-x64)   echo "" ;;
@@ -141,6 +156,99 @@ relocate_macos_rpaths() {
   echo "[whisper-stt] rewrote macOS rpaths to @loader_path in ${out_dir}"
 }
 
+# The Visual Studio generator for the VS that is actually installed.
+#
+# CMake's DEFAULT generator on this host is whatever `cc` happens to be, and under Git Bash that
+# is the bundled MinGW gcc — which is how the first CPU attempt died: gcc's linker parsed the
+# space in "D://Program Files" as an argument separator and reported `cannot find D:/Program`.
+# Whisper is built with MSVC on Windows; saying so is the fix, not working around the path.
+#
+# Detected rather than hardcoded: this machine only has VS2019 BuildTools, and naming a 2022
+# generator that is not installed fails in a way that looks like a missing SDK.
+windows_generator() {
+  # Registration, not presence. This host has the BuildTools payload on disk but nothing
+  # registered with the installer's instance store, so a directory test says "VS2019 is here" and
+  # the generator then fails with "could not find any instance of Visual Studio". vswhere answers
+  # the question the generator actually asks; empty output means Ninja + the MSVC environment.
+  local vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+  local version=""
+  if [[ -x "${vswhere}" ]]; then
+    version="$("${vswhere}" -products '*' -latest -property installationVersion 2>/dev/null | head -1 | tr -d '\r')"
+  fi
+  case "${version%%.*}" in
+    16) echo "Visual Studio 16 2019" ;;
+    17) echo "Visual Studio 17 2022" ;;
+    18) echo "Visual Studio 18 2026" ;;
+    *)  echo "" ;;
+  esac
+}
+
+# Fall back to Ninja + a hand-built MSVC environment.
+#
+# `vswhere` on this host reports no registered instance even though the BuildTools payload is
+# present, so the Visual Studio generator has nothing to attach to ("could not find any instance of
+# Visual Studio"). The toolchain is usable — it just is not registered — so the environment is
+# assembled the same way a cargo build assembles it: INCLUDE/LIB from the MSVC and Windows SDK tree,
+# cl.exe's directory prepended to PATH. Ninja then drives it, which is what CI does anyway.
+find_vcvars64() {
+  local root
+  for root in "/c/Program Files/Microsoft Visual Studio/2022" \
+              "/c/Program Files (x86)/Microsoft Visual Studio/2019" \
+              "/c/Program Files/Microsoft Visual Studio/2019" \
+              "/c/Program Files (x86)/Microsoft Visual Studio/2022"; do
+    [[ -d "${root}" ]] || continue
+    local hit
+    hit="$(find "${root}" -maxdepth 6 -name vcvars64.bat -print -quit 2>/dev/null || true)"
+    if [[ -n "${hit}" ]]; then
+      echo "${hit}"
+      return 0
+    fi
+  done
+  echo ""
+}
+
+# SDK roots, in the order Windows itself looks for them.
+find_sdk_root() {
+  local candidate
+  for candidate in "/d/Windows Kits/10" "/c/Program Files (x86)/Windows Kits/10"; do
+    [[ -d "${candidate}/Include" ]] && { echo "${candidate}"; return 0; }
+  done
+  echo ""
+}
+
+windows_msvc_env() {
+  local vcvars="$1"
+  local vc_root msvc_ver sdk sdk_ver win_vc win_sdk cl_bin
+  # <root>/VC/Auxiliary/Build/vcvars64.bat -> <root>/VC
+  vc_root="$(cd "$(dirname "${vcvars}")/../.." && pwd)"
+  msvc_ver="$(ls "${vc_root}/Tools/MSVC" 2>/dev/null | sort -V | tail -1)"
+  if [[ -z "${msvc_ver}" ]]; then
+    echo "[whisper-stt] ERROR: no MSVC toolset under ${vc_root}/Tools/MSVC" >&2
+    return 1
+  fi
+  sdk="$(find_sdk_root)"
+  sdk_ver=""
+  [[ -n "${sdk}" ]] && sdk_ver="$(ls "${sdk}/Include" 2>/dev/null | sort -V | tail -1)"
+  win_vc="$(cygpath -w "${vc_root}")"
+  win_sdk="$(cygpath -w "${sdk}")"
+  INCLUDE="${win_vc}\\Tools\\MSVC\\${msvc_ver}\\include"
+  LIB="${win_vc}\\Tools\\MSVC\\${msvc_ver}\\lib\\x64"
+  if [[ -n "${sdk_ver}" ]]; then
+    INCLUDE="${INCLUDE};${win_sdk}\\Include\\${sdk_ver}\\ucrt;${win_sdk}\\Include\\${sdk_ver}\\um;${win_sdk}\\Include\\${sdk_ver}\\shared;${win_sdk}\\Include\\${sdk_ver}\\winrt"
+    LIB="${LIB};${win_sdk}\\Lib\\${sdk_ver}\\ucrt\\x64;${win_sdk}\\Lib\\${sdk_ver}\\um\\x64"
+  fi
+  export INCLUDE LIB
+  cl_bin="${vc_root}/Tools/MSVC/${msvc_ver}/bin/Hostx64/x64"
+  export PATH="${cl_bin}:${PATH}"
+  # The SDK owns the resource compiler and the manifest tool; VC does not ship them. Without
+  # them the link step's resource pass dies ("no such file or directory") and CMake reports
+  # CMAKE_MT-NOTFOUND, which reads like a missing Windows SDK rather than a missing PATH entry.
+  if [[ -n "${sdk_ver}" && -d "${sdk}/bin/${sdk_ver}/x64" ]]; then
+    export PATH="${sdk}/bin/${sdk_ver}/x64:${PATH}"
+  fi
+  echo "[whisper-stt] MSVC ${msvc_ver} + SDK ${sdk_ver:-<none>} via Ninja (VS is not registered with cmake)"
+}
+
 build_variant() {
   local variant_name="$1"
   shift
@@ -158,8 +266,27 @@ build_variant() {
   # variable") even though bash 4+ treats it as zero words. The
   # `${arr[@]+"${arr[@]}"}` idiom expands to nothing when the array is empty
   # and to the normal quoted expansion otherwise, on both bash versions.
+  local generator_flags=()
+  if [[ "${OS_ARCH}" == win32-* ]]; then
+    local vs_generator
+    vs_generator="$(windows_generator)"
+    if [[ -n "${vs_generator}" ]]; then
+      generator_flags+=(-G "${vs_generator}" -A x64)
+    else
+      local vcvars
+      vcvars="$(find_vcvars64)"
+      if [[ -n "${vcvars}" ]]; then
+        windows_msvc_env "${vcvars}"
+        generator_flags+=(-G Ninja)
+      else
+        echo "[whisper-stt] WARN: no Visual Studio payload found; letting CMake pick the generator" >&2
+      fi
+    fi
+  fi
+
   cmake -S "${SRC_DIR}" -B "${build_dir}" \
     -DCMAKE_BUILD_TYPE=Release \
+    ${generator_flags[@]+"${generator_flags[@]}"} \
     ${extra_cmake_flags[@]+"${extra_cmake_flags[@]}"}
 
   echo "[whisper-stt] building ${variant_name}"
@@ -327,6 +454,11 @@ if [[ "${OS_ARCH}" == darwin-* ]]; then
 fi
 # See the comment in build_variant() re: bash 3.2 + `set -u` + empty arrays
 # (macOS x64/CPU has no DEFAULT_FLAG, so BUILD_FLAGS is genuinely empty here).
-build_variant "default" ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"}
+VARIANT_NAME="default"
+if [[ "${CPU_ONLY}" -eq 1 ]]; then
+  VARIANT_NAME="cpu"
+  echo "[whisper-stt] --cpu-only: no GPU backend; ggml's CPU baseline only (GGML_NATIVE stays OFF)"
+fi
+build_variant "${VARIANT_NAME}" ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"}
 
 echo "[whisper-stt] done. Binaries under: ${OUT_DIR}"

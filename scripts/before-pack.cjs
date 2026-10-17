@@ -321,6 +321,21 @@ const WIN_STT_REQUIRED = [
 		fix: "Build it with:\n\n    npm run build:whisper-binaries\n\nor stage CI's with `bash scripts/stage-whisper-stt.sh win32-x64`.",
 	},
 	{
+		// The PE import table, read off the built binaries: the server imports
+		// {ggml-base, ggml, whisper}, whisper.dll imports {ggml-base, ggml}, and ggml.dll imports
+		// {ggml-base, ggml-cpu}. Requiring a subset passes a package the loader rejects.
+		match: (name) => name === "ggml.dll",
+		what: "the ggml library the STT helper links",
+		breaks: "whisper-stt-server fails to load before main(), naming ggml.dll",
+		fix: "Build it with:\n\n    npm run build:whisper-binaries",
+	},
+	{
+		match: (name) => name === "whisper.dll",
+		what: "the whisper.cpp library the STT helper links",
+		breaks: "whisper-stt-server fails to load before main(), naming whisper.dll",
+		fix: "Build it with:\n\n    npm run build:whisper-binaries",
+	},
+	{
 		match: (name) => name === "ggml-base.dll",
 		what: "the ggml base library the STT helper links",
 		breaks: "whisper-stt-server cannot start at all, so STT times out with no diagnostic",
