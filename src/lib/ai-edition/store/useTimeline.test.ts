@@ -3055,3 +3055,98 @@ describe("useTimeline.addZoomsBulk reads the document at write time", () => {
 		expect(bridgeMocks.save).not.toHaveBeenCalled();
 	});
 });
+
+describe("useTimeline.splitClipAtPlayhead — cutting a clip that already ends in a cut", () => {
+	// A[0-6] | user cut | B[6-12], both from one recording and meeting exactly at 6 — the shape the
+	// split itself produces, so splitting again has to survive it.
+	const cutDoc = (): AxcutDocument => ({
+		...sampleDoc,
+		timeline: {
+			...sampleDoc.timeline,
+			clips: [
+				{
+					id: "clip_a",
+					assetId: "asset_1",
+					sourceStartSec: 0,
+					sourceEndSec: 6,
+					timelineStartSec: 0,
+					timelineEndSec: 6,
+					wordRefs: [],
+					origin: "user" as const,
+					reason: "",
+					hardCutAfter: true,
+				},
+				{
+					id: "clip_b",
+					assetId: "asset_1",
+					sourceStartSec: 6,
+					sourceEndSec: 12,
+					timelineStartSec: 6,
+					timelineEndSec: 12,
+					wordRefs: [],
+					origin: "user" as const,
+					reason: "",
+				},
+			],
+		},
+	});
+	const seed = (doc: AxcutDocument, atSec: number) =>
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: doc,
+			currentTimeSec: atSec,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	const spans = () =>
+		(useProjectStore.getState().document?.timeline.clips ?? []).map(
+			(c) => `${c.timelineStartSec}-${c.timelineEndSec}${c.hardCutAfter ? "|cut" : ""}`,
+		);
+
+	it("keeps the ORIGINAL cut on the tail and adds the new one on the head", async () => {
+		seed(cutDoc(), 3);
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.splitClipAtPlayhead();
+		});
+		expect(spans()).toEqual(["0-3|cut", "3-6|cut", "6-12"]);
+	});
+
+	it("survives a save and reopen with both cuts intact", async () => {
+		seed(cutDoc(), 3);
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.splitClipAtPlayhead();
+		});
+		const saved = useProjectStore.getState().document;
+		// Round-trip through the same parser a reopen uses: a flag the schema drops would vanish here.
+		const reopened = parseDocumentFile(JSON.parse(JSON.stringify(saved)));
+		expect(reopened.timeline.clips.map((c) => c.hardCutAfter)).toEqual([true, true, undefined]);
+	});
+
+	it("is a no-op on an existing boundary, and pushes no history", async () => {
+		seed(cutDoc(), 6);
+		const stepsBefore = past.length;
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.splitClipAtPlayhead();
+		});
+		expect(spans()).toEqual(["0-6|cut", "6-12"]);
+		expect(past).toHaveLength(stepsBefore);
+	});
+
+	it("is one undo step, and redo puts both cuts back", async () => {
+		seed(cutDoc(), 3);
+		const stepsBefore = past.length;
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.splitClipAtPlayhead();
+		});
+		expect(past).toHaveLength(stepsBefore + 1);
+		expect(undo()).toBe(true);
+		expect(spans()).toEqual(["0-6|cut", "6-12"]);
+		expect(redo()).toBe(true);
+		expect(spans()).toEqual(["0-3|cut", "3-6|cut", "6-12"]);
+	});
+});

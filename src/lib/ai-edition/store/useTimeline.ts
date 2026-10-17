@@ -42,6 +42,7 @@ import {
 	PLACEHOLDER_DURATION_SEC,
 	type RegionKind,
 	readSpeedRegions,
+	reanchorAcrossCut,
 	removeClip as removeClipInDocument,
 	removeRegion as removeRegionInDocument,
 	resequenceClips,
@@ -170,57 +171,6 @@ function playheadSec(): number {
  */
 function focusEffectDefaults(): FocusEffect {
 	return { ...FOCUS_EFFECT_DEFAULT, center: { ...FOCUS_EFFECT_DEFAULT.center } };
-}
-
-/** The clip-anchor fields a region may carry (see `clipAnchorShape`). */
-type AnchoredRegion = {
-	clipId?: string;
-	sourceStartSec?: number;
-	sourceEndSec?: number;
-};
-
-/**
- * Point every region anchored to the clip that was just cut at the half it now belongs to.
- *
- * A region wholly on one side moves its `clipId` there. A region that SPANS the cut has no single
- * owner — `clipAnchorShape` holds one id — so its anchor is dropped and it falls back to raw-time
- * projection, which covers both halves. Keeping either anchor would clip it to one side and
- * silently lose the other, which is the failure mode that makes a split feel like data loss.
- */
-function reanchorAcrossCut(
-	document: AxcutDocument,
-	clipId: string,
-	tailId: string,
-	boundaryMs: number,
-): AxcutDocument {
-	const fix = <T extends AnchoredRegion>(region: T): T => {
-		if (region.clipId !== clipId) return region;
-		const { sourceStartSec, sourceEndSec } = region;
-		if (sourceStartSec === undefined || sourceEndSec === undefined) return region;
-		if (sourceStartSec * 1000 >= boundaryMs - 1) return { ...region, clipId: tailId };
-		if (sourceEndSec * 1000 > boundaryMs + 1) {
-			const { clipId: _id, sourceStartSec: _s, sourceEndSec: _e, ...rest } = region;
-			return rest as T;
-		}
-		return region;
-	};
-	return {
-		...document,
-		annotations: document.annotations.map(fix),
-		zoomRanges: document.zoomRanges.map(fix),
-		cameraMotionRegions: document.cameraMotionRegions.map(fix),
-		screenMotionRegions: document.screenMotionRegions.map(fix),
-		timeline: {
-			...document.timeline,
-			// Trims anchor by `clipId` and a source span; the same rule applies, but they have no
-			// `sourceStartSec` field — `startSec` is the source second.
-			trimRanges: document.timeline.trimRanges.map((trim) =>
-				trim.clipId === clipId && trim.startSec * 1000 >= boundaryMs - 1
-					? { ...trim, clipId: tailId }
-					: trim,
-			),
-		},
-	};
 }
 
 export function useTimeline() {
@@ -660,7 +610,10 @@ export function useTimeline() {
 							id: tailId,
 							sourceStartSec: tail.startMs / 1000,
 							timelineStartSec: atMs / 1000,
-							hardCutAfter: undefined,
+							// Whatever cut the ORIGINAL clip ended with is now the tail's, because the
+							// tail is what still ends there. Clearing it — which this used to do — threw
+							// away a user cut that had nothing to do with the split.
+							hardCutAfter: clip.hardCutAfter,
 						},
 					]
 				: [clip],
@@ -669,7 +622,9 @@ export function useTimeline() {
 			...document,
 			timeline: { ...document.timeline, clips: nextClips },
 		};
-		await saveDocument(reanchorAcrossCut(cut, target.id, tailId, boundaryMs), { history: true });
+		await saveDocument(reanchorAcrossCut(cut, target.id, tailId, boundaryMs, createId), {
+			history: true,
+		});
 	}, [document, saveDocument]);
 
 	const addSpeed = useCallback(

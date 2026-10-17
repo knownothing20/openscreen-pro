@@ -360,7 +360,7 @@ type StoredRegion = {
 };
 
 /** Apply `fn` to all four modifier collections (document-level + legacyEditor envelopes). */
-function mapAllRegionCollections(
+export function mapAllRegionCollections(
 	document: AxcutDocument,
 	fn: (regions: StoredRegion[], prefix: string) => StoredRegion[],
 ): AxcutDocument {
@@ -1266,7 +1266,13 @@ export function withClipsChanged(document: AxcutDocument, clips: AxcutClip[]): A
 }
 
 /** Fold every run of same-media, same-crop, media-contiguous clips into one, reporting the
- *  ids that went away and the clip that now carries their content. */
+ *  ids that went away and the clip that now carries their content.
+ *
+ *  The merge takes its trailing flag from the RIGHTMOST piece it absorbs, because that flag
+ *  describes the boundary AFTER the clip. Copying the left piece's flag instead dropped a user cut
+ *  sitting on the middle piece and let the run swallow the clip beyond it; OR-ing the flags would
+ *  invent a cut the user never asked for. `joinable` already refuses to merge when the LEFT piece
+ *  carries one, so a stale flag cannot survive the spread and is cleared explicitly. */
 function joinContiguous(clips: AxcutClip[]): {
 	clips: AxcutClip[];
 	absorbed: Map<string, string>;
@@ -1279,12 +1285,15 @@ function joinContiguous(clips: AxcutClip[]): {
 	for (const clip of clips) {
 		const previous = out[out.length - 1];
 		if (previous && joinable(previous, clip)) {
-			out[out.length - 1] = {
+			const merged: AxcutClip = {
 				...previous,
 				sourceEndSec: clip.sourceEndSec,
 				timelineEndSec: previous.timelineEndSec + (clip.timelineEndSec - clip.timelineStartSec),
 				wordRefs: [...previous.wordRefs, ...clip.wordRefs],
 			};
+			if (clip.hardCutAfter === true) merged.hardCutAfter = true;
+			else delete merged.hardCutAfter;
+			out[out.length - 1] = merged;
 			absorbed.set(clip.id, previous.id);
 			continue;
 		}
@@ -1305,6 +1314,70 @@ function joinable(left: AxcutClip, right: AxcutClip): boolean {
 		Math.abs(left.sourceEndSec - right.sourceStartSec) < 1e-6 &&
 		JSON.stringify(left.cropRegion ?? null) === JSON.stringify(right.cropRegion ?? null)
 	);
+}
+
+/**
+ * Hand every clip-anchored row over to the half it now belongs to, after the clip `clipId` was cut
+ * in two at `boundaryMs` (a SOURCE millisecond).
+ *
+ * Rebuilt on `mapAllRegionCollections` on purpose: that function IS this codebase's answer to
+ * "which collections can name a clip", and it already includes the two `legacyEditor` envelopes
+ * (speed regions and the full-camera spans) and the audio takes. A hand-written list of four
+ * arrays — what this used to be — silently left those behind.
+ *
+ * A row that straddles the cut is CUT WITH THE CLIP: two rows, each keeping its own sub-span and
+ * its own anchor. Dropping the anchor would have made it render again (the raw-time projection
+ * covers both halves) while quietly discarding what the row knew about which clip it belonged to,
+ * and that loss only shows up the next time the timeline is reordered or trimmed.
+ *
+ * Audio takes are re-pointed rather than cut: their `offsetMs` is media time, and splitting one
+ * here would fight `reanchorAudioTracks`, which owns that arithmetic. A take spanning a cut stays
+ * attached to the half it started in.
+ */
+export function reanchorAcrossCut(
+	document: AxcutDocument,
+	clipId: string,
+	tailId: string,
+	boundaryMs: number,
+	makeId: (prefix: string) => string,
+): AxcutDocument {
+	const walk = mapAllRegionCollections(document, (regions, prefix) =>
+		regions.flatMap((region): StoredRegion[] => {
+			if (!hasCompleteClipAnchor(region) || region.clipId !== clipId) return [region];
+			const lo = Math.min(region.sourceStartSec, region.sourceEndSec) * 1000;
+			const hi = Math.max(region.sourceStartSec, region.sourceEndSec) * 1000;
+			if (lo >= boundaryMs - 1) return [{ ...region, clipId: tailId }];
+			if (hi <= boundaryMs + 1) return [region];
+			if (prefix === "audio") return [region];
+			return [
+				{ ...region, sourceEndSec: boundaryMs / 1000, endMs: boundaryMs },
+				{
+					...region,
+					id: makeId(prefix),
+					clipId: tailId,
+					sourceStartSec: boundaryMs / 1000,
+					startMs: boundaryMs,
+				},
+			];
+		}),
+	);
+	return {
+		...walk,
+		timeline: {
+			...walk.timeline,
+			trimRanges: walk.timeline.trimRanges.flatMap((trim) => {
+				if (trim.clipId !== clipId) return [trim];
+				const lo = trim.startSec * 1000;
+				const hi = trim.endSec * 1000;
+				if (lo >= boundaryMs - 1) return [{ ...trim, clipId: tailId }];
+				if (hi <= boundaryMs + 1) return [trim];
+				return [
+					{ ...trim, endSec: boundaryMs / 1000 },
+					{ ...trim, id: makeId("trim"), clipId: tailId, startSec: boundaryMs / 1000 },
+				];
+			}),
+		},
+	};
 }
 
 /** Move every row anchored to an absorbed clip onto the one that swallowed it. A trim, a

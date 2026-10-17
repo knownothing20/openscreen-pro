@@ -16,6 +16,7 @@ import {
 	primaryAssetDuration,
 	projectRawTimelineSecToPlayback,
 	readSpeedRegions,
+	reanchorAcrossCut,
 	rederiveRegionMs,
 	removeClip,
 	removeRegion,
@@ -1801,5 +1802,195 @@ describe("withClipsChanged — a deliberate cut", () => {
 		expect(after[0].timelineEndSec).toBe(6.5);
 		expect(after[1].timelineStartSec).toBe(6.5);
 		expect(after[1].sourceStartSec).toBe(6.5);
+	});
+});
+
+// A split can land INSIDE a clip that already ends in a user cut, and merging can swallow a clip
+// that carries one. Both are the same question — where does the boundary flag come from — and both
+// were answered wrongly: the split cleared the flag on the tail unconditionally, and a merge kept
+// the LEFT clip's flag while dropping the right clip's.
+describe("withClipsChanged — the boundary flag belongs to the right-hand piece", () => {
+	const withClips = (clips: AxcutClip[]): AxcutDocument => {
+		const base = makeDoc();
+		return { ...base, timeline: { ...base.timeline, clips } };
+	};
+	const piece = (id: string, from: number, to: number, cut = false): AxcutClip => ({
+		id,
+		assetId: "asset_1",
+		sourceStartSec: from,
+		sourceEndSec: to,
+		timelineStartSec: from,
+		timelineEndSec: to,
+		wordRefs: [],
+		origin: "user",
+		reason: "",
+		...(cut ? { hardCutAfter: true } : {}),
+	});
+
+	it("stops merging at the cut carried by the middle clip", () => {
+		// P[0-2] + Q[2-4 with a cut] | R[4-6]. P and Q may merge; R must not be swallowed, because
+		// the cut is Q's and Q is the rightmost piece of the merge.
+		const doc = withClips([piece("p", 0, 2), piece("q", 2, 4, true), piece("r", 4, 6)]);
+		const after = withClipsChanged(doc, doc.timeline.clips).timeline.clips;
+		expect(after.map((c) => `${c.timelineStartSec}-${c.timelineEndSec}`)).toEqual(["0-4", "4-6"]);
+		expect(after[0].hardCutAfter).toBe(true);
+		expect(after[1].hardCutAfter).toBeUndefined();
+	});
+
+	it("does not invent a cut when the right-hand piece has none", () => {
+		// The left piece carries no flag, so the pair merges into a single unmarked clip — the
+		// behaviour every project written before this feature relies on.
+		const doc = withClips([piece("p", 0, 2), piece("q", 2, 4), piece("r", 4, 6)]);
+		const after = withClipsChanged(doc, doc.timeline.clips).timeline.clips;
+		expect(after).toHaveLength(1);
+		expect(after[0].hardCutAfter).toBeUndefined();
+	});
+
+	it("keeps two cuts apart even when both pieces carry one", () => {
+		const doc = withClips([piece("p", 0, 2, true), piece("q", 2, 4, true)]);
+		const after = withClipsChanged(doc, doc.timeline.clips).timeline.clips;
+		expect(after).toHaveLength(2);
+		expect(after[0].hardCutAfter).toBe(true);
+		expect(after[1].hardCutAfter).toBe(true);
+	});
+});
+
+// What a split owes the rows that name the clip: after the cut, every anchored row must belong to
+// the half it covers, and a row that straddles the cut must be cut with it — two rows, each on its
+// own half. Dropping the anchor instead would render correctly and lose the ownership, which only
+// surfaces at the next reorder or trim.
+describe("reanchorAcrossCut — rows follow the half they cover", () => {
+	const BOUNDARY_MS = 3000;
+	const withRows = (over: Partial<AxcutDocument> = {}): AxcutDocument => {
+		const base = makeDoc();
+		return {
+			...base,
+			timeline: {
+				...base.timeline,
+				clips: [
+					{
+						id: "clip_a",
+						assetId: "asset_1",
+						sourceStartSec: 0,
+						sourceEndSec: 6,
+						timelineStartSec: 0,
+						timelineEndSec: 6,
+						wordRefs: [],
+						origin: "user",
+						reason: "",
+						hardCutAfter: true,
+					},
+				],
+				trimRanges: [
+					// straddles the cut: source 2..4
+					{
+						id: "trim_span",
+						assetId: "asset_1",
+						clipId: "clip_a",
+						startSec: 2,
+						endSec: 4,
+						reason: "",
+						origin: "user",
+					},
+					// entirely in the head
+					{
+						id: "trim_head",
+						assetId: "asset_1",
+						clipId: "clip_a",
+						startSec: 0,
+						endSec: 1,
+						reason: "",
+						origin: "user",
+					},
+				],
+			},
+			zoomRanges: [
+				{
+					id: "z_span",
+					startMs: 2000,
+					endMs: 4000,
+					clipId: "clip_a",
+					sourceStartSec: 1,
+					sourceEndSec: 5,
+				},
+				{
+					id: "z_head",
+					startMs: 1000,
+					endMs: 2000,
+					clipId: "clip_a",
+					sourceStartSec: 1,
+					sourceEndSec: 2,
+				},
+				{
+					id: "z_tail",
+					startMs: 4000,
+					endMs: 5000,
+					clipId: "clip_a",
+					sourceStartSec: 4,
+					sourceEndSec: 5,
+				},
+				// unanchored: nothing claims it belongs to a clip, so nothing re-homes it
+				{ id: "z_raw", startMs: 1000, endMs: 5000 },
+			] as never,
+			...over,
+		};
+	};
+	let n = 0;
+	const after = () =>
+		reanchorAcrossCut(withRows(), "clip_a", "clip_tail", BOUNDARY_MS, () => `new_${++n}`);
+
+	it("splits a straddling zoom into one row per half", () => {
+		const zooms = after().zoomRanges.map(
+			(z) => `${z.id}:${z.clipId}:${z.sourceStartSec}-${z.sourceEndSec}`,
+		);
+		expect(zooms).toContain("z_span:clip_a:1-3");
+		expect(zooms).toContain("new_1:clip_tail:3-5");
+		expect(zooms.filter((z) => z.startsWith("z_span"))).toHaveLength(1);
+	});
+
+	it("re-points a row that lies wholly in the tail and leaves the head's alone", () => {
+		const zooms = after().zoomRanges;
+		expect(zooms.find((z) => z.id === "z_tail")?.clipId).toBe("clip_tail");
+		expect(zooms.find((z) => z.id === "z_head")?.clipId).toBe("clip_a");
+		expect(zooms.find((z) => z.id === "z_raw")?.clipId).toBeUndefined();
+	});
+
+	it("does the same for a trim that crosses the cut", () => {
+		const trims = after().timeline.trimRanges;
+		expect(trims.find((t) => t.id === "trim_span")?.endSec).toBe(3);
+		expect(trims.find((t) => t.id === "trim_head")?.endSec).toBe(1);
+		const moved = trims.filter((t) => t.clipId === "clip_tail");
+		expect(moved).toHaveLength(1);
+		expect(moved[0].startSec).toBe(3);
+		expect(moved[0].endSec).toBe(4);
+	});
+
+	it("covers the legacy envelopes too, not only the four document arrays", () => {
+		const doc = withRows({
+			legacyEditor: {
+				speedRegions: [
+					{
+						id: "sp_span",
+						startMs: 2000,
+						endMs: 5000,
+						clipId: "clip_a",
+						sourceStartSec: 2,
+						sourceEndSec: 5,
+						speed: 1.5,
+					},
+				],
+			} as never,
+		});
+		const speed = (
+			reanchorAcrossCut(doc, "clip_a", "clip_tail", BOUNDARY_MS, () => "new_sp")
+				.legacyEditor as never as {
+				speedRegions: { id: string; clipId?: string; sourceStartSec: number }[];
+			}
+		).speedRegions;
+		// The old hand-written list left these behind entirely; they now cut with the clip.
+		expect(speed.map((r) => `${r.clipId}:${r.sourceStartSec}`)).toEqual([
+			"clip_a:2",
+			"clip_tail:3",
+		]);
 	});
 });
