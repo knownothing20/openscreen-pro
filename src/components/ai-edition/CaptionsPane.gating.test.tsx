@@ -9,7 +9,7 @@
 // running, and why there will never be one on a media with no audio track.
 
 import "@testing-library/jest-dom";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/contexts/I18nContext";
 import type { AxcutAsset, AxcutDocument } from "@/lib/ai-edition/schema";
@@ -152,5 +152,48 @@ describe("captions pane gating", () => {
 		expect(
 			screen.getByText("This media has no audio track — there is nothing to transcribe."),
 		).toBeInTheDocument();
+	});
+});
+
+describe("captions show switch", () => {
+	// The switch is a <button aria-pressed> that renders no text of its own, so the only thing that
+	// makes it addressable — for a screen reader and for this test alike — is the label the pane
+	// passes down. It had none: the control existed, announced nothing, and could only be clicked
+	// by guessing at the DOM.
+	const withTranscript = () => {
+		const doc = documentWith(ASSET);
+		(doc as unknown as { transcripts: unknown[] }).transcripts = [
+			{
+				assetId: ASSET.id,
+				language: "en",
+				segments: [
+					{ id: "seg_1", kind: "speech", startSec: 6.57, endSec: 6.6, text: "This", wordIds: ["word_1"] },
+				],
+				words: [{ id: "word_1", segmentId: "seg_1", startSec: 6.57, endSec: 6.6, text: "This" }],
+			},
+		];
+		return doc;
+	};
+	const captionEnabled = () => {
+		const legacy = useProjectStore.getState().document?.legacyEditor as { captions?: { enabled?: boolean } } | null;
+		return legacy?.captions?.enabled === true;
+	};
+
+	it("is reachable by its accessible name, and starts unpressed", () => {
+		load(withTranscript());
+		mount();
+		expect(screen.getByRole("button", { name: "Show captions" })).toHaveAttribute("aria-pressed", "false");
+	});
+
+	it("turns captions on and off, and writes the document both ways", async () => {
+		load(withTranscript());
+		mount();
+		fireEvent.click(screen.getByRole("button", { name: "Show captions" }));
+		await waitFor(() => expect(captionEnabled()).toBe(true));
+		expect(screen.getByRole("button", { name: "Show captions" })).toHaveAttribute("aria-pressed", "true");
+
+		fireEvent.click(screen.getByRole("button", { name: "Show captions" }));
+		await waitFor(() => expect(captionEnabled()).toBe(false));
+		expect(screen.getByRole("button", { name: "Show captions" })).toHaveAttribute("aria-pressed", "false");
 	});
 });

@@ -275,6 +275,10 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 					<Toggle
 						checked={settings.enabled}
 						disabled={disabled || !hasTranscript}
+						// The switch renders no text of its own, so without this it has no accessible
+						// name at all: a screen reader announces "button, pressed" and nothing else,
+						// and neither it nor a test can address it by what it does.
+						ariaLabel={t("captions.show")}
 						onChange={(next) => void set({ enabled: next })}
 					/>
 				</div>
