@@ -1817,6 +1817,48 @@ describe("useTimeline save failures", () => {
 		expect(useProjectStore.getState().document?.timeline.clips[0]?.id).toBe("clip_a");
 	});
 
+	it("leaves the timeline and the history untouched when a split cannot be saved", async () => {
+		// The split computes both halves up front, so a refused write is the moment where a
+		// half-applied edit would show: the clips must stay as they were, no undo step may be
+		// pushed for an edit that never landed, and the failure must be reported rather than
+		// swallowed.
+		useProjectStore.setState({ currentTimeSec: 5 });
+		const stepsBefore = past.length;
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.splitClipAtPlayhead();
+		});
+
+		expect(toastErrorMock).toHaveBeenCalledWith("Failed to save project", { description: "disk full" });
+		expect(useProjectStore.getState().document?.timeline.clips).toHaveLength(1);
+		expect(useProjectStore.getState().document?.timeline.clips[0]?.hardCutAfter).toBeUndefined();
+		expect(past).toHaveLength(stepsBefore);
+	});
+
+	it("commits the same split as one undo step once the write goes through", async () => {
+		// The mirror image: same call, same playhead, the write succeeds. If the failure path
+		// left anything behind, this run would not be a clean single step.
+		useProjectStore.setState({ currentTimeSec: 5 });
+		// The bridge echoes the document back on success; a bare `{ success: true }` would leave
+		// the store with nothing to adopt and this test would pass for the wrong reason.
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({ success: true, document: doc }));
+		const stepsBefore = past.length;
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.splitClipAtPlayhead();
+		});
+
+		const clips = useProjectStore.getState().document?.timeline.clips ?? [];
+		expect(clips).toHaveLength(2);
+		expect(clips[0].hardCutAfter).toBe(true);
+		expect(clips[0].timelineEndSec).toBe(5);
+		expect(clips[1].timelineStartSec).toBe(5);
+		expect(past).toHaveLength(stepsBefore + 1);
+		expect(toastErrorMock).not.toHaveBeenCalled();
+	});
+
 	it("reports 0 zooms added when the bulk write fails", async () => {
 		// The count is what the Auto-enhance caller shows in its success toast, so a
 		// failed write returning `suggestions.length` produced "Added 3 automatic zooms"

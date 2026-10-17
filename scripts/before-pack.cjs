@@ -302,6 +302,39 @@ const WIN_REQUIRED = [
 ];
 
 /**
+ * Windows needs the STT helper too, and until this list existed nothing said so: the validator
+ * only looked for the compositor, the FFmpeg family and ONNX, so a package could ship every frame
+ * path intact and still have no transcription at all — the failure that `stage-whisper-stt.sh`'s
+ * header describes on macOS and Linux, one platform short.
+ *
+ * One requirement per library rather than a count over `/^ggml.*\.dll$/`: the same trap
+ * `LINUX_REQUIRED` documents. `ggml-base` and `ggml-cpu` are what the helper cannot start without;
+ * a backend beyond that (`ggml-vulkan`) is deliberately NOT required — it is a variant, its absence
+ * costs throughput rather than function, and `gpuDetector.ts` already falls back to CPU when the
+ * GPU path is unavailable.
+ */
+const WIN_STT_REQUIRED = [
+	{
+		match: (name) => name === "whisper-stt-server.exe",
+		what: "the whisper.cpp STT helper",
+		breaks: "transcription and captions fail with a developer error, and every caption row stays empty",
+		fix: "Build it with:\n\n    npm run build:whisper-binaries\n\nor stage CI's with `bash scripts/stage-whisper-stt.sh win32-x64`.",
+	},
+	{
+		match: (name) => name === "ggml-base.dll",
+		what: "the ggml base library the STT helper links",
+		breaks: "whisper-stt-server cannot start at all, so STT times out with no diagnostic",
+		fix: "Build it with:\n\n    npm run build:whisper-binaries",
+	},
+	{
+		match: (name) => name === "ggml-cpu.dll",
+		what: "the ggml CPU backend the STT helper loads",
+		breaks: "whisper-stt-server starts and finds no backend, so every transcription fails",
+		fix: "Build it with:\n\n    npm run build:whisper-binaries",
+	},
+];
+
+/**
  * DLLs that come from the Visual C++ Redistributable rather than from Windows itself.
  *
  * The `api-ms-win-crt-*` api-sets are deliberately absent: that is the UCRT, which IS
@@ -469,7 +502,7 @@ function checkWinNativePayload() {
 	const dir = path.join(ROOT, "electron", "native", "bin", "win32-x64");
 	checkNativePayload({
 		dir,
-		required: WIN_REQUIRED,
+		required: [...WIN_REQUIRED, ...WIN_STT_REQUIRED],
 		osLabel: "Windows",
 		bundleNoun: "the installer",
 		emptyDirFix: `${FIX}\n\nThe STT helper and the capture helper are separate builds — see\ntechnical-documentation/engineering/build-and-packaging.md.`,
