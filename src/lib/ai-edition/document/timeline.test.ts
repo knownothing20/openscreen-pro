@@ -1994,3 +1994,96 @@ describe("reanchorAcrossCut — rows follow the half they cover", () => {
 		]);
 	});
 });
+
+// A voiceover laid across the split point. The audio lane's contract is `anchorAudioTrackFragments`
+// / `reanchorAudioTracks`: a take that covers two clips becomes one fragment per clip, with
+// `offsetMs` continuing so the two halves play as one uninterrupted take, and only the OUTERMOST
+// fragments keep the fades.
+describe("reanchorAcrossCut — a voiceover crossing the cut", () => {
+	const BOUNDARY_MS = 3000;
+	const withAudio = (): AxcutDocument => {
+		const base = makeDoc();
+		return {
+			...base,
+			timeline: {
+				...base.timeline,
+				clips: [
+					{
+						id: "clip_a",
+						assetId: "asset_1",
+						sourceStartSec: 0,
+						sourceEndSec: 3,
+						timelineStartSec: 0,
+						timelineEndSec: 3,
+						wordRefs: [],
+						origin: "user",
+						reason: "",
+						hardCutAfter: true,
+					},
+					{
+						id: "clip_tail",
+						assetId: "asset_1",
+						sourceStartSec: 3,
+						sourceEndSec: 6,
+						timelineStartSec: 3,
+						timelineEndSec: 6,
+						wordRefs: [],
+						origin: "user",
+						reason: "",
+					},
+				],
+			},
+			audioTracks: [
+				{
+					id: "vo1",
+					assetId: "asset_2",
+					kind: "voiceover",
+					startMs: 0,
+					endMs: 6000,
+					// the pre-split shape: anchored to the ONE clip that used to cover 0..6
+					clipId: "clip_a",
+					sourceStartSec: 0,
+					sourceEndSec: 6,
+					durationSec: 12,
+					offsetMs: 0,
+					gainDb: 0,
+					loop: false,
+					fadeInMs: 300,
+					fadeOutMs: 400,
+					muted: false,
+					label: "vo",
+				},
+			] as never,
+		};
+	};
+
+	it("still covers the whole span, on both sides of the cut", () => {
+		const tracks = reanchorAcrossCut(withAudio(), "clip_a", "clip_tail", BOUNDARY_MS, () => "vo_frag").audioTracks;
+		const covered = tracks.reduce((n, t) => n + (t.endMs - t.startMs), 0);
+		expect(covered).toBe(6000);
+	});
+
+	it("keeps the media offsets continuous across the seam", () => {
+		const tracks = reanchorAcrossCut(withAudio(), "clip_a", "clip_tail", BOUNDARY_MS, () => "vo_frag").audioTracks;
+		const ordered = [...tracks].sort((a, b) => a.startMs - b.startMs);
+		expect(ordered.length).toBeGreaterThan(1);
+		for (let i = 1; i < ordered.length; i++) {
+			const prev = ordered[i - 1];
+			const next = ordered[i];
+			// the next fragment resumes exactly where the previous one's media time ended
+			expect(next.offsetMs).toBe(prev.offsetMs + (prev.endMs - prev.startMs));
+			// and it is placed where the previous one stopped, not replayed from zero
+			expect(next.startMs).toBe(prev.endMs);
+		}
+	});
+
+	it("keeps a fade only on the outermost fragments", () => {
+		const ordered = reanchorAcrossCut(withAudio(), "clip_a", "clip_tail", BOUNDARY_MS, () => "vo_frag").audioTracks.sort(
+			(a, b) => a.startMs - b.startMs,
+		);
+		expect(ordered[0].fadeInMs).toBe(300);
+		for (let i = 1; i < ordered.length; i++) expect(ordered[i].fadeInMs).toBe(0);
+		for (let i = 0; i < ordered.length - 1; i++) expect(ordered[i].fadeOutMs).toBe(0);
+		expect(ordered.at(-1)?.fadeOutMs).toBe(400);
+	});
+});
