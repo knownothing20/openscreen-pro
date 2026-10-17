@@ -26,6 +26,7 @@ import {
 	setClipSourceRange,
 	subtractInterval,
 	timelineIntervals,
+	withClipsChanged,
 } from "./timeline";
 
 function makeDoc(overrides: Partial<AxcutDocument> = {}): AxcutDocument {
@@ -1764,5 +1765,41 @@ describe("readSpeedRegions", () => {
 		expect(read([{ id: "a", startMs: 0, endMs: 1000, speed: "fast" }])).toEqual([]);
 		expect(read(undefined)).toEqual([]);
 		expect(readSpeedRegions({ legacyEditor: null })).toEqual([]);
+	});
+});
+
+// A split produces two contiguous clips of the same media — which is exactly what `joinContiguous`
+// exists to fold back into one. `hardCutAfter` is the flag that tells it not to, and without these
+// two assertions the split would look right in the UI and silently undo itself on the next edit.
+describe("withClipsChanged — a deliberate cut", () => {
+	const withClips = (clips: AxcutClip[]): AxcutDocument => {
+		const base = makeDoc();
+		return { ...base, timeline: { ...base.timeline, clips } };
+	};
+	const piece = (id: string, from: number, to: number, cut = false): AxcutClip => ({
+		id,
+		assetId: "asset_1",
+		sourceStartSec: from,
+		sourceEndSec: to,
+		timelineStartSec: from,
+		timelineEndSec: to,
+		wordRefs: [],
+		origin: "user",
+		reason: "",
+		...(cut ? { hardCutAfter: true } : {}),
+	});
+
+	it("folds two contiguous same-media clips together when nothing marks the boundary", () => {
+		const doc = withClips([piece("a", 0, 6.5), piece("b", 6.5, 13)]);
+		expect(withClipsChanged(doc, doc.timeline.clips).timeline.clips).toHaveLength(1);
+	});
+
+	it("keeps them apart when the head carries hardCutAfter", () => {
+		const doc = withClips([piece("a", 0, 6.5, true), piece("b", 6.5, 13)]);
+		const after = withClipsChanged(doc, doc.timeline.clips).timeline.clips;
+		expect(after).toHaveLength(2);
+		expect(after[0].timelineEndSec).toBe(6.5);
+		expect(after[1].timelineStartSec).toBe(6.5);
+		expect(after[1].sourceStartSec).toBe(6.5);
 	});
 });
