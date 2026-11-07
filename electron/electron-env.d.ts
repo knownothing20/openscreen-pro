@@ -315,6 +315,8 @@ interface Window {
 		writeExportToPath: (
 			videoData: ArrayBuffer,
 			filePath: string,
+			/** Files this export is reading and must not become the target of. */
+			protectedPaths?: readonly string[],
 		) => Promise<{
 			success: boolean;
 			path?: string;

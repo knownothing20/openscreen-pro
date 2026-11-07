@@ -354,6 +354,19 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 			const saveResult = await window.electronAPI.writeExportToPath(
 				await mixed.arrayBuffer(),
 				outPath,
+				// This second pass re-reads the export it just made and writes the mix back over
+				// it, so the target is deliberately its own previous output. Everything ELSE this
+				// pass reads must not become that target: the source media behind the clips, the
+				// voiceover being mixed in, and the project file itself. `write-export-to-path`
+				// has no clips to derive that list from, so it is handed here — spelled out from
+				// the same clip list the native render just used, not guessed.
+				[
+					...clips.flatMap((clip) => [clip.screenPath, clip.webcamPath]),
+					request.audioPath,
+					request.projectPath,
+				].filter(
+					(candidate): candidate is string => typeof candidate === "string" && candidate.length > 0,
+				),
 			);
 			if (!saveResult.success) {
 				throw new Error(saveResult.message ?? `Failed to write mixed output to ${outPath}`);

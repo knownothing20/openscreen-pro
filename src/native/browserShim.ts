@@ -150,7 +150,11 @@ function createShimElectronAPI() {
 		openVideoFilePicker: pickVideoFileViaInput,
 		openProjectFile: () => Promise.resolve({ success: false, canceled: true }),
 		pickExportSavePath: () => Promise.resolve({ success: false, canceled: true }),
-		writeExportToPath: () => Promise.resolve({ success: false }),
+		writeExportToPath: (
+			_videoData: ArrayBuffer,
+			_filePath: string,
+			_protectedPaths?: readonly string[],
+		) => Promise.resolve({ success: false }),
 		getCurrentRecordingSession: () => Promise.resolve({ success: false, session: null }),
 		switchToHud: () => Promise.resolve({ success: true }),
 		switchToEditor: () => Promise.resolve({ success: true }),

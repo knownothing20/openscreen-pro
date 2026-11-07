@@ -4204,51 +4204,60 @@ export function registerIpcHandlers(
 		},
 	);
 
-	ipcMain.handle("write-export-to-path", async (_, videoData: ArrayBuffer, filePath: string) => {
-		try {
-			// Sanity-check the path: the renderer is trusted (contextIsolation on), but a
-			// stale-state bug shouldn't be able to clobber arbitrary files.
-			if (typeof filePath !== "string" || !path.isAbsolute(filePath)) {
-				return { success: false, message: "Invalid path" };
-			}
-			const lower = filePath.toLowerCase();
-			if (!lower.endsWith(".mp4") && !lower.endsWith(".gif")) {
-				return { success: false, message: "Invalid file type" };
-			}
-
-			const normalizedPath = path.normalize(filePath);
-			await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
-			// Write beside the target and rename, for the same reason the native export does
-			// (see `exportPathGuard`): `writeFile` truncates first, so a failure midway leaves
-			// the user with a broken file where their previous export used to be. This path is
-			// the CLI's, which re-writes a mixed voiceover over an export it just made — the
-			// file it is replacing is one it can afford to lose, but the rule is the same one.
-			const plan = planExportWrite(normalizedPath, []);
-			if (isExportRefusal(plan)) {
-				return { success: false, message: plan.reason };
-			}
+	ipcMain.handle(
+		"write-export-to-path",
+		async (_, videoData: ArrayBuffer, filePath: string, protectedPaths?: readonly string[]) => {
 			try {
-				await fs.writeFile(plan.tempPath, Buffer.from(videoData));
-			} catch (error) {
-				await discardExportFile(plan.tempPath);
-				throw error;
-			}
-			await commitExportFile(plan);
+				// Sanity-check the path: the renderer is trusted (contextIsolation on), but a
+				// stale-state bug shouldn't be able to clobber arbitrary files.
+				if (typeof filePath !== "string" || !path.isAbsolute(filePath)) {
+					return { success: false, message: "Invalid path" };
+				}
+				const lower = filePath.toLowerCase();
+				if (!lower.endsWith(".mp4") && !lower.endsWith(".gif")) {
+					return { success: false, message: "Invalid file type" };
+				}
 
-			return {
-				success: true,
-				path: plan.finalPath,
-				message: "Video exported successfully",
-			};
-		} catch (error) {
-			console.error("Failed to write exported video:", error);
-			return {
-				success: false,
-				message: "Failed to save exported video",
-				error: String(error),
-			};
-		}
-	});
+				const normalizedPath = path.normalize(filePath);
+				await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
+				// Write beside the target and rename, for the same reason the native export does
+				// (see `exportPathGuard`): `writeFile` truncates first, so a failure midway leaves
+				// the user with a broken file where their previous export used to be.
+				//
+				// This entry has no clips, so it cannot derive a protected list the way
+				// `exportMulti` does — and it must not pretend it can. The caller sends the files
+				// it is reading (the CLI's mix pass knows its source media and its voiceover), and
+				// those are checked exactly like clip sources. Without them this path would be the
+				// one hole left in the rule.
+				const plan = await planExportWrite(normalizedPath, [], {
+					extraProtected: Array.isArray(protectedPaths) ? protectedPaths : [],
+				});
+				if (isExportRefusal(plan)) {
+					return { success: false, message: plan.reason };
+				}
+				try {
+					await fs.writeFile(plan.tempPath, Buffer.from(videoData));
+				} catch (error) {
+					await discardExportFile(plan.tempPath);
+					throw error;
+				}
+				await commitExportFile(plan);
+
+				return {
+					success: true,
+					path: plan.finalPath,
+					message: "Video exported successfully",
+				};
+			} catch (error) {
+				console.error("Failed to write exported video:", error);
+				return {
+					success: false,
+					message: "Failed to save exported video",
+					error: String(error),
+				};
+			}
+		},
+	);
 
 	// The media tab imports VIDEO (it arranges clips). Audio is imported from the
 	// timeline toolbar instead (issue #350) — see `open-audio-file-picker` below.

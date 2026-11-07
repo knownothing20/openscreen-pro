@@ -21,6 +21,10 @@ import path from "node:path";
  *
  * So: encode into a sibling file, and only put it in place once there is a complete one to
  * put there. The rename is the commit point.
+ *
+ * "Is this the same file" is answered by the filesystem, not by the string: see
+ * {@link canonicalPath} and {@link fileIdentity}. A string compare is right about the easy
+ * case and silently wrong about the ones that actually destroy a recording.
  */
 
 /** Exports only ever produce these. Also what keeps a project file from being a target. */
@@ -32,6 +36,67 @@ function comparable(filePath: string): string {
 	return path.resolve(filePath).toLowerCase();
 }
 
+type Resolution = { canonical: string } | { refusal: string };
+
+/**
+ * The path the OS would actually touch, with every symlink and `.`/`..` resolved.
+ *
+ * A target that does not exist yet still has an identity: it lives in a directory that does,
+ * so the walk stops at the deepest existing ancestor and re-attaches the rest. That is also
+ * how a symlinked *directory* is caught — `C:\link\to\clips\new-export.mp4` resolves through
+ * the link, and a source living behind it compares equal.
+ *
+ * Two things are refused rather than guessed: a component that exists but is not a
+ * directory (the write could not happen anyway, and calling it "nothing to protect" would be
+ * a lie), and any IO error other than "does not exist" (a permission problem means we cannot
+ * say what this path is).
+ */
+async function canonicalPath(filePath: string): Promise<Resolution> {
+	let current = path.resolve(filePath);
+	const tail: string[] = [];
+	for (;;) {
+		try {
+			const stats = await fs.stat(current);
+			// An existing ancestor must be a directory; only the target itself may be a file.
+			if (tail.length > 0 && !stats.isDirectory()) {
+				return { refusal: `“${current}” is not a directory.` };
+			}
+			const real = await fs.realpath(current);
+			return { canonical: path.join(real, ...tail).toLowerCase() };
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code !== "ENOENT" && code !== "ENOTDIR") {
+				return { refusal: `Could not resolve “${filePath}” (${code ?? String(error)}).` };
+			}
+			const parent = path.dirname(current);
+			if (parent === current) {
+				return { refusal: `Could not resolve “${filePath}”.` };
+			}
+			tail.unshift(path.basename(current));
+			current = parent;
+		}
+	}
+}
+
+/**
+ * `dev:ino` — the identity the filesystem gives a file, which is how two names for the same
+ * bytes are recognised as one. A hard link has no path relationship to its twin at all, so
+ * this is the only thing that catches it. `null` when the file is not there (nothing to
+ * compare) or cannot be stat'ed.
+ */
+async function fileIdentity(filePath: string): Promise<string | null> {
+	try {
+		const stats = await fs.stat(filePath);
+		return `${stats.dev}:${stats.ino}`;
+	} catch {
+		return null;
+	}
+}
+
+const SAME_FILE_REASON =
+	"That path is a source file this export is reading from. Pick another name — " +
+	"overwriting it would destroy the footage the project needs.";
+
 export interface ExportWritePlan {
 	/** Where the encoder writes. Never the user's path. */
 	tempPath: string;
@@ -40,6 +105,20 @@ export interface ExportWritePlan {
 }
 
 export type ExportWriteRefusal = { reason: string };
+
+export interface ExportWriteOptions {
+	/**
+	 * Files the caller knows this export is reading but which are not clips.
+	 *
+	 * `write-export-to-path` reads the export it just made and the voiceover file, then
+	 * writes the mix back over the former — so that entry point has no clips to derive a
+	 * protected list from. The renderer passes the ones it knows; the list is additive, never
+	 * a replacement for the clip sources.
+	 */
+	extraProtected?: readonly string[];
+	/** Fixed only by tests: production temp names must never be predictable. */
+	token?: string;
+}
 
 /**
  * The paths this export must not write over: every clip's screen and webcam source.
@@ -67,11 +146,11 @@ export function exportedSourcePaths(
  * with a message the UI can show, and a thrown error would arrive there as "export failed"
  * with no cause.
  */
-export function planExportWrite(
+export async function planExportWrite(
 	outPath: string | undefined,
 	clips: ReadonlyArray<{ screenPath?: string; webcamPath?: string }> | undefined,
-	token: string = randomUUID().slice(0, 8),
-): ExportWritePlan | ExportWriteRefusal {
+	options: ExportWriteOptions = {},
+): Promise<ExportWritePlan | ExportWriteRefusal> {
 	if (typeof outPath !== "string" || outPath.length === 0) {
 		// The compositor picks its own default path; there is nothing here to protect, and
 		// inventing one would be a different behaviour from the one that exists.
@@ -85,24 +164,42 @@ export function planExportWrite(
 		return { reason: `Export path must end in ${EXPORT_EXTENSIONS.join(" or ")}.` };
 	}
 
-	const target = comparable(outPath);
-	const sources = exportedSourcePaths(clips).map(comparable);
-	if (sources.includes(target)) {
-		return {
-			reason:
-				"That path is a source file this export is reading from. Pick another name — " +
-				"overwriting it would destroy the footage the project needs.",
-		};
+	const resolvedTarget = await canonicalPath(outPath);
+	if ("refusal" in resolvedTarget) return { reason: resolvedTarget.refusal };
+	const targetCanonical = resolvedTarget.canonical;
+	const targetIdentity = await fileIdentity(outPath);
+
+	const protectedPaths = [
+		...exportedSourcePaths(clips),
+		...(options.extraProtected ?? []).filter(
+			(p): p is string => typeof p === "string" && p.length > 0,
+		),
+	];
+	for (const source of protectedPaths) {
+		// Canonical first: catches case, `.`/`..`, and symlinks. Then the filesystem's own
+		// identity, which is the only thing that catches a hard link.
+		const resolvedSource = await canonicalPath(source);
+		const sourceCanonical =
+			"canonical" in resolvedSource ? resolvedSource.canonical : comparable(source);
+		if (sourceCanonical === targetCanonical) return { reason: SAME_FILE_REASON };
+
+		if (targetIdentity) {
+			const sourceIdentity = await fileIdentity(source);
+			if (sourceIdentity && sourceIdentity === targetIdentity) return { reason: SAME_FILE_REASON };
+		}
 	}
 
 	const finalPath = path.resolve(outPath);
 	// Same directory, by construction: a rename cannot cross a volume, and the whole point
 	// of the temp file is that the last step is a rename. The extension stays last so the
-	// muxer still recognises the container it is being asked to write.
+	// muxer still recognises the container it is being asked to write. The token carries the
+	// pid as well as a random tail, so two exports — in the same process or two of them —
+	// cannot land on each other's temp file.
 	const dir = path.dirname(finalPath);
 	const base = path.basename(finalPath, extension);
+	const suffix = options.token ?? `${process.pid.toString(36)}-${randomUUID().slice(0, 8)}`;
 	return {
-		tempPath: path.join(dir, `${base}.partial-${token}${extension}`),
+		tempPath: path.join(dir, `${base}.partial-${suffix}${extension}`),
 		finalPath,
 	};
 }
@@ -119,10 +216,16 @@ export function isExportRefusal(
  * `rename` replaces the destination in one step on the same volume, which is what makes a
  * previous good export survive until the new one is complete. A cross-volume destination
  * cannot happen here (the temp file is created beside the target), so a rename failure is a
- * real error and is reported rather than papered over with a copy.
+ * real error — and the temp file is dropped on the way out, because a failed commit is
+ * exactly the moment an orphan would otherwise be left behind.
  */
 export async function commitExportFile(plan: ExportWritePlan): Promise<void> {
-	await fs.rename(plan.tempPath, plan.finalPath);
+	try {
+		await fs.rename(plan.tempPath, plan.finalPath);
+	} catch (error) {
+		await discardExportFile(plan.tempPath);
+		throw error;
+	}
 }
 
 /**

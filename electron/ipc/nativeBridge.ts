@@ -445,7 +445,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							const plan =
 								request.payload.outPath === undefined
 									? null
-									: planExportWrite(request.payload.outPath, request.payload.clips);
+									: await planExportWrite(request.payload.outPath, request.payload.clips);
 							if (plan && isExportRefusal(plan)) {
 								return createErrorResponse(requestId, "INVALID_REQUEST", plan.reason);
 							}
@@ -489,7 +489,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							const plan =
 								request.payload.outPath === undefined
 									? null
-									: planExportWrite(request.payload.outPath, request.payload.clips);
+									: await planExportWrite(request.payload.outPath, request.payload.clips);
 							if (plan && isExportRefusal(plan)) {
 								return createErrorResponse(requestId, "INVALID_REQUEST", plan.reason);
 							}
