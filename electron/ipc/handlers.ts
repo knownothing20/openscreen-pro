@@ -74,9 +74,12 @@ import { StylePresetService } from "../ai-edition/style-preset-service";
 import { AppSettingsStore } from "../app-settings";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "../diagnostics/main-log-buffer";
 import {
+	checkExportTarget,
 	commitExportFile,
 	discardExportFile,
 	isExportRefusal,
+	isExportStageName,
+	planExportCommit,
 	planExportWrite,
 } from "../exportPathGuard";
 import { mainT } from "../i18n";
@@ -4203,6 +4206,72 @@ export function registerIpcHandlers(
 			}
 		},
 	);
+
+	// Preflight for a transactional export: is this destination one the run may end up at?
+	// Same rule as the commit, asked before anything is encoded. Nothing is written, so a refusal
+	// costs nothing.
+	ipcMain.handle(
+		"check-export-target",
+		async (_, finalPath: string, protectedPaths?: readonly string[]) => {
+			const check = await checkExportTarget(
+				finalPath,
+				Array.isArray(protectedPaths) ? protectedPaths : [],
+			);
+			if ("reason" in check) return { success: false, message: check.reason };
+			return { success: true, path: check.finalPath };
+		},
+	);
+
+	// The last step of a transactional CLI export: move a finished stage onto the user's path.
+	// Every gate that protects `write-export-to-path` applies here too — the destination is
+	// checked as an export target (absolute, right container, not a file this run reads) and the
+	// stage must be one this app named, sitting beside the destination so the move is a rename.
+	ipcMain.handle(
+		"commit-export-file",
+		async (_, stagePath: string, finalPath: string, protectedPaths?: readonly string[]) => {
+			try {
+				const plan = await planExportCommit(
+					stagePath,
+					finalPath,
+					Array.isArray(protectedPaths) ? protectedPaths : [],
+				);
+				if (isExportRefusal(plan)) {
+					return { success: false, message: plan.reason };
+				}
+				const stats = await fs.stat(plan.stagePath).catch(() => null);
+				if (!stats || !stats.isFile() || stats.size === 0) {
+					// Nothing is moved and nothing is deleted: the destination keeps whatever it had.
+					return {
+						success: false,
+						message: "The staged export is missing or empty; nothing was replaced.",
+					};
+				}
+				await commitExportFile({ tempPath: plan.stagePath, finalPath: plan.finalPath });
+				return { success: true, path: plan.finalPath };
+			} catch (error) {
+				console.error("Failed to commit the exported video:", error);
+				return {
+					success: false,
+					message: "Failed to move the finished export into place",
+					error: String(error),
+				};
+			}
+		},
+	);
+
+	// Cleanup for the stages of a failed or cancelled run. Deliberately narrow: only names this
+	// app produces can be deleted, so a renderer bug cannot turn a cleanup into a file shredder.
+	ipcMain.handle("delete-export-stage", async (_, stagePath: string) => {
+		if (
+			typeof stagePath !== "string" ||
+			!path.isAbsolute(stagePath) ||
+			!isExportStageName(path.basename(stagePath))
+		) {
+			return { success: false, message: "Not a staged export file." };
+		}
+		await discardExportFile(path.normalize(stagePath));
+		return { success: true };
+	});
 
 	ipcMain.handle(
 		"write-export-to-path",

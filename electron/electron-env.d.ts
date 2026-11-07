@@ -312,6 +312,19 @@ interface Window {
 			canceled?: boolean;
 			error?: string;
 		}>;
+		/** Ask before encoding whether a destination is allowed. Writes nothing. */
+		checkExportTarget: (
+			finalPath: string,
+			protectedPaths?: readonly string[],
+		) => Promise<{ success: boolean; path?: string; message?: string }>;
+		commitExportFile: (
+			stagePath: string,
+			finalPath: string,
+			/** Files this run reads and must never become the destination of. */
+			protectedPaths?: readonly string[],
+		) => Promise<{ success: boolean; path?: string; message?: string; error?: string }>;
+		/** Remove one of this app's own export stages. Only names it produced are accepted. */
+		deleteExportStage: (stagePath: string) => Promise<{ success: boolean; message?: string }>;
 		writeExportToPath: (
 			videoData: ArrayBuffer,
 			filePath: string,

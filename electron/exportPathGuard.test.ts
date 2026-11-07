@@ -7,6 +7,8 @@ import {
 	discardExportFile,
 	exportedSourcePaths,
 	isExportRefusal,
+	isExportStageName,
+	planExportCommit,
 	planExportWrite,
 } from "./exportPathGuard";
 
@@ -273,5 +275,68 @@ describe("discardExportFile — cleanup must never fail the operation", () => {
 		await fs.writeFile(temp, "half written");
 		await discardExportFile(temp);
 		await expect(fs.stat(temp)).rejects.toThrow();
+	});
+});
+
+describe("planExportCommit — the last step of a transactional export", () => {
+	// `dir` is created in `beforeEach`, so these have to be read per test rather than at
+	// collection time — a describe body runs before any of it exists.
+	const paths = () => ({
+		source: path.join(dir, "recording.mp4"),
+		target: path.join(dir, "export.mp4"),
+	});
+
+	it("accepts a stage beside the destination", async () => {
+		const stage = path.join(dir, "export.render-abc12345.mp4");
+		const plan = await planExportCommit(stage, paths().target, [paths().source]);
+		expect(isExportRefusal(plan)).toBe(false);
+		if (!isExportRefusal(plan)) {
+			expect(plan.finalPath).toBe(path.resolve(paths().target));
+			expect(plan.stagePath).toBe(path.resolve(stage));
+		}
+	});
+
+	it("refuses a destination that is one of the inputs", async () => {
+		const plan = await planExportCommit(path.join(dir, "x.render-abc12345.mp4"), paths().source, [
+			paths().source,
+		]);
+		expect(isExportRefusal(plan)).toBe(true);
+	});
+
+	it("refuses a stage from another directory, because the commit is a rename", async () => {
+		const elsewhere = path.join(dir, "elsewhere", "export.render-abc12345.mp4");
+		const plan = await planExportCommit(elsewhere, paths().target, []);
+		expect(isExportRefusal(plan)).toBe(true);
+		if (isExportRefusal(plan)) expect(plan.reason).toContain("beside the destination");
+	});
+
+	it("refuses a file that is not a stage this app named", async () => {
+		const plan = await planExportCommit(path.join(dir, "innocent.mp4"), paths().target, []);
+		expect(isExportRefusal(plan)).toBe(true);
+	});
+
+	it("refuses a stage that is the destination", async () => {
+		const plan = await planExportCommit(paths().target, paths().target, []);
+		expect(isExportRefusal(plan)).toBe(true);
+	});
+
+	it("refuses a relative stage", async () => {
+		expect(
+			isExportRefusal(await planExportCommit("x.render-abc12345.mp4", paths().target, [])),
+		).toBe(true);
+	});
+});
+
+describe("isExportStageName", () => {
+	it("recognises the two names a run creates", () => {
+		expect(isExportStageName("demo.render-3f9a1c2b.mp4")).toBe(true);
+		expect(isExportStageName("demo.mixed-3f9a1c2b.mp4")).toBe(true);
+	});
+
+	it("does not recognise a user file, a partial, or a too-short token", () => {
+		expect(isExportStageName("demo.mp4")).toBe(false);
+		expect(isExportStageName("demo.partial-3f9a1c2b.mp4")).toBe(false);
+		expect(isExportStageName("demo.render-.mp4")).toBe(false);
+		expect(isExportStageName("notes.txt")).toBe(false);
 	});
 });

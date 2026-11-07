@@ -37,6 +37,7 @@ import { exportGifNative, exportMultiNative, nativeBridgeClient } from "@/native
 import type { CompositorClipInput } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
 import { type ExportProject, exportedInputPaths, loadDocumentProject } from "./exportProject";
+import { runTransactionalExport } from "./exportTransaction";
 
 const MP4_EXPORT_FPS = 60;
 
@@ -325,58 +326,86 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 
 		// Everything this run reads, so the native pass can refuse a destination that would
 		// destroy one of them BEFORE it opens the encoder. Clips are already covered by the
-		// export itself; the voiceover and the project file are not, and `--out` pointing at
-		// either used to be caught only by the mix's write-back — after the damage.
+		// export itself; the voiceover and the project file are not.
 		const inputPaths = exportedInputPaths(request, clips);
 
-		// MP4: native writes outPath directly. When a voiceover is requested, mix
-		// it afterwards (the native pipeline has no extra-audio-track concept) and
-		// overwrite the same file.
-		await exportMultiNative(
-			clips,
-			outPath,
-			sceneJson,
-			{
-				width: outDims.width,
-				height: outDims.height,
-				fps: MP4_EXPORT_FPS,
-				codec: "h264",
-				bitrate: outDims.bitrate,
+		// The run is a transaction: nothing is committed until every stage has produced a file
+		// that survives a structural check. Before this, phase 1 wrote the user's path directly
+		// and a mix failure left an un-mixed export where their finished one used to be.
+		await runTransactionalExport({
+			finalPath: outPath,
+			protectedPaths: inputPaths,
+			audioPath: request.audioPath ?? null,
+			ports: {
+				preflight: async (finalTarget, protectedPaths) => {
+					// A refusal here costs a round trip; the same refusal at commit costs a full
+					// render. `--out` pointing at a source is the case this exists for.
+					const checked = await window.electronAPI.checkExportTarget?.(finalTarget, [
+						...protectedPaths,
+					]);
+					if (checked && !checked.success) {
+						throw new Error(checked.message ?? `That destination cannot be used: ${finalTarget}`);
+					}
+				},
+				render: async (stage, protectedPaths) => {
+					await exportMultiNative(
+						clips,
+						stage,
+						sceneJson,
+						{
+							width: outDims.width,
+							height: outDims.height,
+							fps: MP4_EXPORT_FPS,
+							codec: "h264",
+							bitrate: outDims.bitrate,
+						},
+						[...protectedPaths],
+					);
+				},
+				readVideo: async (stage) => {
+					const response = await fetch(toFileUrl(stage));
+					if (!response.ok) {
+						throw new Error(`Failed to read the rendered video for mixing: ${stage}`);
+					}
+					return (await response.blob()).arrayBuffer();
+				},
+				readVoiceover: async (audioPath) => {
+					const response = await fetch(toFileUrl(audioPath));
+					if (!response.ok) {
+						throw new Error(`Failed to read voiceover file: ${audioPath}`);
+					}
+					return response.arrayBuffer();
+				},
+				mix: async (video, voiceover) => {
+					window.electronAPI.cliProgress({ percentage: 100, phase: "mixing-voiceover" });
+					const mixed = await mixVoiceoverIntoVideo(new Blob([video]), {
+						voiceoverData: voiceover,
+						mode: request.audioMode,
+						offsetSec: request.audioOffsetSec,
+					});
+					return mixed.arrayBuffer();
+				},
+				writeStage: async (stage, bytes, protectedPaths) => {
+					const saved = await window.electronAPI.writeExportToPath(bytes, stage, [
+						...protectedPaths,
+					]);
+					if (!saved.success) {
+						throw new Error(saved.message ?? `Failed to write the mixed export: ${stage}`);
+					}
+				},
+				commit: async (stage, finalPath, protectedPaths) => {
+					const committed = await window.electronAPI.commitExportFile(stage, finalPath, [
+						...protectedPaths,
+					]);
+					if (!committed.success) {
+						throw new Error(committed.message ?? `Failed to replace ${finalPath}`);
+					}
+				},
+				remove: async (stage) => {
+					await window.electronAPI.deleteExportStage?.(stage);
+				},
 			},
-			inputPaths,
-		);
-
-		if (request.audioPath) {
-			window.electronAPI.cliProgress({ percentage: 100, phase: "mixing-voiceover" });
-			const [videoResponse, audioResponse] = await Promise.all([
-				fetch(toFileUrl(outPath)),
-				fetch(toFileUrl(request.audioPath)),
-			]);
-			if (!videoResponse.ok) {
-				throw new Error(`Failed to read the exported video back for mixing: ${outPath}`);
-			}
-			if (!audioResponse.ok) {
-				throw new Error(`Failed to read voiceover file: ${request.audioPath}`);
-			}
-			const mixed = await mixVoiceoverIntoVideo(await videoResponse.blob(), {
-				voiceoverData: await audioResponse.arrayBuffer(),
-				mode: request.audioMode,
-				offsetSec: request.audioOffsetSec,
-			});
-			const saveResult = await window.electronAPI.writeExportToPath(
-				await mixed.arrayBuffer(),
-				outPath,
-				// This second pass re-reads the export it just made and writes the mix back over
-				// it, so the target is deliberately its own previous output. Everything ELSE this
-				// pass reads must not become that target — and it is the same list the native
-				// pass was given a moment ago, so both halves of the run agree on what is off
-				// limits.
-				inputPaths,
-			);
-			if (!saveResult.success) {
-				throw new Error(saveResult.message ?? `Failed to write mixed output to ${outPath}`);
-			}
-		}
+		});
 
 		return {
 			success: true,

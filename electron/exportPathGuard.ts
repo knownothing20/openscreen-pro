@@ -146,11 +146,22 @@ export function exportedSourcePaths(
  * with a message the UI can show, and a thrown error would arrive there as "export failed"
  * with no cause.
  */
-export async function planExportWrite(
+export interface ExportTargetCheck {
+	finalPath: string;
+	extension: string;
+}
+
+/**
+ * Is this a destination an export is allowed to end up at?
+ *
+ * Split out of `planExportWrite` because a transactional run needs the same answer twice: once
+ * when it picks the stage names (nothing may be a source), and once when it commits (the same
+ * rule, a minute later, on the file that is about to be replaced).
+ */
+export async function checkExportTarget(
 	outPath: string | undefined,
-	clips: ReadonlyArray<{ screenPath?: string; webcamPath?: string }> | undefined,
-	options: ExportWriteOptions = {},
-): Promise<ExportWritePlan | ExportWriteRefusal> {
+	protectedPaths: readonly string[],
+): Promise<ExportTargetCheck | ExportWriteRefusal> {
 	if (typeof outPath !== "string" || outPath.length === 0) {
 		// The compositor picks its own default path; there is nothing here to protect, and
 		// inventing one would be a different behaviour from the one that exists.
@@ -169,12 +180,6 @@ export async function planExportWrite(
 	const targetCanonical = resolvedTarget.canonical;
 	const targetIdentity = await fileIdentity(outPath);
 
-	const protectedPaths = [
-		...exportedSourcePaths(clips),
-		...(options.extraProtected ?? []).filter(
-			(p): p is string => typeof p === "string" && p.length > 0,
-		),
-	];
 	for (const source of protectedPaths) {
 		// Canonical first: catches case, `.`/`..`, and symlinks. Then the filesystem's own
 		// identity, which is the only thing that catches a hard link.
@@ -189,7 +194,24 @@ export async function planExportWrite(
 		}
 	}
 
-	const finalPath = path.resolve(outPath);
+	return { finalPath: path.resolve(outPath), extension };
+}
+
+export async function planExportWrite(
+	outPath: string | undefined,
+	clips: ReadonlyArray<{ screenPath?: string; webcamPath?: string }> | undefined,
+	options: ExportWriteOptions = {},
+): Promise<ExportWritePlan | ExportWriteRefusal> {
+	const check = await checkExportTarget(outPath, [
+		...exportedSourcePaths(clips),
+		...(options.extraProtected ?? []).filter(
+			(p): p is string => typeof p === "string" && p.length > 0,
+		),
+	]);
+	if ("reason" in check) return check;
+
+	const finalPath = check.finalPath;
+	const extension = check.extension;
 	// Same directory, by construction: a rename cannot cross a volume, and the whole point
 	// of the temp file is that the last step is a rename. The extension stays last so the
 	// muxer still recognises the container it is being asked to write. The token carries the
@@ -204,8 +226,70 @@ export async function planExportWrite(
 	};
 }
 
-export function isExportRefusal(
-	plan: ExportWritePlan | ExportWriteRefusal,
+/**
+ * Names a transactional export gives its own stages: `<stem>.<render|mixed>-<token>.mp4`.
+ *
+ * Kept as one pattern used by three places that must agree — the renderer builds them, the
+ * commit refuses anything else, and the cleanup IPC deletes only these. A renderer asking main to
+ * delete an arbitrary path is exactly the kind of convenience that turns into a data-loss bug, so
+ * the only paths it can name are ones this naming produced.
+ */
+const STAGE_PATTERN = /\.(render|mixed)-[A-Za-z0-9_-]{8,}\.mp4$/i;
+
+export function isExportStageName(fileName: string): boolean {
+	return STAGE_PATTERN.test(fileName);
+}
+
+/**
+ * May `stagePath` be moved onto `finalPath`?
+ *
+ * The destination is checked exactly as an export target always is — absolute, right container,
+ * not one of the files this run reads — and the stage must sit beside it, because the commit is a
+ * rename and a rename cannot cross a volume. `commitExportFile` still re-checks nothing here; it
+ * is deliberately only the mover.
+ */
+export async function planExportCommit(
+	stagePath: string | undefined,
+	finalPath: string | undefined,
+	protectedPaths: readonly string[],
+): Promise<{ stagePath: string; finalPath: string } | ExportWriteRefusal> {
+	const check = await checkExportTarget(finalPath, protectedPaths);
+	if ("reason" in check) return check;
+	if (typeof stagePath !== "string" || stagePath.length === 0) {
+		return { reason: "No staged export was given." };
+	}
+	if (!path.isAbsolute(stagePath)) {
+		return { reason: "The staged export path must be absolute." };
+	}
+	const resolvedStage = path.resolve(stagePath);
+	if (!isExportStageName(path.basename(resolvedStage))) {
+		return { reason: "That is not a staged export file." };
+	}
+	if (comparisonKey(resolvedStage) === comparisonKey(check.finalPath)) {
+		return { reason: "The staged file cannot be the destination itself." };
+	}
+	if (path.dirname(resolvedStage) !== path.dirname(check.finalPath)) {
+		return {
+			reason:
+				"The staged export must sit beside the destination: it is moved into place with a " +
+				"rename, which cannot cross a volume.",
+		};
+	}
+	return { stagePath: resolvedStage, finalPath: check.finalPath };
+}
+
+function comparisonKey(filePath: string): string {
+	return path.resolve(filePath).toLowerCase();
+}
+
+/**
+ * Generic over the plan shape on purpose: there are now two things an export can plan (where an
+ * encoder writes, and which stage gets moved onto the destination) and both answer a refusal the
+ * same way. Narrowing to `ExportWriteRefusal` also narrows the caller's own type on the success
+ * branch, which is the whole point.
+ */
+export function isExportRefusal<T extends object>(
+	plan: T | ExportWriteRefusal,
 ): plan is ExportWriteRefusal {
 	return "reason" in plan;
 }
