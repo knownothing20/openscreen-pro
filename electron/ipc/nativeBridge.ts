@@ -211,6 +211,10 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 
 	const platform = normalizePlatform(context.getPlatform());
 	const store = createNativeBridgeState(platform);
+	// One cancel handle per running MP4 export, keyed by the id the renderer chose for it.
+	// Scoped to this registration (not the module) so a re-register — which the tests do —
+	// cannot inherit a handle from a previous app lifetime.
+	const activeExportCancels = new Map<string, () => boolean>();
 	const projectService = new ProjectService({
 		store,
 		getCurrentProjectPath: context.getCurrentProjectPath,
@@ -445,9 +449,26 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							const plan =
 								request.payload.outPath === undefined
 									? null
-									: await planExportWrite(request.payload.outPath, request.payload.clips);
+									: await planExportWrite(request.payload.outPath, request.payload.clips, {
+											extraProtected: request.payload.protectedPaths ?? [],
+										});
 							if (plan && isExportRefusal(plan)) {
 								return createErrorResponse(requestId, "INVALID_REQUEST", plan.reason);
+							}
+							// A cancellable export owns one opaque control for its lifetime, keyed by
+							// the id the renderer made up for this run. Without an id (the CLI, an older
+							// renderer) the export simply has no handle, which is the state that existed
+							// before this feature and still works.
+							const exportId =
+								typeof request.payload.exportId === "string" ? request.payload.exportId : null;
+							const control =
+								exportId && compositorViewService.supportsMp4Cancel()
+									? compositorViewService.createMp4ExportControl()
+									: null;
+							if (exportId && control) {
+								activeExportCancels.set(exportId, () =>
+									compositorViewService.cancelMp4Export(control),
+								);
 							}
 							let stats: Awaited<ReturnType<CompositorViewService["exportMulti"]>>;
 							try {
@@ -458,16 +479,25 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 									request.payload.params,
 									(frames) => {
 										if (!sender.isDestroyed()) {
-											sender.send("export:native-progress", frames);
+											sender.send("export:native-progress", frames, exportId ?? undefined);
 										}
 									},
+									control ?? undefined,
 								);
 							} catch (error) {
 								// A half-written temp file is litter, not a result — and the user's
 								// previous export at the target path is still intact, which is the
 								// point of encoding here in the first place.
 								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
+								// "Stopped because the user asked" is not "failed". The renderer keys its
+								// cancel branch off this code; reporting it as an ordinary error would
+								// show a failure toast for something the user did on purpose.
+								if (String(error).includes("EXPORT_CANCELLED")) {
+									return createErrorResponse(requestId, "CANCELLED", "Export cancelled.");
+								}
 								throw error;
+							} finally {
+								if (exportId) activeExportCancels.delete(exportId);
 							}
 							if (!stats) {
 								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
@@ -479,6 +509,18 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							}
 							if (plan && !isExportRefusal(plan)) await commitExportFile(plan);
 							return createSuccessResponse(requestId, stats);
+						}
+						case "cancelExportMulti": {
+							// The handle lives here for the length of one export and is keyed by the id
+							// the renderer chose. An unknown id means the export already settled (or
+							// never started), which is not an error the UI has to show.
+							const id =
+								typeof request.payload?.exportId === "string" ? request.payload.exportId : "";
+							const cancel = activeExportCancels.get(id);
+							if (!cancel) {
+								return createSuccessResponse(requestId, { accepted: false });
+							}
+							return createSuccessResponse(requestId, { accepted: cancel() });
 						}
 						case "exportGif": {
 							const sender = event.sender;

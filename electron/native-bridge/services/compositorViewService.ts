@@ -805,6 +805,7 @@ export class CompositorViewService {
 		sceneJson?: string,
 		params?: ExportParamsInput,
 		onProgress?: (frames: number) => void,
+		control?: object,
 	): Promise<ExportStats | null> {
 		const addon = this.ensureAddon();
 		if (!addon) {
@@ -817,7 +818,29 @@ export class CompositorViewService {
 			sceneJson ? resolveSceneAssetPaths(sceneJson) : undefined,
 			params,
 			onProgress,
+			control,
 		);
+	}
+
+	/** True when this `.node` can stop an MP4 export mid-render. A stale addon predates the
+	 *  handle entirely; the export still runs, the user just cannot cancel it. */
+	supportsMp4Cancel(): boolean {
+		const addon = this.ensureAddon();
+		return Boolean(addon?.createMp4ExportControl && addon?.cancelMp4Export);
+	}
+
+	/** Opaque handle for one MP4 export, or null on a stale addon. Main owns it for the
+	 *  lifetime of the job — it is a napi External and must never cross to a renderer. */
+	createMp4ExportControl(): object | null {
+		const addon = this.ensureAddon();
+		if (!addon?.createMp4ExportControl) return null;
+		return addon.createMp4ExportControl();
+	}
+
+	cancelMp4Export(control: object): boolean {
+		const addon = this.ensureAddon();
+		if (!addon?.cancelMp4Export) return false;
+		return addon.cancelMp4Export(control);
 	}
 
 	/** Native GIF export. Same inputs as `exportMulti` — one clip list, one scene —

@@ -196,11 +196,25 @@ export function exportMultiNative(
 	outPath?: string,
 	sceneJson?: string,
 	params?: CompositorExportParams,
+	protectedPaths?: string[],
+	exportId?: string,
 ): Promise<CompositorExportResult> {
 	return requireNativeBridgeData<CompositorExportResult>({
 		domain: "compositor",
 		action: "exportMulti",
-		payload: { clips, outPath, sceneJson, params },
+		payload: { clips, outPath, sceneJson, params, protectedPaths, exportId },
+	});
+}
+
+/** Stop a running MP4 export. Main owns the handle; this only names it.
+ *
+ *  `accepted: false` means there was nothing left to cancel — the export had already settled,
+ *  which is not a failure: the caller's cancel request simply lost the race to completion. */
+export function cancelExportNative(exportId: string): Promise<{ accepted: boolean }> {
+	return requireNativeBridgeData<{ accepted: boolean }>({
+		domain: "compositor",
+		action: "cancelExportMulti",
+		payload: { exportId },
 	});
 }
 

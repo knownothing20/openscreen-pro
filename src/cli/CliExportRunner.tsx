@@ -36,7 +36,7 @@ import { mixVoiceoverIntoVideo } from "@/lib/exporter/voiceoverMix";
 import { exportGifNative, exportMultiNative, nativeBridgeClient } from "@/native";
 import type { CompositorClipInput } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
-import { type ExportProject, loadDocumentProject } from "./exportProject";
+import { type ExportProject, exportedInputPaths, loadDocumentProject } from "./exportProject";
 
 const MP4_EXPORT_FPS = 60;
 
@@ -323,16 +323,28 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 			};
 		}
 
+		// Everything this run reads, so the native pass can refuse a destination that would
+		// destroy one of them BEFORE it opens the encoder. Clips are already covered by the
+		// export itself; the voiceover and the project file are not, and `--out` pointing at
+		// either used to be caught only by the mix's write-back — after the damage.
+		const inputPaths = exportedInputPaths(request, clips);
+
 		// MP4: native writes outPath directly. When a voiceover is requested, mix
 		// it afterwards (the native pipeline has no extra-audio-track concept) and
 		// overwrite the same file.
-		await exportMultiNative(clips, outPath, sceneJson, {
-			width: outDims.width,
-			height: outDims.height,
-			fps: MP4_EXPORT_FPS,
-			codec: "h264",
-			bitrate: outDims.bitrate,
-		});
+		await exportMultiNative(
+			clips,
+			outPath,
+			sceneJson,
+			{
+				width: outDims.width,
+				height: outDims.height,
+				fps: MP4_EXPORT_FPS,
+				codec: "h264",
+				bitrate: outDims.bitrate,
+			},
+			inputPaths,
+		);
 
 		if (request.audioPath) {
 			window.electronAPI.cliProgress({ percentage: 100, phase: "mixing-voiceover" });
@@ -356,17 +368,10 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 				outPath,
 				// This second pass re-reads the export it just made and writes the mix back over
 				// it, so the target is deliberately its own previous output. Everything ELSE this
-				// pass reads must not become that target: the source media behind the clips, the
-				// voiceover being mixed in, and the project file itself. `write-export-to-path`
-				// has no clips to derive that list from, so it is handed here — spelled out from
-				// the same clip list the native render just used, not guessed.
-				[
-					...clips.flatMap((clip) => [clip.screenPath, clip.webcamPath]),
-					request.audioPath,
-					request.projectPath,
-				].filter(
-					(candidate): candidate is string => typeof candidate === "string" && candidate.length > 0,
-				),
+				// pass reads must not become that target — and it is the same list the native
+				// pass was given a moment ago, so both halves of the run agree on what is off
+				// limits.
+				inputPaths,
 			);
 			if (!saveResult.success) {
 				throw new Error(saveResult.message ?? `Failed to write mixed output to ${outPath}`);

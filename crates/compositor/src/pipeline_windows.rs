@@ -1298,9 +1298,10 @@ pub fn run_composited_multi(
     cfg: &Cfg,
     params: &ExportParams,
     progress: &mut dyn FnMut(u64),
+    cancel: Option<&dyn Fn() -> bool>,
 ) -> Result<Stats> {
     discard_partial_output(out, unsafe {
-        run_multi_inner(clips, out, gpu, comp, cfg, params, progress)
+        run_multi_inner(clips, out, gpu, comp, cfg, params, progress, cancel)
     })
 }
 
@@ -1641,6 +1642,7 @@ unsafe fn run_multi_inner(
     cfg: &Cfg,
     params: &ExportParams,
     progress: &mut dyn FnMut(u64),
+    cancel: Option<&dyn Fn() -> bool>,
 ) -> Result<Stats> {
     if clips.is_empty() {
         bail!("aucun clip à exporter");
@@ -1750,6 +1752,29 @@ unsafe fn run_multi_inner(
                 enc.send(outf)?;
                 drain_encoder(ectx, octx, ostream, opkt)?;
                 av_frame_free(&mut (outf as *mut _));
+            }
+            // Cancellation is checked per frame, before the frame is handed on: the export
+            // loop is where the time goes, so this is the only place a stop is worth anything.
+            // The error unwinds through `discard_partial_output`, which removes the temp file —
+            // the target was never opened, so nothing of the user's is at risk.
+            //
+            // The muxer is closed HERE, and not left to the error path, because `*_inner` has no
+            // RAII for those pointers (see the note on `discard_partial_output`). Without this the
+            // AVIOContext keeps the temp file open for the life of the process, and the cleanup
+            // that follows fails with EBUSY — the file then survives the cancel, which is exactly
+            // what a cancelled export must not do. This is also why the note said to revisit if a
+            // failed export ever became a normal mode of operation; cancelling makes it one.
+            if cancel.map(|c| c()).unwrap_or(false) {
+                unsafe {
+                    av_packet_free(&mut (opkt as *mut _));
+                    let mut pb = sn_fmt_get_pb(octx);
+                    if !pb.is_null() {
+                        avio_closep(&mut pb);
+                        sn_fmt_set_pb(octx, ptr::null_mut());
+                    }
+                    avformat_free_context(octx);
+                }
+                bail!("export cancelled");
             }
             progress(frame_index + 1);
             Ok(())

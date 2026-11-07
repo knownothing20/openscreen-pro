@@ -879,7 +879,19 @@ export type NativeBridgeRequest =
 				outPath?: string;
 				sceneJson?: string;
 				params?: CompositorExportParams;
+				/** Files this export reads that are NOT clips (voiceover, project file). The main
+				 *  process refuses to write over any of them, before the encoder opens anything. */
+				protectedPaths?: string[];
+				/** Renderer-chosen id for this run. Present → the export can be cancelled through
+				 *  `cancelExportMulti`; absent → no handle, same as before the feature existed. */
+				exportId?: string;
 			};
+			requestId?: string;
+	  }
+	| {
+			domain: "compositor";
+			action: "cancelExportMulti";
+			payload: { exportId: string };
 			requestId?: string;
 	  }
 	| {

@@ -760,3 +760,67 @@ describe("resolveSceneAssetPaths", () => {
 		expect(out.background.path).toBe("/wallpapers/absent.jpg");
 	});
 });
+
+describe("native MP4 cancellation capability", () => {
+	// Before this round the MP4 export had no handle at all: `exportMulti` was one long promise
+	// and the dialog's Cancel button was disabled for its whole lifetime. These two tests are the
+	// service half of that gap — the handle is created here, passed to native, and is the same
+	// object the cancel call names.
+	const stats = { frames: 3, wallS: 1, fps: 3, videoDurationS: 1 };
+
+	it("passes one opaque control to native exportMulti and cancels it", async () => {
+		const control = {};
+		let finish!: (value: typeof stats) => void;
+		const exportMulti = vi.fn(
+			() =>
+				new Promise<typeof stats>((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const cancelMp4Export = vi.fn(() => true);
+		const service = new CompositorViewService({
+			addon: {
+				exportMulti,
+				createMp4ExportControl: () => control,
+				cancelMp4Export,
+			} as unknown as CompositorViewAddon,
+		});
+
+		expect(service.supportsMp4Cancel()).toBe(true);
+		const handle = service.createMp4ExportControl();
+		expect(handle).toBe(control);
+
+		const progress = vi.fn();
+		const result = service.exportMulti(
+			[],
+			"/tmp/out.mp4",
+			undefined,
+			undefined,
+			progress,
+			handle ?? undefined,
+		);
+		expect(exportMulti).toHaveBeenCalledWith(
+			[],
+			"/tmp/out.mp4",
+			undefined,
+			undefined,
+			progress,
+			control,
+		);
+		expect(service.cancelMp4Export(handle ?? {})).toBe(true);
+		expect(cancelMp4Export).toHaveBeenCalledWith(control);
+
+		finish(stats);
+		await expect(result).resolves.toEqual(stats);
+	});
+
+	it("degrades to an uncancellable export on an addon that predates the handle", () => {
+		const exportMulti = vi.fn();
+		const service = new CompositorViewService({
+			addon: { exportMulti } as unknown as CompositorViewAddon,
+		});
+		expect(service.supportsMp4Cancel()).toBe(false);
+		expect(service.createMp4ExportControl()).toBeNull();
+		expect(service.cancelMp4Export({})).toBe(false);
+	});
+});

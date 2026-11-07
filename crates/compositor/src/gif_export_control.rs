@@ -34,6 +34,15 @@ impl GifExportControl {
         }
     }
 
+    /// Read-only view of the flag.
+    ///
+    /// The MP4 pipeline takes cancellation as a plain `Fn() -> bool` rather than this type, so
+    /// the compositor crate never has to know what a "control" is — this is the one adapter
+    /// between the two.
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire) == CANCELLED
+    }
+
     pub fn check(&self) -> Result<()> {
         if self.0.load(Ordering::Acquire) == CANCELLED {
             return Err(GifExportCancelled.into());

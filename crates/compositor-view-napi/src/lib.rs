@@ -598,6 +598,9 @@ pub struct ExportMultiTask {
     scene_json: Option<String>,
     params: Option<ExportParamsInput>,
     on_progress: Option<ThreadsafeFunction<u32, ErrorStrategy::Fatal>>,
+    /// Absent when the caller does not need to cancel (the bench and the integration tests do
+    /// not). When present, the export loop polls it once per frame.
+    control: Option<GifExportControl>,
 }
 
 impl Task for ExportMultiTask {
@@ -670,7 +673,17 @@ impl Task for ExportMultiTask {
         comp.set_scene(scene);
 
         let mut progress = throttled_progress(self.on_progress.take());
-        let s = pipeline::run_composited_multi(
+        // The pipeline polls this closure once per frame. It is checked against the control
+        // AFTER an error too, because "the export was cancelled" and "the export failed" are
+        // different outcomes and the caller must not have to guess which one it got.
+        let cancel_flag = self.control.clone();
+        let cancel = cancel_flag
+            .as_ref()
+            .map(|control| {
+                let control = control.clone();
+                move || control.is_cancelled()
+            });
+        let outcome = pipeline::run_composited_multi(
             &self.clips,
             &self.out_path,
             &gpu,
@@ -678,8 +691,17 @@ impl Task for ExportMultiTask {
             &cfg,
             &export_params,
             &mut progress,
-        )
-        .map_err(|e| Error::from_reason(format!("{e:#}")))?;
+            cancel.as_ref().map(|f| f as &dyn Fn() -> bool),
+        );
+        let s = match outcome {
+            Ok(stats) => stats,
+            Err(error) => {
+                if cancel_flag.map(|c| c.is_cancelled()).unwrap_or(false) {
+                    return Err(Error::from_reason("EXPORT_CANCELLED"));
+                }
+                return Err(Error::from_reason(format!("{error:#}")));
+            }
+        };
         Ok((s.frames as u32, s.wall_s, s.fps, s.video_duration_s))
     }
 
@@ -700,6 +722,7 @@ pub fn export_multi(
     scene_json: Option<String>,
     params: Option<ExportParamsInput>,
     on_progress: Option<JsFunction>,
+    control: Option<External<GifExportControl>>,
 ) -> Result<AsyncTask<ExportMultiTask>> {
     let clips = clips
         .into_iter()
@@ -718,6 +741,7 @@ pub fn export_multi(
         scene_json,
         params,
         on_progress: make_progress_tsfn(on_progress)?,
+        control: control.map(|c| c.clone()),
     }))
 }
 
@@ -758,6 +782,22 @@ pub fn create_gif_export_control() -> External<GifExportControl> {
 
 #[napi]
 pub fn cancel_gif_export(control: External<GifExportControl>) -> bool {
+    control.cancel()
+}
+
+/// Cancellation handle for a NATIVE MP4 export.
+///
+/// Same primitive as the GIF one — a shared atomic flag with a single winner between "cancel"
+/// and "publish" — because the question is the same one: the export loop is the only place a
+/// stop is worth anything. The MP4 pipeline takes it as a plain predicate (see
+/// `run_composited_multi`), so the compositor crate stays unaware of this type.
+#[napi]
+pub fn create_mp4_export_control() -> External<GifExportControl> {
+    External::new(GifExportControl::default())
+}
+
+#[napi]
+pub fn cancel_mp4_export(control: External<GifExportControl>) -> bool {
     control.cancel()
 }
 

@@ -6,7 +6,7 @@ import {
 } from "@/components/video-editor/projectPersistence";
 import { migrateProjectDataToAxcutDocument } from "@/lib/ai-edition/document/migrate";
 import { isAxcutDocumentFile } from "@/lib/ai-edition/schema";
-import { loadDocumentProject, type VideoProbe } from "./exportProject";
+import { exportedInputPaths, loadDocumentProject, type VideoProbe } from "./exportProject";
 
 const SCREEN = "/recordings/screen.mp4";
 
@@ -98,5 +98,34 @@ describe("loadDocumentProject", () => {
 		await expect(
 			loadDocumentProject({ ...savedDocument(), project: null }, noProbe),
 		).rejects.toThrow();
+	});
+});
+
+describe("exportedInputPaths (what a CLI run must never write over)", () => {
+	// `exportMulti` derives its own list from the clips. The voiceover and the project file are
+	// read AROUND that render, so they have to be named separately or the first pass has no idea
+	// they exist. This is the list both halves of the run are given.
+	const clip = { screenPath: "/rec/screen.mp4", webcamPath: "/rec/cam.mp4" };
+
+	it("names the clip sources, the voiceover and the project", () => {
+		expect(
+			exportedInputPaths({ audioPath: "/audio/voice.wav", projectPath: "/proj/demo.openscreen" }, [
+				clip,
+			]),
+		).toEqual(["/rec/screen.mp4", "/rec/cam.mp4", "/audio/voice.wav", "/proj/demo.openscreen"]);
+	});
+
+	it("drops the ones that are absent instead of shipping nulls", () => {
+		expect(
+			exportedInputPaths({ audioPath: null, projectPath: "/proj/demo.openscreen" }, [
+				{ screenPath: "/rec/screen.mp4", webcamPath: "" },
+			]),
+		).toEqual(["/rec/screen.mp4", "/proj/demo.openscreen"]);
+	});
+
+	it("survives a clip list with nothing decodable in it", () => {
+		expect(exportedInputPaths({ projectPath: "/proj/demo.openscreen" }, [{}])).toEqual([
+			"/proj/demo.openscreen",
+		]);
 	});
 });

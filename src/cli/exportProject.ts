@@ -59,3 +59,31 @@ export async function loadDocumentProject(raw: unknown, probe: VideoProbe): Prom
 			: { width: video?.width ?? 0, height: video?.height ?? 0 },
 	};
 }
+
+/**
+ * Every path a CLI export READS, and therefore must never become the destination of.
+ *
+ * `exportMulti` already knows the clips it renders and derives its own protected list from
+ * them. What it cannot know is the two files this runner reads AROUND the render: the
+ * voiceover it mixes in afterwards and the project it was told to export. Those are spelled
+ * out here and handed to the native export, so the check happens BEFORE the encoder opens
+ * anything.
+ *
+ * That ordering is the whole point. Without it, `--out` pointing at the voiceover passes the
+ * clip-only check, the native pass overwrites the voiceover with the freshly rendered video,
+ * and only the mix's write-back notices — after the file it was about to read is gone. Caught
+ * on a real run: the source hash changed and the error arrived from the wrong layer.
+ */
+export function exportedInputPaths(
+	request: { audioPath?: string | null; projectPath?: string | null },
+	clips: ReadonlyArray<{ screenPath?: string; webcamPath?: string }>,
+): string[] {
+	const paths = [
+		...clips.flatMap((clip) => [clip.screenPath, clip.webcamPath]),
+		request.audioPath,
+		request.projectPath,
+	];
+	return paths.filter(
+		(candidate): candidate is string => typeof candidate === "string" && candidate.length > 0,
+	);
+}

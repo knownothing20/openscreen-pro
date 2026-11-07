@@ -33,6 +33,7 @@ import {
 import { calculateMp4ExportSettings, wouldUpscale } from "@/lib/exporter/mp4ExportSettings";
 import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
 import {
+	cancelExportNative,
 	cancelGifExportNative,
 	exportGifNative,
 	exportMultiNative,
@@ -49,17 +50,22 @@ type Phase = "idle" | "configuring" | "rendering" | "writing" | "done" | "error"
 
 interface ActiveExport {
 	id?: string;
+	/** Which native canceller owns this id. Both are keyed by ids this dialog made up, so the
+	 *  only way to ask the wrong one is to forget — which is what a bare `id` invited. */
+	format?: "mp4" | "gif";
 	cancelRequested: boolean;
 	unsubscribe?: () => void;
 }
 
 function disposeExport(exportJob: ActiveExport | null) {
 	exportJob?.unsubscribe?.();
-	if (exportJob?.id) {
-		void cancelGifExportNative(exportJob.id).catch((error) => {
-			console.warn("[export] failed to cancel detached GIF export", error);
-		});
-	}
+	if (!exportJob?.id) return;
+	// Closing the dialog mid-render has to stop the work, not just forget about it — the
+	// export is still writing to a temp file the user will never see again.
+	const cancel = exportJob.format === "gif" ? cancelGifExportNative : cancelExportNative;
+	void cancel(exportJob.id).catch((error) => {
+		console.warn("[export] failed to cancel detached export", error);
+	});
 }
 
 /** hh:mm:ss (always shows hours, unlike the shared mm:ss `formatTimePadded`) — exports can run
@@ -307,7 +313,8 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		job.cancelRequested = true;
 		setCancelPending(true);
 		try {
-			await cancelGifExportNative(job.id);
+			const cancel = job.format === "gif" ? cancelGifExportNative : cancelExportNative;
+			await cancel(job.id);
 			// Native settlement decides the winner and confirms file cleanup.
 		} catch (err) {
 			if (activeExport.current !== job) return;
@@ -368,7 +375,10 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		// user previewed.
 		{
 			const job: ActiveExport = {
-				id: format === "gif" ? crypto.randomUUID() : undefined,
+				// MP4 is cancellable now too, so both formats get an id. Without one the native
+				// side has no handle and the export can only be waited out.
+				id: crypto.randomUUID(),
+				format,
 				cancelRequested: false,
 			};
 			activeExport.current = job;
@@ -428,16 +438,25 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								},
 								job.id,
 							)
-						: await exportMultiNative(exportClips, pickedPath, sceneJson, {
-								width: outDims?.width,
-								height: outDims?.height,
-								fps,
-								// H.264 only. The native pipeline still encodes H.265, but nothing
-								// offers it: it is software-only on Linux, slower than software on the
-								// measured Macs, and the files half the players cannot open.
-								codec: "h264",
-								bitrate: outDims?.bitrate,
-							});
+						: await exportMultiNative(
+								exportClips,
+								pickedPath,
+								sceneJson,
+								{
+									width: outDims?.width,
+									height: outDims?.height,
+									fps,
+									// H.264 only. The native pipeline still encodes H.265, but nothing
+									// offers it: it is software-only on Linux, slower than software on the
+									// measured Macs, and the files half the players cannot open.
+									codec: "h264",
+									bitrate: outDims?.bitrate,
+								},
+								// The dialog is not the CLI: it reads no file besides the clips, so it has
+								// no extra protected paths to declare.
+								undefined,
+								job.id,
+							);
 				if (activeExport.current !== job) return;
 				setSavedPath(pickedPath);
 				setPhase("done");
@@ -698,7 +717,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 						type="button"
 						className={`${styles.btn} ${styles.btnSecondary}`}
 						onClick={handleCancel}
-						disabled={isBusy && !(format === "gif" && phase === "rendering" && !cancelPending)}
+						disabled={isBusy && !(phase === "rendering" && !cancelPending)}
 						aria-busy={cancelPending}
 					>
 						{cancelPending && <Loader2 size={14} className="animate-spin" />}

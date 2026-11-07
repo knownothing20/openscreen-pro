@@ -254,3 +254,24 @@ describe("write-back entry (protected paths the clips do not name)", () => {
 		expect(isExportRefusal(out)).toBe(false);
 	});
 });
+
+describe("discardExportFile — cleanup must never fail the operation", () => {
+	it("swallows a path it cannot remove instead of throwing", async () => {
+		// A real locked file is hard to stage portably; a directory standing where the file should
+		// be produces the same class of error (EPERM/EISDIR) and proves the contract: the caller
+		// asked to clean up, and cleanup does not get to fail the export.
+		const blocked = path.join(dir, "stuck.mp4");
+		await fs.mkdir(blocked);
+		await fs.writeFile(path.join(blocked, "keep"), "x");
+		await expect(discardExportFile(blocked)).resolves.toBeUndefined();
+		// The thing it could not remove is still there — reported, not silently "cleaned".
+		expect((await fs.stat(blocked)).isDirectory()).toBe(true);
+	});
+
+	it("still removes an ordinary file", async () => {
+		const temp = path.join(dir, "ordinary.mp4.partial-x");
+		await fs.writeFile(temp, "half written");
+		await discardExportFile(temp);
+		await expect(fs.stat(temp)).rejects.toThrow();
+	});
+});

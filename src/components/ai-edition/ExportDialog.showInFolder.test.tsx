@@ -14,6 +14,7 @@ vi.mock("sonner", () => ({
 vi.mock("@/native", () => ({
 	exportMultiNative: vi.fn(async () => ({ videoDurationS: 12, wallS: 3 })),
 	exportGifNative: vi.fn(async () => ({ videoDurationS: 12, wallS: 3 })),
+	cancelExportNative: vi.fn(async () => ({ accepted: true })),
 	useIsCpuCompositor: () => false,
 }));
 

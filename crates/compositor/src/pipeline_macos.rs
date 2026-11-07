@@ -1138,6 +1138,7 @@ pub fn run_composited_multi(
     cfg: &crate::config::Cfg,
     params: &ExportParams,
     progress: &mut dyn FnMut(u64),
+    cancel: Option<&dyn Fn() -> bool>,
 ) -> Result<Stats> {
     if clips.is_empty() {
         bail!("run_composited_multi: aucun clip à exporter");
@@ -1246,6 +1247,9 @@ pub fn run_composited_multi(
                 {
                     let _p = crate::export_probe::scope(crate::export_probe::Stage::DrainMux);
                     drain_encoder(ectx, octx, ostream, opkt)?;
+                }
+                if cancel.map(|c| c()).unwrap_or(false) {
+                    bail!("export cancelled");
                 }
                 {
                     let _p = crate::export_probe::scope(crate::export_probe::Stage::Progress);

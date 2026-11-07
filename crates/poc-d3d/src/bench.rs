@@ -157,7 +157,7 @@ fn run_bench(args: &[String]) -> Result<()> {
             };
             let path = format!("{out}/{}_{:?}.mp4", cfg.name, backend).to_lowercase();
             let s = pipeline::run_composited_multi(
-                &[clip], &path, &gpu, &comp, cfg, &params, &mut |_| {},
+                &[clip], &path, &gpu, &comp, cfg, &params, &mut |_| {}, None,
             )?;
             println!(
                 "{:<4} {:>4}f  {:>8.3}s  {:>7.2} fps  {:>7.2} ms/f  → {}",

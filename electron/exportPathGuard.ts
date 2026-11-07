@@ -229,10 +229,34 @@ export async function commitExportFile(plan: ExportWritePlan): Promise<void> {
 }
 
 /**
- * Drop a temp file that will never be committed. Missing is success: a cancelled export may
- * have removed it already, and a cleanup that throws over that would turn "the export was
- * cancelled" into "the export failed".
+ * Drop a temp file that will never be committed.
+ *
+ * Best-effort by contract, and it must never throw. Two reasons, both learned from a real run:
+ *
+ *  - Missing is success. A cancelled export's pipeline may have removed the file already.
+ *  - Windows keeps the file locked for a moment after the writer lets go, and a CANCELLED export
+ *    is exactly the case where the writer was interrupted mid-frame. The first `unlink` comes
+ *    back `EBUSY`, and letting that escape turned "the user pressed Cancel" into "the export
+ *    failed" — the dialog showed a raw EBUSY instead of returning to its options, and the temp
+ *    file stayed on disk. So a lock is retried briefly, and anything else is given up on.
+ *
+ * A file that survives all of that is left behind and reported, because the alternative — failing
+ * the operation the user asked for over a file they never see — is strictly worse.
  */
+const DISCARD_RETRY_MS = [0, 30, 60, 120, 240, 480];
+
 export async function discardExportFile(tempPath: string): Promise<void> {
-	await fs.rm(tempPath, { force: true });
+	for (const delay of DISCARD_RETRY_MS) {
+		if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+		try {
+			await fs.rm(tempPath, { force: true });
+			return;
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			// `force` already swallows ENOENT. A lock may clear on its own; anything else will
+			// not, so waiting again is pointless.
+			if (code !== "EBUSY" && code !== "EPERM" && code !== "EACCES") return;
+		}
+	}
+	console.warn(`[export] could not remove the temporary export file: ${tempPath}`);
 }

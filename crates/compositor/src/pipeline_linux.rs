@@ -850,6 +850,7 @@ pub fn run_composited_multi(
     cfg: &Cfg,
     params: &ExportParams,
     progress: &mut dyn FnMut(u64),
+    cancel: Option<&dyn Fn() -> bool>,
 ) -> Result<Stats> {
     if clips.is_empty() {
         bail!("run_composited_multi: aucun clip a exporter");
@@ -1087,6 +1088,9 @@ pub fn run_composited_multi(
                         *pending = Some((slot, idx, encoded_pts));
                         encoded_pts += 1;
                         *next = (slot + 1) % staging.len();
+                        if cancel.map(|c| c()).unwrap_or(false) {
+                            bail!("export cancelled");
+                        }
                         progress(n + 1);
                         return Ok(());
                     }

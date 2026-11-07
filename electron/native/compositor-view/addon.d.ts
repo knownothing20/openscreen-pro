@@ -223,7 +223,16 @@ export interface CompositorViewAddon {
 		sceneJson?: string,
 		params?: ExportParamsInput,
 		onProgress?: (frames: number) => void,
+		/** Opaque napi External from `createMp4ExportControl`. Kept in main, never sent to a
+		 *  renderer. Omitted → the export cannot be cancelled, which is what the bench and the
+		 *  integration tests want. */
+		control?: object,
 	): Promise<ExportStats>;
+	/** Cancellation handle for a native MP4 export. Optional at the type level for the same
+	 *  reason as the GIF pair below: a `.node` from before this export exists has neither, and
+	 *  the caller degrades to an uncancellable export instead of failing one. */
+	createMp4ExportControl?(): object;
+	cancelMp4Export?(control: object): boolean;
 	/** Native GIF export. Identical inputs to `exportMulti` — same clips, same
 	 *  scene — because it is the same render: both drive `walk_composited_timeline`
 	 *  in the compositor crate and differ only in the encoder. Cursor, background,

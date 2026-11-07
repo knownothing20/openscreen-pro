@@ -151,6 +151,7 @@ fn mp4_export_frame_count_follows_output_fps() {
         &Cfg::c8(),
         &params,
         &mut |_| {},
+        None,
     )
     .expect("mp4 export");
 
@@ -267,6 +268,7 @@ fn export_frames(clips: &[ClipSource], dir: &PathBuf, out_name: &str, fps: u32) 
         &Cfg::c8(),
         &params,
         &mut |_| {},
+        None,
     )
     .expect("mp4 export");
     stats.frames

@@ -817,6 +817,7 @@ fn export_linux_mp4() {
         &Cfg::c8(),
         &params,
         &mut |n| last = n,
+        None,
     )
     .expect("run_composited_multi");
     println!(
