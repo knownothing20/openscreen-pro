@@ -236,6 +236,49 @@ export function clampSpanAgainstNeighbours(
 	return { start, end: Math.max(start, end) };
 }
 
+/**
+ * How far a SELECTION of pills may travel before one of them hits something.
+ *
+ * Moving several pills as one block is a different question from moving one: the delta has
+ * to be legal for every member at once, or the block shears — the members that hit a wall
+ * stop while the others keep moving, and the relative spacing the user was preserving is
+ * exactly what gets lost. So the answer is a single delta, found by intersecting every
+ * member's constraints against the timeline ends and against the pills NOT in the block.
+ *
+ * Blockers are walls here, same as in {@link clampSpanAgainstNeighbours}: they never move,
+ * and a member that starts out on one side of a blocker stays on that side. That is why the
+ * constraints are read off the ORIGINAL spans — the deltas are not applied one after another,
+ * so no member can be judged against another member's already-moved position.
+ *
+ * Returns 0 when the block has no legal movement at all, which is the honest answer: a block
+ * wedged between two neighbours should not fall back to "move the one that can".
+ */
+export function clampGroupShift(
+	members: ReadonlyArray<{ start: number; end: number }>,
+	blockers: ReadonlyArray<{ start: number; end: number }>,
+	totalSec: number,
+	deltaSec: number,
+): number {
+	let low = Number.NEGATIVE_INFINITY;
+	let high = Number.POSITIVE_INFINITY;
+	for (const member of members) {
+		low = Math.max(low, -member.start);
+		high = Math.min(high, totalSec - member.end);
+	}
+	for (const member of members) {
+		for (const blocker of blockers) {
+			// A blocker to the right limits a rightward move (the member's tail may reach its
+			// head); one to the left limits a leftward move. A blocker already overlapping the
+			// member constrains nothing — that pair is a pre-existing overlap, and a block move
+			// is not the place to resolve it.
+			if (blocker.start >= member.end) high = Math.min(high, blocker.start - member.end);
+			if (blocker.end <= member.start) low = Math.max(low, blocker.end - member.start);
+		}
+	}
+	if (low > high) return 0;
+	return Math.min(high, Math.max(low, deltaSec));
+}
+
 /** A pill as the ruler draws it: a run of same-identity regions that touch. */
 export interface RegionPill<T> extends MergedSpan {
 	/** First region under the pill — carries the payload the label needs. */

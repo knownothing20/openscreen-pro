@@ -421,6 +421,16 @@ describe("V4Timeline lane pill keyboard", () => {
 		expect(tl.selectRegion).toHaveBeenCalledWith("annotation", "ann1", { additive: true });
 	});
 
+	it("adds on Ctrl and Cmd too — the modifiers other editors use for it", () => {
+		// Shift is what this app's own tooltips teach, but Ctrl/Cmd is what a hand trained on
+		// any other timeline reaches for. All three mean "keep what I had, add this".
+		const { pill, tl } = renderTimeline();
+		fireEvent.keyDown(pill, { key: "Enter", ctrlKey: true });
+		fireEvent.keyDown(pill, { key: "Enter", metaKey: true });
+		expect(tl.selectRegion).toHaveBeenNthCalledWith(1, "annotation", "ann1", { additive: true });
+		expect(tl.selectRegion).toHaveBeenNthCalledWith(2, "annotation", "ann1", { additive: true });
+	});
+
 	it("leaves every other key to the shell's shortcut handler", () => {
 		// The editor binds single letters (Z adds a zoom, T a trim, D deletes). Swallowing
 		// them here would silently disable every shortcut while a pill has focus.

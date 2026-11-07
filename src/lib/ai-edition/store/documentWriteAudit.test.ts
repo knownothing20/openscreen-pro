@@ -297,6 +297,9 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeClip", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeRegion", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeRegions", "save", "gesture"),
+	// Moving a multi-selection of moves as one block. One write however many pills travel
+	// with it, which is the contract: the block is one gesture and has to be one Ctrl+Z.
+	w("src/lib/ai-edition/store/useTimeline.ts", "moveMotionRegions", "save", "gesture"),
 	// Recording markers: the ✕ on a tick, and the label typed into one. Both are the
 	// user's own edits, and both are undoable for that reason — a marker they deleted by
 	// mistake comes back with Ctrl+Z, exactly like a region.

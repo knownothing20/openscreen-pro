@@ -9,6 +9,7 @@ import type { AxcutClip, AxcutTrimRange } from "../schema";
 import {
 	anchorRawRegionsToClips,
 	anchorRegionsWithDerivedMs,
+	clampGroupShift,
 	clampSpanAgainstNeighbours,
 	coalesceByIdentity,
 	coalesceRegionsForRuler,
@@ -677,6 +678,46 @@ describe("clampSpanAgainstNeighbours (rule 2 — repel)", () => {
 		expect(
 			clampSpanAgainstNeighbours({ start: 2, end: 4 }, "fast", [other("n", 8, 9, "slow")]),
 		).toEqual({ start: 2, end: 4 });
+	});
+});
+
+describe("clampGroupShift (a block of pills moves, or none does)", () => {
+	const span = (start: number, end: number) => ({ start, end });
+
+	it("lets a free block travel the whole requested distance", () => {
+		expect(clampGroupShift([span(2, 4), span(6, 8)], [], 20, 3)).toBe(3);
+	});
+
+	it("stops the block at the timeline's head, by the member that is closest to it", () => {
+		// The leading member is at 1s, so a 5s leftward move can only be -1.
+		expect(clampGroupShift([span(1, 3), span(6, 8)], [], 20, -5)).toBe(-1);
+	});
+
+	it("stops the block at the timeline's tail, by the member that is closest to it", () => {
+		expect(clampGroupShift([span(1, 3), span(15, 18)], [], 20, 5)).toBe(2);
+	});
+
+	it("stops at a blocker that is not in the block", () => {
+		// Moving right, the block's tail (5s) may only reach the blocker's head (9s).
+		expect(clampGroupShift([span(1, 5)], [span(9, 12)], 20, 6)).toBe(4);
+	});
+
+	it("stops at a blocker on the left", () => {
+		expect(clampGroupShift([span(6, 8)], [span(0, 4)], 20, -5)).toBe(-2);
+	});
+
+	it("keeps the spacing inside the block even when a blocker limits it", () => {
+		// Two members 4s apart, a wall at 10. The whole block moves 2s; the gap stays 4s.
+		const members = [span(2, 4), span(6, 8)];
+		const d = clampGroupShift(members, [span(10, 12)], 20, 9);
+		expect(d).toBe(2);
+		const moved = members.map((m) => ({ start: m.start + d, end: m.end + d }));
+		expect(moved[1].start - moved[0].end).toBe(2);
+	});
+
+	it("answers zero when the block is wedged and has no legal move at all", () => {
+		// 4..6 between a wall ending at 4 and one starting at 6: no room in either direction.
+		expect(clampGroupShift([span(4, 6)], [span(0, 4), span(6, 9)], 20, 3)).toBe(0);
 	});
 });
 

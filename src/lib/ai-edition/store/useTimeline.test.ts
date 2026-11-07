@@ -354,6 +354,67 @@ describe("useTimeline.moveClip / duplicateClip (delegates to document/timeline.t
 		expect(bridgeMocks.save).not.toHaveBeenCalled();
 	});
 
+	it("moveClip no-ops when the clip is dropped where it already sits", async () => {
+		// `toIndex` counts insert positions in the list WITHOUT the dragged clip, so index 0
+		// is exactly where clip_a already is. Recorded as an undo step, it would make the next
+		// Ctrl+Z appear to do nothing. (Index 1 is a genuine move down by one, so it is not
+		// part of this case — the reorder test below covers it.)
+		const { result } = renderTimeline();
+		const stepsBefore = past.length;
+		await act(async () => {
+			await result.current.moveClip("clip_a", 0);
+		});
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
+		expect(past).toHaveLength(stepsBefore);
+		expect(useProjectStore.getState().document?.timeline.clips.map((c) => c.id)).toEqual([
+			"clip_a",
+			"clip_b",
+		]);
+	});
+
+	it("keeps each clip's own hard cut through a reorder, and one undo puts the order back", async () => {
+		// A hard cut is a property of the clip it sits on ("do not blend into what follows"),
+		// so it must travel WITH that clip rather than stay at the position it used to occupy.
+		const clipped: AxcutDocument = {
+			...twoClipDoc,
+			timeline: {
+				...twoClipDoc.timeline,
+				clips: twoClipDoc.timeline.clips.map((c) =>
+					c.id === "clip_a" ? { ...c, hardCutAfter: true } : c,
+				),
+			},
+		};
+		useProjectStore.setState({ document: clipped });
+		const { result } = renderTimeline();
+		const stepsBefore = past.length;
+
+		await act(async () => {
+			await result.current.moveClip("clip_a", 1);
+		});
+
+		const clips = useProjectStore.getState().document?.timeline.clips ?? [];
+		expect(clips.map((c) => c.id)).toEqual(["clip_b", "clip_a"]);
+		expect(clips.find((c) => c.id === "clip_a")?.hardCutAfter).toBe(true);
+		expect(clips.find((c) => c.id === "clip_b")?.hardCutAfter).toBeUndefined();
+		// The timeline is resequenced, not just reordered: no gap, no overlap.
+		expect(clips[0].timelineStartSec).toBe(0);
+		expect(clips[1].timelineStartSec).toBe(clips[0].timelineEndSec);
+		// Source ranges are the clip's own and do not move with the position.
+		expect(clips.find((c) => c.id === "clip_b")).toMatchObject({
+			sourceStartSec: 15,
+			sourceEndSec: 25,
+		});
+		expect(past).toHaveLength(stepsBefore + 1);
+
+		act(() => {
+			undo();
+		});
+		expect(useProjectStore.getState().document?.timeline.clips.map((c) => c.id)).toEqual([
+			"clip_a",
+			"clip_b",
+		]);
+	});
+
 	it("duplicateClip inserts a copy right after the original and selects it", async () => {
 		const { result } = renderTimeline();
 		await act(async () => {
@@ -1830,7 +1891,9 @@ describe("useTimeline save failures", () => {
 			await result.current.splitClipAtPlayhead();
 		});
 
-		expect(toastErrorMock).toHaveBeenCalledWith("Failed to save project", { description: "disk full" });
+		expect(toastErrorMock).toHaveBeenCalledWith("Failed to save project", {
+			description: "disk full",
+		});
 		expect(useProjectStore.getState().document?.timeline.clips).toHaveLength(1);
 		expect(useProjectStore.getState().document?.timeline.clips[0]?.hardCutAfter).toBeUndefined();
 		expect(past).toHaveLength(stepsBefore);
@@ -1842,7 +1905,10 @@ describe("useTimeline save failures", () => {
 		useProjectStore.setState({ currentTimeSec: 5 });
 		// The bridge echoes the document back on success; a bare `{ success: true }` would leave
 		// the store with nothing to adopt and this test would pass for the wrong reason.
-		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({ success: true, document: doc }));
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
 		const stepsBefore = past.length;
 		const { result } = renderTimeline();
 
@@ -3190,5 +3256,219 @@ describe("useTimeline.splitClipAtPlayhead — cutting a clip that already ends i
 		expect(spans()).toEqual(["0-6|cut", "6-12"]);
 		expect(redo()).toBe(true);
 		expect(spans()).toEqual(["0-3|cut", "3-6|cut", "6-12"]);
+	});
+});
+
+describe("batch editing a multi-selection of moves", () => {
+	// The camera asset the move gate asks for (`hasAnyClipWithCamera`); the same one the
+	// camera describe above builds, kept local so these tests do not share its fixture.
+	const cameraAsset = {
+		id: "asset_1",
+		kind: "video" as const,
+		label: "screen.webm",
+		originalPath: "/tmp/screen.webm",
+		durationSec: 30,
+		video: { codec: "unknown", width: 1920, height: 1080, fps: 0 },
+		cameraTrack: {
+			type: "video" as const,
+			sourcePath: "/tmp/camera.webm",
+			startMs: 0,
+			offsetMs: 0,
+			visible: true,
+			width: 1280,
+			height: 720,
+		},
+	};
+
+	const motion = () => useProjectStore.getState().document?.cameraMotionRegions ?? [];
+	const screenMotion = () => useProjectStore.getState().document?.screenMotionRegions ?? [];
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: { ...sampleDoc, assets: [cameraAsset] },
+			currentTimeSec: 1,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	/** Two disjoint moves: 1–3s (fullscreen) and 5–7s (default), both on clip_a. */
+	const seedTwoMoves = async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addCameraMotion();
+		});
+		useProjectStore.setState({ currentTimeSec: 5 });
+		await act(async () => {
+			await result.current.addCameraMotion(2, CAMERA_MOTION_DEFAULT_TARGET);
+		});
+		const ids = motion().map((r) => r.id);
+		expect(ids).toHaveLength(2);
+		return { result, ids };
+	};
+
+	it("moves every selected move by the same delta, keeping their spacing", async () => {
+		const { result, ids } = await seedTwoMoves();
+		const savesBefore = bridgeMocks.save.mock.calls.length;
+		const stepsBefore = past.length;
+
+		await act(async () => {
+			await result.current.moveMotionRegions(
+				[
+					{ kind: "cameraMotion", id: ids[0] },
+					{ kind: "cameraMotion", id: ids[1] },
+				],
+				500,
+			);
+		});
+
+		expect(motion().map((r) => [r.startMs, r.endMs])).toEqual([
+			[1500, 3500],
+			[5500, 7500],
+		]);
+		// The gap is the thing a block move is FOR: it must not change.
+		expect(motion()[1].startMs - motion()[0].endMs).toBe(2000);
+		// One write, one undo step, for the whole block.
+		expect(bridgeMocks.save).toHaveBeenCalledTimes(savesBefore + 1);
+		expect(past).toHaveLength(stepsBefore + 1);
+	});
+
+	it("carries each region's own target and timing, and leaves the clip anchor alone", async () => {
+		const { result, ids } = await seedTwoMoves();
+		const before = motion().map((r) => ({
+			id: r.id,
+			target: r.target,
+			timing: r.timing,
+			clipId: r.clipId,
+		}));
+
+		await act(async () => {
+			await result.current.moveMotionRegions(
+				[
+					{ kind: "cameraMotion", id: ids[0] },
+					{ kind: "cameraMotion", id: ids[1] },
+				],
+				-500,
+			);
+		});
+
+		const after = motion().map((r) => ({
+			id: r.id,
+			target: r.target,
+			timing: r.timing,
+			clipId: r.clipId,
+		}));
+		// Same ids, same payload, same anchor — only the span moved.
+		expect(after).toEqual(before);
+		expect(motion().map((r) => r.startMs)).toEqual([500, 4500]);
+	});
+
+	it("undoes the whole block in one step", async () => {
+		const { result, ids } = await seedTwoMoves();
+		const before = motion().map((r) => [r.startMs, r.endMs]);
+
+		await act(async () => {
+			await result.current.moveMotionRegions(
+				[
+					{ kind: "cameraMotion", id: ids[0] },
+					{ kind: "cameraMotion", id: ids[1] },
+				],
+				800,
+			);
+		});
+		expect(motion().map((r) => [r.startMs, r.endMs])).not.toEqual(before);
+
+		act(() => {
+			undo();
+		});
+		expect(motion().map((r) => [r.startMs, r.endMs])).toEqual(before);
+	});
+
+	it("writes nothing for a zero delta or a selection with no moves in it", async () => {
+		const { result, ids } = await seedTwoMoves();
+		const savesBefore = bridgeMocks.save.mock.calls.length;
+		const stepsBefore = past.length;
+
+		await act(async () => {
+			await result.current.moveMotionRegions([{ kind: "cameraMotion", id: ids[0] }], 0);
+		});
+		await act(async () => {
+			await result.current.moveMotionRegions([{ kind: "zoom", id: "z1" }], 500);
+		});
+
+		expect(bridgeMocks.save).toHaveBeenCalledTimes(savesBefore);
+		expect(past).toHaveLength(stepsBefore);
+	});
+
+	it("applies pasted properties to every selected move in one write", async () => {
+		const { result, ids } = await seedTwoMoves();
+		// Give the second move a target of its own, so the pasted values differ from BOTH
+		// recipients' current ones. Without that, one of them would already match the source
+		// and the test would pass even if only the focused move were patched — which is the
+		// exact defect it exists to catch.
+		await act(async () => {
+			await result.current.setCameraMotionTarget(ids[1], {
+				size: 0.5,
+				position: { x: 0.3, y: 0.3 },
+			});
+		});
+		const source = motion().find((r) => r.id === ids[1]);
+		expect(source?.target.size).toBe(0.5);
+		expect(motion().find((r) => r.id === ids[0])?.target.size).toBe(1);
+
+		act(() => {
+			result.current.selectRegion("cameraMotion", ids[0]);
+			result.current.selectRegion("cameraMotion", ids[1], { additive: true });
+		});
+		expect(result.current.multiSelection).toHaveLength(2);
+
+		const savesBefore = bridgeMocks.save.mock.calls.length;
+		const stepsBefore = past.length;
+		let outcome: string | undefined;
+		await act(async () => {
+			outcome = await result.current.pasteMotionAttributes({
+				kind: "cameraMotion",
+				region: { ...source },
+			});
+		});
+
+		expect(outcome).toBe("saved");
+		// Both now carry the source's target — the recipient that was NOT focused included.
+		expect(motion().every((r) => r.target.size === 0.5)).toBe(true);
+		expect(motion().every((r) => r.target.position.x === 0.3)).toBe(true);
+		expect(bridgeMocks.save).toHaveBeenCalledTimes(savesBefore + 1);
+		expect(past).toHaveLength(stepsBefore + 1);
+	});
+
+	it("still refuses a paste whose kind is not in the selection", async () => {
+		const { result, ids } = await seedTwoMoves();
+		const source = motion()[0];
+
+		act(() => {
+			result.current.selectRegion("screenMotion", "sm_1");
+		});
+		let outcome: string | undefined;
+		await act(async () => {
+			outcome = await result.current.pasteMotionAttributes({
+				kind: "cameraMotion",
+				region: { ...source },
+			});
+		});
+
+		expect(outcome).toBe("invalidTarget");
+		expect(motion().map((r) => r.id)).toEqual(ids);
+		expect(screenMotion()).toHaveLength(0);
 	});
 });

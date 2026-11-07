@@ -64,7 +64,7 @@ import {
 	setTimelineScale,
 } from "@/lib/ai-edition/timeline/newRegionDuration";
 import { ventilateSpanAcrossClips } from "@/lib/ai-edition/timeline/region-ventilation";
-import { coalesceRegionsForRuler } from "@/lib/ai-edition/timeline/timelineMap";
+import { clampGroupShift, coalesceRegionsForRuler } from "@/lib/ai-edition/timeline/timelineMap";
 import {
 	coalescedTrimGroups,
 	resolveTimelineSpanToTrim,
@@ -156,6 +156,18 @@ const PILL_SNAP_PX = 8;
  * this path.
  */
 const PILL_DRAG_SLOP_PX = 4;
+
+/**
+ * Shift joins a pill to the selection — and so do Ctrl and Cmd, which is what most editors
+ * use for it and what the hand reaches for without being told. All three mean one thing
+ * here: keep what I had, add this.
+ *
+ * Module scope, not a closure: it is pure, and a function recreated every render would make
+ * every `useCallback` that reads it look stale to the linter (and really be, for anything
+ * memoised on it).
+ */
+const additiveClick = (e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) =>
+	e.shiftKey || e.ctrlKey || e.metaKey;
 // One audio pill's height, the vertical step between stacked rows, and lane padding
 // are defined in audioTracks.ts and imported above.
 // The size a newly created pill aims for (PILL_CREATE_PX) lives in
@@ -991,12 +1003,16 @@ export function V4Timeline({
 		kind: LanePill["kind"];
 		start: number;
 		end: number;
+		/** Set for a block move: every pill travelling with this one, at its live position. */
+		group?: Array<{ id: string; start: number; end: number }>;
 	} | null>(null);
 	const activePillDragRef = useRef<{
 		id: string;
 		kind: LanePill["kind"];
 		start: number;
 		end: number;
+		/** Set for a block move: every pill travelling with this one, at its live position. */
+		group?: Array<{ id: string; start: number; end: number }>;
 	} | null>(null);
 
 	// Drag a lane pill to move it (mode "move", keeps duration) or resize one
@@ -1009,11 +1025,60 @@ export function V4Timeline({
 		[tl],
 	);
 
+	/**
+	 * The other moves that should travel with `pill`, when it is grabbed as part of a live
+	 * multi-selection of the same kind.
+	 *
+	 * Only a block MOVE, never an edge resize: growing every member of a block by the same
+	 * amount is not something the user asked for, and "resize a multi-selection" has no
+	 * agreed meaning. Only when the grabbed pill is itself in the selection, too — dragging
+	 * an unselected pill must not drag strangers along.
+	 *
+	 * The blockers are the rest of the same lane (a Full Camera pill shares the camera lane),
+	 * because those are the things this block would visibly collide with.
+	 */
+	const motionGroupFor = useCallback(
+		(
+			pill: LanePill,
+		): {
+			members: Array<{ id: string; start: number; end: number }>;
+			blockers: Array<{ start: number; end: number }>;
+		} | null => {
+			if (pill.kind !== "cameraMotion" && pill.kind !== "screenMotion") return null;
+			const selected = tl.multiSelection.filter((h) => h.kind === pill.kind);
+			if (selected.length < 2) return null;
+			if (!selected.some((h) => h.id === pill.id)) return null;
+			const lane =
+				pill.kind === "cameraMotion"
+					? [...cameraFullscreenPills, ...cameraMotionPills]
+					: screenMotionPills;
+			const byId = new Map(lane.map((p) => [p.id, p]));
+			const members = selected
+				.map((h) => byId.get(h.id))
+				.filter((p): p is LanePill => p !== undefined)
+				.map((p) => ({ id: p.id, start: p.start, end: p.end }));
+			// One member means the user picked pills that are not on this lane (or not in the
+			// document any more): there is no block, and a "group" of one would only make the
+			// single-pill path behave differently for no reason.
+			if (members.length < 2) return null;
+			const memberIds = new Set(members.map((m) => m.id));
+			const blockers = lane
+				.filter((p) => !memberIds.has(p.id))
+				.map((p) => ({ start: p.start, end: p.end }));
+			return { members, blockers };
+		},
+		[tl.multiSelection, cameraFullscreenPills, cameraMotionPills, screenMotionPills],
+	);
+
 	const startPillDrag = useCallback(
 		(e: ReactPointerEvent, pill: LanePill, dragMode: "move" | "l" | "r") => {
 			e.preventDefault();
 			e.stopPropagation();
-			selectPill(pill, e.shiftKey);
+			selectPill(pill, additiveClick(e));
+			// A block move, when this pill is part of a multi-selection of moves. Read after
+			// the select above, so grabbing a pill that was NOT selected yet does not drag the
+			// old selection along — the first press of a new drag means "just this one".
+			const group = dragMode === "move" ? motionGroupFor(pill) : null;
 			// Scale drag deltas against the canvas (full zoomed timeline) width, so a
 			// drag tracks the cursor exactly regardless of padding, scrollbar or zoom.
 			const el = canvasRef.current;
@@ -1100,6 +1165,32 @@ export function V4Timeline({
 				const dxSec = ((ev.clientX - startX) / r.width) * total;
 				let ns = pill.start;
 				let ne = pill.end;
+				if (dragMode === "move" && group) {
+					// One delta for the whole block, clamped once — clamping per pill is what
+					// makes a block shear. No snapping either: a snap would move the grabbed
+					// pill by a few pixels and leave the rest where they were, which is the
+					// same defect with a nicer excuse.
+					const d = clampGroupShift(group.members, group.blockers, total, dxSec);
+					const shifted = group.members.map((m) => ({
+						id: m.id,
+						start: m.start + d,
+						end: m.end + d,
+					}));
+					const grabbed = shifted.find((m) => m.id === pill.id);
+					if (!grabbed) return;
+					ns = grabbed.start;
+					ne = grabbed.end;
+					const nextState = {
+						id: pill.id,
+						kind: pill.kind,
+						start: ns,
+						end: ne,
+						group: shifted,
+					};
+					activePillDragRef.current = nextState;
+					setActivePillDrag(nextState);
+					return;
+				}
 				if (dragMode === "move") {
 					ns = Math.max(0, Math.min(total - dur, snap(pill.start + dxSec)));
 					ne = ns + dur;
@@ -1127,7 +1218,18 @@ export function V4Timeline({
 					finalDrag !== null &&
 					(finalDrag.start !== pill.start || finalDrag.end !== pill.end);
 				if (moved && finalDrag) {
-					void apply(finalDrag.start, finalDrag.end).finally(() => {
+					// A block move commits as ONE document write of every member, so the whole
+					// block is one undo step. The delta comes from the grabbed pill's own
+					// movement: every member moved by exactly that, which is what keeps their
+					// spacing.
+					const commit = group
+						? () =>
+								tl.moveMotionRegions(
+									group.members.map((m) => ({ kind: pill.kind, id: m.id })),
+									Math.round((finalDrag.start - pill.start) * 1000),
+								)
+						: () => apply(finalDrag.start, finalDrag.end);
+					void Promise.resolve(commit()).finally(() => {
 						if (activePillDragRef.current === finalDrag) {
 							activePillDragRef.current = null;
 							setActivePillDrag(null);
@@ -1141,7 +1243,7 @@ export function V4Timeline({
 			window.addEventListener("pointermove", move);
 			window.addEventListener("pointerup", up);
 		},
-		[tl, selectPill, total, clips, pxPerSec],
+		[tl, selectPill, motionGroupFor, total, clips, pxPerSec],
 	);
 
 	// Live preview geometry for an audio track being dragged (issue #350), the
@@ -1800,7 +1902,7 @@ export function V4Timeline({
 								if (e.key !== "Enter" && e.key !== " ") return;
 								e.preventDefault();
 								e.nativeEvent.stopPropagation();
-								selectPill(p, e.shiftKey);
+								selectPill(p, additiveClick(e));
 							}
 						: undefined
 				}
@@ -1834,8 +1936,15 @@ export function V4Timeline({
 
 	const renderPills = (pills: LanePill[], emptyLabel: string) => {
 		const effectivePills = pills.map((p) => {
-			if (activePillDrag && activePillDrag.id === p.id) {
-				return { ...p, start: activePillDrag.start, end: activePillDrag.end };
+			// A block drag carries every member's own live span; a single drag only has the
+			// grabbed one. Both are looked up by id, so the grabbed pill reads the same either
+			// way.
+			const live =
+				activePillDrag && activePillDrag.id === p.id
+					? activePillDrag
+					: activePillDrag?.group?.find((g) => g.id === p.id);
+			if (live) {
+				return { ...p, start: live.start, end: live.end };
 			}
 			return p;
 		});

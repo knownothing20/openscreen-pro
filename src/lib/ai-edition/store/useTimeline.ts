@@ -1013,26 +1013,34 @@ export function useTimeline() {
 		}): Promise<PasteMotionOutcome> => {
 			const doc = useProjectStore.getState().document;
 			if (!doc) return "invalidTarget";
-			const sel = selection;
-			if (!sel) return "invalidTarget";
+			// Every selected move of the snapshot's kind, not just the focused one. A
+			// multi-selection is a statement about several regions, so retyping one property on
+			// it must retype them all — and it must be ONE document write, or the block would
+			// land as N separate undo steps. `selection` is the last one clicked and is always
+			// inside `multiSelection` (see `selectRegion`), so the set below is the whole answer;
+			// the fallback is only for a caller that set `selection` without a set.
+			const targets = (
+				multiSelection.length > 0 ? multiSelection : selection ? [selection] : []
+			).filter((h) => h.kind === snapshot.kind);
+			if (targets.length === 0) return "invalidTarget";
 
 			// Only a move onto a move, and only of the same kind. `cameraMotion` and
 			// `screenMotion` are the whole of this round's scope; a zoom or a trim has no
 			// authored target to carry, so they fall out here rather than in a branch that
 			// would have to invent one.
-			if (snapshot.kind !== sel.kind) return "invalidTarget";
-			if (sel.kind !== "cameraMotion" && sel.kind !== "screenMotion") return "invalidTarget";
+			if (snapshot.kind !== "cameraMotion" && snapshot.kind !== "screenMotion")
+				return "invalidTarget";
 
 			const raw = snapshot.region;
 			// The span is the target's, never the source's: `probe` is only here because the
 			// parser needs a well-formed span to hand back a region at all.
 			const probe = { id: "probe", startMs: 0, endMs: 1, ...raw };
 
-			if (sel.kind === "cameraMotion") {
+			if (snapshot.kind === "cameraMotion") {
 				const regions = doc.cameraMotionRegions ?? [];
-				// Every region under the selected pill, resolved from the merge rule rather
+				// Every region under each selected pill, resolved from the merge rule rather
 				// than from stored provenance — see `resolvePillIds`.
-				const under = new Set(resolvePillIds(regions, sel.id));
+				const under = new Set(targets.flatMap((target) => resolvePillIds(regions, target.id)));
 				if (!regions.some((r) => under.has(r.id))) return "invalidTarget";
 				const copied = parseCameraMotionRegion(probe);
 				if (!copied) return "invalidTarget";
@@ -1052,7 +1060,7 @@ export function useTimeline() {
 			}
 
 			const regions = doc.screenMotionRegions ?? [];
-			const under = new Set(resolvePillIds(regions, sel.id));
+			const under = new Set(targets.flatMap((target) => resolvePillIds(regions, target.id)));
 			if (!regions.some((r) => under.has(r.id))) return "invalidTarget";
 			const copied = parseScreenMotionRegion(probe);
 			if (!copied) return "invalidTarget";
@@ -1081,7 +1089,7 @@ export function useTimeline() {
 			if (JSON.stringify(next) === JSON.stringify(doc)) return "unchanged";
 			return (await saveDocument(next, { history: true })) ? "saved" : "saveFailed";
 		},
-		[selection, saveDocument],
+		[selection, multiSelection, saveDocument],
 	);
 
 	/**
@@ -1764,6 +1772,74 @@ export function useTimeline() {
 		[document, saveDocument],
 	);
 
+	// Moving a multi-selection of camera/screen moves as one block.
+	//
+	// The delta is applied to every selected pill, not recomputed per pill, which is the whole
+	// point: the user grabbed a block and expects the spacing inside it to survive the move.
+	// Each pill still goes through `replacePillSpan`, so a pill that crosses a clip boundary is
+	// re-fragmented and re-anchored exactly as a single dragged pill would be — the difference
+	// is only that all of them are rebuilt from ONE document and saved once, so the block is a
+	// single undo step.
+	//
+	// The caller (the timeline) already clamped the delta against the pills that are not
+	// moving, so no wall is hit here. The clamp is repeated anyway for callers that are not the
+	// timeline — an agent tool or a test can hand in any delta, and a batch that silently
+	// sheared is worse than one that moved less.
+	const moveMotionRegions = useCallback(
+		async (handles: RegionHandle[], deltaMs: number) => {
+			if (!document) return;
+			if (handles.length === 0) return;
+			if (!Number.isFinite(deltaMs) || deltaMs === 0) return;
+			const clips = document.timeline.clips;
+			const cameraIds = handles.filter((h) => h.kind === "cameraMotion").map((h) => h.id);
+			const screenIds = handles.filter((h) => h.kind === "screenMotion").map((h) => h.id);
+			if (cameraIds.length === 0 && screenIds.length === 0) return;
+
+			const shiftPills = <T extends { id: string; startMs: number; endMs: number }>(
+				regions: T[],
+				ids: string[],
+				makeId: () => string,
+			): T[] => {
+				let out = regions;
+				for (const id of ids) {
+					// A whole pill is addressed by any one of its fragments. After the first
+					// replacement the other fragment ids of that same pill are gone, so the
+					// existence check is what keeps a two-fragment pill from moving twice.
+					const region = out.find((r) => r.id === id);
+					if (!region) continue;
+					out = replacePillSpan(
+						out,
+						id,
+						region.startMs + deltaMs,
+						region.endMs + deltaMs,
+						clips,
+						makeId,
+					);
+				}
+				return out;
+			};
+
+			const next: AxcutDocument = {
+				...document,
+				cameraMotionRegions:
+					cameraIds.length > 0
+						? shiftPills(document.cameraMotionRegions ?? [], cameraIds, () => createId("cammotion"))
+						: (document.cameraMotionRegions ?? []),
+				screenMotionRegions:
+					screenIds.length > 0
+						? shiftPills(document.screenMotionRegions ?? [], screenIds, () =>
+								createId("screenmotion"),
+							)
+						: (document.screenMotionRegions ?? []),
+			};
+			// Nothing to write: the clamp pinned every pill. Saving would put a no-op step on
+			// the undo stack, the same rule `setMarkerLabel` follows.
+			if (JSON.stringify(next) === JSON.stringify(document)) return;
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
 	// Every edit region (zoom, speed, trim, annotation, Full Camera), on every clip, in one
 	// write: one undo step brings them all back. Clips, media, audio tracks, captions and the
 	// transcript are content, not edits, and stay (see `clearEditRegions`).
@@ -2008,7 +2084,15 @@ export function useTimeline() {
 	const moveClip = useCallback(
 		async (clipId: string, toIndex: number) => {
 			if (!document) return;
-			if (!document.timeline.clips.some((c) => c.id === clipId)) return;
+			const from = document.timeline.clips.findIndex((c) => c.id === clipId);
+			if (from < 0) return;
+			// A drop that resolves to where the clip already is is not an edit. The timeline
+			// already declines to call this for that case (its drop handler compares the
+			// target with the origin), but an agent tool calls the same function, and a step
+			// that changes nothing is exactly the undo entry that makes the next Ctrl+Z look
+			// broken. `toIndex` is an insertion index over the list WITHOUT the clip, so the
+			// clip's own slot is exactly `from` — `from + 1` is a real move down by one.
+			if (toIndex === from) return;
 			await saveDocument(moveClipInDocument(document, clipId, toIndex), { history: true });
 		},
 		[document, saveDocument],
@@ -2311,6 +2395,7 @@ export function useTimeline() {
 		removeMarker,
 		setMarkerLabel,
 		removeRegions,
+		moveMotionRegions,
 		hasEditRegions,
 		clearTimeline,
 		addAudioTrack,
