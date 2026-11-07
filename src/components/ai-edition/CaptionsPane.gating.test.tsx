@@ -167,7 +167,14 @@ describe("captions show switch", () => {
 				assetId: ASSET.id,
 				language: "en",
 				segments: [
-					{ id: "seg_1", kind: "speech", startSec: 6.57, endSec: 6.6, text: "This", wordIds: ["word_1"] },
+					{
+						id: "seg_1",
+						kind: "speech",
+						startSec: 6.57,
+						endSec: 6.6,
+						text: "This",
+						wordIds: ["word_1"],
+					},
 				],
 				words: [{ id: "word_1", segmentId: "seg_1", startSec: 6.57, endSec: 6.6, text: "This" }],
 			},
@@ -175,14 +182,19 @@ describe("captions show switch", () => {
 		return doc;
 	};
 	const captionEnabled = () => {
-		const legacy = useProjectStore.getState().document?.legacyEditor as { captions?: { enabled?: boolean } } | null;
+		const legacy = useProjectStore.getState().document?.legacyEditor as {
+			captions?: { enabled?: boolean };
+		} | null;
 		return legacy?.captions?.enabled === true;
 	};
 
 	it("is reachable by its accessible name, and starts unpressed", () => {
 		load(withTranscript());
 		mount();
-		expect(screen.getByRole("button", { name: "Show captions" })).toHaveAttribute("aria-pressed", "false");
+		expect(screen.getByRole("button", { name: "Show captions" })).toHaveAttribute(
+			"aria-pressed",
+			"false",
+		);
 	});
 
 	it("turns captions on and off, and writes the document both ways", async () => {
@@ -190,10 +202,16 @@ describe("captions show switch", () => {
 		mount();
 		fireEvent.click(screen.getByRole("button", { name: "Show captions" }));
 		await waitFor(() => expect(captionEnabled()).toBe(true));
-		expect(screen.getByRole("button", { name: "Show captions" })).toHaveAttribute("aria-pressed", "true");
+		expect(screen.getByRole("button", { name: "Show captions" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
 
 		fireEvent.click(screen.getByRole("button", { name: "Show captions" }));
 		await waitFor(() => expect(captionEnabled()).toBe(false));
-		expect(screen.getByRole("button", { name: "Show captions" })).toHaveAttribute("aria-pressed", "false");
+		expect(screen.getByRole("button", { name: "Show captions" })).toHaveAttribute(
+			"aria-pressed",
+			"false",
+		);
 	});
 });
