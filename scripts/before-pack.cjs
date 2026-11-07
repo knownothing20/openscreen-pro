@@ -317,7 +317,8 @@ const WIN_STT_REQUIRED = [
 	{
 		match: (name) => name === "whisper-stt-server.exe",
 		what: "the whisper.cpp STT helper",
-		breaks: "transcription and captions fail with a developer error, and every caption row stays empty",
+		breaks:
+			"transcription and captions fail with a developer error, and every caption row stays empty",
 		fix: "Build it with:\n\n    npm run build:whisper-binaries\n\nor stage CI's with `bash scripts/stage-whisper-stt.sh win32-x64`.",
 	},
 	{

@@ -13,6 +13,12 @@ import {
 import type { ChatEventSink } from "../ai-edition/chat-service";
 import type { DocumentService } from "../ai-edition/document-service";
 import { StylePresetError, type StylePresetService } from "../ai-edition/style-preset-service";
+import {
+	commitExportFile,
+	discardExportFile,
+	isExportRefusal,
+	planExportWrite,
+} from "../exportPathGuard";
 import { isValidMcpPort } from "../mcp/mcp-settings-store";
 import {
 	type CursorTelemetryLoadResult,
@@ -432,24 +438,46 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							return createSuccessResponse(requestId, { ok: true });
 						case "exportMulti": {
 							const sender = event.sender;
-							const stats = await compositorViewService.exportMulti(
-								request.payload.clips,
-								request.payload.outPath,
-								request.payload.sceneJson,
-								request.payload.params,
-								(frames) => {
-									if (!sender.isDestroyed()) {
-										sender.send("export:native-progress", frames);
-									}
-								},
-							);
+							// Encode beside the target, then rename. `undefined` means "let the
+							// compositor choose", which is a path this handler never sees and so
+							// cannot protect — it keeps its old behaviour rather than gaining a
+							// refusal it cannot enforce.
+							const plan =
+								request.payload.outPath === undefined
+									? null
+									: planExportWrite(request.payload.outPath, request.payload.clips);
+							if (plan && isExportRefusal(plan)) {
+								return createErrorResponse(requestId, "INVALID_REQUEST", plan.reason);
+							}
+							let stats: Awaited<ReturnType<CompositorViewService["exportMulti"]>>;
+							try {
+								stats = await compositorViewService.exportMulti(
+									request.payload.clips,
+									plan ? plan.tempPath : request.payload.outPath,
+									request.payload.sceneJson,
+									request.payload.params,
+									(frames) => {
+										if (!sender.isDestroyed()) {
+											sender.send("export:native-progress", frames);
+										}
+									},
+								);
+							} catch (error) {
+								// A half-written temp file is litter, not a result — and the user's
+								// previous export at the target path is still intact, which is the
+								// point of encoding here in the first place.
+								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
+								throw error;
+							}
 							if (!stats) {
+								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
 								return createErrorResponse(
 									requestId,
 									"UNAVAILABLE",
 									"Native compositor addon not present.",
 								);
 							}
+							if (plan && !isExportRefusal(plan)) await commitExportFile(plan);
 							return createSuccessResponse(requestId, stats);
 						}
 						case "exportGif": {
@@ -458,37 +486,56 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							if (exportId !== undefined && !isGifExportId(exportId)) {
 								return createErrorResponse(requestId, "INVALID_REQUEST", "Invalid GIF export ID.");
 							}
+							const plan =
+								request.payload.outPath === undefined
+									? null
+									: planExportWrite(request.payload.outPath, request.payload.clips);
+							if (plan && isExportRefusal(plan)) {
+								return createErrorResponse(requestId, "INVALID_REQUEST", plan.reason);
+							}
+							const writePath =
+								plan && !isExportRefusal(plan) ? plan.tempPath : request.payload.outPath;
 							const onProgress = (frames: number) => {
 								if (!sender.isDestroyed()) sender.send("export:native-progress", frames, exportId);
 							};
-							const stats = exportId
-								? await gifExportJobs.run(
-										sender,
-										exportId,
-										(progress) =>
-											compositorViewService.startGifExport(
-												request.payload.clips,
-												request.payload.outPath,
-												request.payload.sceneJson,
-												request.payload.params,
-												progress,
-											),
-										onProgress,
-									)
-								: await compositorViewService.exportGif(
-										request.payload.clips,
-										request.payload.outPath,
-										request.payload.sceneJson,
-										request.payload.params,
-										onProgress,
-									);
+							let stats: Awaited<ReturnType<CompositorViewService["exportGif"]>>;
+							try {
+								stats = exportId
+									? await gifExportJobs.run(
+											sender,
+											exportId,
+											(progress) =>
+												compositorViewService.startGifExport(
+													request.payload.clips,
+													writePath,
+													request.payload.sceneJson,
+													request.payload.params,
+													progress,
+												),
+											onProgress,
+										)
+									: await compositorViewService.exportGif(
+											request.payload.clips,
+											writePath,
+											request.payload.sceneJson,
+											request.payload.params,
+											onProgress,
+										);
+							} catch (error) {
+								// Cancellation lands here too, and a cancelled GIF must leave the
+								// previous file alone — which it does, because it was never touched.
+								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
+								throw error;
+							}
 							if (!stats) {
+								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
 								return createErrorResponse(
 									requestId,
 									"UNAVAILABLE",
 									"Native compositor addon not present.",
 								);
 							}
+							if (plan && !isExportRefusal(plan)) await commitExportFile(plan);
 							return createSuccessResponse(requestId, stats);
 						}
 						case "cancelGifExport": {

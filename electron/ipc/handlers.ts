@@ -73,6 +73,12 @@ import { LlmConfigStore } from "../ai-edition/llm-config-store";
 import { StylePresetService } from "../ai-edition/style-preset-service";
 import { AppSettingsStore } from "../app-settings";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "../diagnostics/main-log-buffer";
+import {
+	commitExportFile,
+	discardExportFile,
+	isExportRefusal,
+	planExportWrite,
+} from "../exportPathGuard";
 import { mainT } from "../i18n";
 import { getInstallChannel } from "../install-channel";
 import { RECORDINGS_DIR } from "../main";
@@ -4212,11 +4218,26 @@ export function registerIpcHandlers(
 
 			const normalizedPath = path.normalize(filePath);
 			await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
-			await fs.writeFile(normalizedPath, Buffer.from(videoData));
+			// Write beside the target and rename, for the same reason the native export does
+			// (see `exportPathGuard`): `writeFile` truncates first, so a failure midway leaves
+			// the user with a broken file where their previous export used to be. This path is
+			// the CLI's, which re-writes a mixed voiceover over an export it just made — the
+			// file it is replacing is one it can afford to lose, but the rule is the same one.
+			const plan = planExportWrite(normalizedPath, []);
+			if (isExportRefusal(plan)) {
+				return { success: false, message: plan.reason };
+			}
+			try {
+				await fs.writeFile(plan.tempPath, Buffer.from(videoData));
+			} catch (error) {
+				await discardExportFile(plan.tempPath);
+				throw error;
+			}
+			await commitExportFile(plan);
 
 			return {
 				success: true,
-				path: normalizedPath,
+				path: plan.finalPath,
 				message: "Video exported successfully",
 			};
 		} catch (error) {
