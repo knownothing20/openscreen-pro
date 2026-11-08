@@ -214,7 +214,13 @@
 		"failedToWriteFile": "ファイルの書き込みに失敗しました",
 		"qualityUpscaleWarning": "アップスケール",
 		"exportedVideoOf": "の動画を書き出しました。所要時間:",
-		"nothingToExport": "書き出す内容がありません — タイムラインが空です。"
+		"nothingToExport": "書き出す内容がありません — タイムラインが空です。",
+		"encoderPending": "Encoder: choosing among the allowed devices ({{device}})…",
+		"encoderDone": "Encoder: {{encoder}} on {{adapter}} · {{path}}",
+		"encoderFallback": " · fell back: {{reason}}",
+		"zeroCopy": "zero-copy",
+		"systemMemory": "system memory",
+		"encoderGif": "Encoder: GIF palette (software — no hardware encoder for this format)"
 	},
 	"inspector": {
 		"resetFocusPoint": "フォーカスポイントをリセット",
@@ -437,5 +443,22 @@
 	"cpuCompositor": {
 		"notice": "対応 GPU がないため CPU で描画しています。再生が遅くなります。",
 		"exportWarning": "対応 GPU がありません。この書き出しは CPU で実行されるため、通常よりはるかに時間がかかります。"
+	},
+	"encoderSettings": {
+		"title": "Video encoding device",
+		"subtitle": "Which GPU encodes your exports. Composing and encoding stay on the same card, so the zero-copy path is kept.",
+		"redetect": "Detect again",
+		"test": "Test encoder",
+		"detecting": "Looking for display adapters…",
+		"noDevices": "No display adapters were reported on this system.",
+		"autoHint": "Picks the best encoder this machine accepts, and falls back to CPU if none opens. This is what every previous version did.",
+		"cpuHint": "No hardware encoder. Slowest, always works.",
+		"noEncoder": "No encoder for this vendor in this build.",
+		"duplicateEntries": "{{count}} driver entries",
+		"noClipToTest": "Open a project with a clip to test an encoder.",
+		"testOkDetail": "{{encoder}} on {{adapter}} · {{path}} · {{frames}} frames in {{ms}} ms",
+		"zeroCopy": "zero-copy",
+		"systemMemory": "system memory",
+		"persistHint": "Saved for this computer, not for the project — reopening a project keeps it."
 	}
 }

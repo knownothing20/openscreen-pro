@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain, shell } from "electron";
+import path from "node:path";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import type { AiEditionChatEvent } from "../../src/native/contracts";
 import {
 	NATIVE_BRIDGE_CHANNEL,
@@ -509,6 +510,77 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							}
 							if (plan && !isExportRefusal(plan)) await commitExportFile(plan);
 							return createSuccessResponse(requestId, stats);
+						}
+						case "listGpus": {
+							// Straight from DXGI, not from ffmpeg's encoder list: the list answers
+							// "what does this machine have", and the encoders column answers "what
+							// does this build contain for it". Neither claims it works — that is
+							// what `selfTestEncoder` is for.
+							const gpus = compositorViewService.listGpus();
+							return createSuccessResponse(requestId, { gpus });
+						}
+						case "selfTestEncoder": {
+							// A real encode of a real clip, to a temp file this process owns. The
+							// point is that "opens" is not "works": the only honest test is one that
+							// feeds frames through the encoder and gets a file out.
+							const payload = request.payload as {
+								clips?: Parameters<CompositorViewService["exportMulti"]>[0];
+								width?: number;
+								height?: number;
+								fps?: number;
+								encoderDevice?: string;
+							};
+							if (!Array.isArray(payload.clips) || payload.clips.length === 0) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"An encoder test needs at least one clip to encode.",
+								);
+							}
+							const tempPath = path.join(
+								app.getPath("userData"),
+								`encoder-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`,
+							);
+							const startedAt = Date.now();
+							try {
+								const stats = await compositorViewService.exportMulti(
+									payload.clips,
+									tempPath,
+									undefined,
+									{
+										width: payload.width,
+										height: payload.height,
+										fps: payload.fps,
+										codec: "h264",
+										encoderDevice: payload.encoderDevice,
+									},
+									undefined,
+								);
+								if (!stats) {
+									return createErrorResponse(
+										requestId,
+										"UNAVAILABLE",
+										"Native compositor addon not present.",
+									);
+								}
+								return createSuccessResponse(requestId, {
+									encoder: stats.encoder ?? null,
+									adapter: stats.adapter ?? null,
+									zeroCopy: stats.zeroCopy ?? false,
+									fallbackReason: stats.fallbackReason ?? null,
+									frames: stats.frames,
+									wallMs: Date.now() - startedAt,
+								});
+							} catch (error) {
+								return createErrorResponse(
+									requestId,
+									"INTERNAL_ERROR",
+									error instanceof Error ? error.message : String(error),
+								);
+							} finally {
+								// The test file is ours and nobody asked for it: gone either way.
+								await discardExportFile(tempPath);
+							}
 						}
 						case "cancelExportMulti": {
 							// The handle lives here for the length of one export and is keyed by the id

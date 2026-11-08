@@ -23,6 +23,7 @@ import type {
 	ExportStats,
 	GifExportStats,
 	GifParamsInput,
+	GpuInfo,
 	NativeFramePacket,
 	NativeSharedFramePacket,
 	RemuxStats,
@@ -820,6 +821,16 @@ export class CompositorViewService {
 			onProgress,
 			control,
 		);
+	}
+
+	/** Display adapters this machine reports, or [] on a build without the entry point.
+	 *
+	 *  Cheap (one DXGI enumeration) but not free, so callers cache it for the life of a dialog.
+	 *  It answers "what is installed"; what each encoder does with it is a question only an
+	 *  encode can answer — see the `selfTestEncoder` bridge action. */
+	listGpus(): GpuInfo[] {
+		const addon = this.ensureAddon();
+		return addon?.listGpus?.() ?? [];
 	}
 
 	/** True when this `.node` can stop an MP4 export mid-render. A stale addon predates the

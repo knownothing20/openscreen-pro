@@ -1,5 +1,6 @@
 import {
 	ChevronDown,
+	Cpu,
 	Download,
 	FolderOpen,
 	FolderPlus,
@@ -38,6 +39,7 @@ export interface TopBarActions {
 	renameProject: (title: string) => void;
 	toggleChat: () => void;
 	openProviderSettings: () => void;
+	openEncoderSettings: () => void;
 	showAbout: () => void;
 	checkForUpdates: () => void;
 	undo: () => void;
@@ -450,6 +452,15 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 					>
 						<Sparkles size={15} />
 						{tEditor("providerSettings.title")}
+					</button>
+					<button
+						type="button"
+						role="menuitem"
+						className={styles.appMenuRow}
+						onClick={run(actions.openEncoderSettings)}
+					>
+						<Cpu size={15} />
+						{tEditor("encoderSettings.title")}
 					</button>
 					<button
 						type="button"

@@ -6,6 +6,7 @@ import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/native", () => ({
+	listGpusNative: vi.fn(async () => []),
 	exportMultiNative: vi.fn(),
 	exportGifNative: vi.fn(),
 	cancelGifExportNative: vi.fn(async () => ({ accepted: true })),
@@ -118,6 +119,7 @@ describe("GIF export cancellation", () => {
 		onClose = vi.fn();
 		unsubscribe = vi.fn();
 		window.electronAPI = {
+			getEncoderPrefs: vi.fn(async () => ({ device: "auto" })),
 			pickExportSavePath: vi.fn(async () => ({ path: "/tmp/result.gif" })),
 			onNativeExportProgress: vi.fn((cb) => {
 				progress = cb;

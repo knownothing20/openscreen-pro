@@ -70,6 +70,7 @@ function TopBar({ mode }: { mode: EditorMode }) {
 				export: noop,
 				openSettings: noop,
 				renameProject: noop,
+				openEncoderSettings: noop,
 				toggleChat: noop,
 				openProviderSettings: () => openDialog("providers"),
 				showAbout: noop,

@@ -12,11 +12,13 @@ import type {
 	CompositorBackend,
 	CompositorBackendResult,
 	CompositorClipInput,
+	CompositorEncoderTestResult,
 	CompositorExportGifParams,
 	CompositorExportGifResult,
 	CompositorExportParams,
 	CompositorExportResult,
 	CompositorFramePacket,
+	CompositorGpuInfo,
 	CompositorParamValue,
 	CompositorSharedFrameMeta,
 	CompositorSharedFrameReceipt,
@@ -203,6 +205,35 @@ export function exportMultiNative(
 		domain: "compositor",
 		action: "exportMulti",
 		payload: { clips, outPath, sceneJson, params, protectedPaths, exportId },
+	});
+}
+
+/** Adapters this machine reports. Cached by the caller: one DXGI enumeration, not zero. */
+export async function listGpusNative(): Promise<CompositorGpuInfo[]> {
+	const data = await requireNativeBridgeData<{ gpus: CompositorGpuInfo[] }>({
+		domain: "compositor",
+		action: "listGpus",
+		payload: {},
+	});
+	return data.gpus;
+}
+
+/** Encode a short clip through the chosen device and report what actually ran.
+ *
+ *  This is the only honest way to answer "does this GPU encode": a compiled-in encoder proves
+ *  nothing, and an adapter in the list proves nothing either. Main writes to a temp file and
+ *  deletes it, so no user file is involved. */
+export function selfTestEncoderNative(request: {
+	clips: CompositorClipInput[];
+	width?: number;
+	height?: number;
+	fps?: number;
+	encoderDevice?: string;
+}): Promise<CompositorEncoderTestResult> {
+	return requireNativeBridgeData<CompositorEncoderTestResult>({
+		domain: "compositor",
+		action: "selfTestEncoder",
+		payload: request,
 	});
 }
 

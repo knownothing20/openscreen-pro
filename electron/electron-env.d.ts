@@ -312,6 +312,9 @@ interface Window {
 			canceled?: boolean;
 			error?: string;
 		}>;
+		/** Which GPU (or CPU) exports should encode with. Persisted app-wide. */
+		getEncoderPrefs: () => Promise<{ device: string }>;
+		setEncoderPrefs: (prefs: { device: string }) => Promise<{ device: string }>;
 		/** Ask before encoding whether a destination is allowed. Writes nothing. */
 		checkExportTarget: (
 			finalPath: string,

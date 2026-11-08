@@ -214,7 +214,13 @@
 		"failedToWriteFile": "寫入檔案失敗",
 		"qualityUpscaleWarning": "放大",
 		"exportedVideoOf": "的影片已匯出，耗時",
-		"nothingToExport": "沒有可匯出的內容 — 時間軸為空。"
+		"nothingToExport": "沒有可匯出的內容 — 時間軸為空。",
+		"encoderPending": "Encoder: choosing among the allowed devices ({{device}})…",
+		"encoderDone": "Encoder: {{encoder}} on {{adapter}} · {{path}}",
+		"encoderFallback": " · fell back: {{reason}}",
+		"zeroCopy": "zero-copy",
+		"systemMemory": "system memory",
+		"encoderGif": "Encoder: GIF palette (software — no hardware encoder for this format)"
 	},
 	"inspector": {
 		"resetFocusPoint": "重設焦點",
@@ -437,5 +443,22 @@
 	"cpuCompositor": {
 		"notice": "沒有相容的 GPU，正在使用 CPU 算繪，因此播放較慢。",
 		"exportWarning": "沒有相容的 GPU：這次匯出將在 CPU 上執行，耗時會比平常長很多。"
+	},
+	"encoderSettings": {
+		"title": "Video encoding device",
+		"subtitle": "Which GPU encodes your exports. Composing and encoding stay on the same card, so the zero-copy path is kept.",
+		"redetect": "Detect again",
+		"test": "Test encoder",
+		"detecting": "Looking for display adapters…",
+		"noDevices": "No display adapters were reported on this system.",
+		"autoHint": "Picks the best encoder this machine accepts, and falls back to CPU if none opens. This is what every previous version did.",
+		"cpuHint": "No hardware encoder. Slowest, always works.",
+		"noEncoder": "No encoder for this vendor in this build.",
+		"duplicateEntries": "{{count}} driver entries",
+		"noClipToTest": "Open a project with a clip to test an encoder.",
+		"testOkDetail": "{{encoder}} on {{adapter}} · {{path}} · {{frames}} frames in {{ms}} ms",
+		"zeroCopy": "zero-copy",
+		"systemMemory": "system memory",
+		"persistHint": "Saved for this computer, not for the project — reopening a project keeps it."
 	}
 }

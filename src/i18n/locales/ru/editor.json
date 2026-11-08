@@ -214,7 +214,13 @@
 		"failedToWriteFile": "Не удалось записать файл",
 		"qualityUpscaleWarning": "Апскейл",
 		"exportedVideoOf": "видео экспортировано за",
-		"nothingToExport": "Нечего экспортировать — таймлайн пуст."
+		"nothingToExport": "Нечего экспортировать — таймлайн пуст.",
+		"encoderPending": "Encoder: choosing among the allowed devices ({{device}})…",
+		"encoderDone": "Encoder: {{encoder}} on {{adapter}} · {{path}}",
+		"encoderFallback": " · fell back: {{reason}}",
+		"zeroCopy": "zero-copy",
+		"systemMemory": "system memory",
+		"encoderGif": "Encoder: GIF palette (software — no hardware encoder for this format)"
 	},
 	"inspector": {
 		"resetFocusPoint": "Сбросить точку фокуса",
@@ -437,5 +443,22 @@
 	"cpuCompositor": {
 		"notice": "Совместимый GPU не найден — отрисовка на CPU, поэтому воспроизведение медленнее.",
 		"exportWarning": "Совместимый GPU не найден: этот экспорт выполняется на CPU и займёт намного больше времени."
+	},
+	"encoderSettings": {
+		"title": "Video encoding device",
+		"subtitle": "Which GPU encodes your exports. Composing and encoding stay on the same card, so the zero-copy path is kept.",
+		"redetect": "Detect again",
+		"test": "Test encoder",
+		"detecting": "Looking for display adapters…",
+		"noDevices": "No display adapters were reported on this system.",
+		"autoHint": "Picks the best encoder this machine accepts, and falls back to CPU if none opens. This is what every previous version did.",
+		"cpuHint": "No hardware encoder. Slowest, always works.",
+		"noEncoder": "No encoder for this vendor in this build.",
+		"duplicateEntries": "{{count}} driver entries",
+		"noClipToTest": "Open a project with a clip to test an encoder.",
+		"testOkDetail": "{{encoder}} on {{adapter}} · {{path}} · {{frames}} frames in {{ms}} ms",
+		"zeroCopy": "zero-copy",
+		"systemMemory": "system memory",
+		"persistHint": "Saved for this computer, not for the project — reopening a project keeps it."
 	}
 }

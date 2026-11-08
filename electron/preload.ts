@@ -369,6 +369,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	pickExportSavePath: (fileName: string, exportFolder?: string) => {
 		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder);
 	},
+	getEncoderPrefs: () => ipcRenderer.invoke("get-encoder-prefs"),
+	setEncoderPrefs: (prefs: { device: string }) => ipcRenderer.invoke("set-encoder-prefs", prefs),
 	checkExportTarget: (finalPath: string, protectedPaths?: readonly string[]) => {
 		return ipcRenderer.invoke("check-export-target", finalPath, protectedPaths);
 	},

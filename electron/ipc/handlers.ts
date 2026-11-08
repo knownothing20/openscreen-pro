@@ -155,6 +155,7 @@ import {
 	shouldEnumerateRecordingSources,
 	shouldPersistSelectedSource,
 } from "../recording-source-settings";
+import { registerEncoderPrefsHandlers } from "./encoderPrefs";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { createNativeMacMidCaptureErrorWatch } from "./nativeMacMidCaptureErrorWatch";
 import { registerRecordingPrefsHandlers } from "./recordingPrefs";
@@ -2302,6 +2303,8 @@ export function registerIpcHandlers(
 		}
 		return selectedSource;
 	});
+
+	registerEncoderPrefsHandlers();
 
 	registerRecordingPrefsHandlers(
 		defaultRecordingPrefs,

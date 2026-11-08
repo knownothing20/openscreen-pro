@@ -150,6 +150,8 @@ function createShimElectronAPI() {
 		openVideoFilePicker: pickVideoFileViaInput,
 		openProjectFile: () => Promise.resolve({ success: false, canceled: true }),
 		pickExportSavePath: () => Promise.resolve({ success: false, canceled: true }),
+		getEncoderPrefs: () => Promise.resolve({ device: "auto" }),
+		setEncoderPrefs: () => Promise.resolve({ device: "auto" }),
 		checkExportTarget: () => Promise.resolve({ success: false }),
 		commitExportFile: () => Promise.resolve({ success: false }),
 		deleteExportStage: () => Promise.resolve({ success: false }),

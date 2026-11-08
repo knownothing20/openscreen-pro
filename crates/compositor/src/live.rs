@@ -321,6 +321,9 @@ impl Player {
                 context: gpu.context.clone(),
                 feature_level: gpu.feature_level,
                 backend: gpu.backend,
+                // Same physical adapter, so the same descriptor: this is a refcount copy, not a
+                // new device.
+                adapter: gpu.adapter.clone(),
             },
             webcam_decoder_is_real,
             webcam_offset_sec: 0.0,
@@ -1300,6 +1303,7 @@ unsafe fn maybe_start_prefetch(
         context: gpu.context.clone(),
         feature_level: gpu.feature_level,
         backend: gpu.backend,
+        adapter: gpu.adapter.clone(),
     };
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {

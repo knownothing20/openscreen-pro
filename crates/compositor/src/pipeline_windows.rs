@@ -12,6 +12,7 @@ use crate::config::Cfg;
 use crate::cpu_frames::CpuFrames;
 use crate::cursor::CursorTrack;
 use crate::d3d::{Backend, Gpu};
+use crate::encoder_choice::EncoderChoice;
 use crate::ffi::*;
 use crate::regions::{speed_segments_for_window, SpeedSegment};
 use crate::scene::Scene;
@@ -1365,6 +1366,31 @@ impl ExportCodec {
     }
 }
 
+/// The encoder names this build actually contains for `vendor`, H.264 and H.265.
+///
+/// Answers the first two levels of the question a settings screen asks — "did the OS report this
+/// adapter?" (the caller has the list) and "does this ffmpeg have an encoder for it?" — and
+/// deliberately NOT the last two. Whether the driver will open one on that card is what
+/// `avcodec_open2` decides, which is the test-encode path; claiming it here would be the same
+/// mistake as reading `-encoders` and calling the GPU supported.
+pub fn encoder_names_for_vendor(vendor: u32) -> Vec<String> {
+    let mut names = Vec::new();
+    for codec in [ExportCodec::H264, ExportCodec::H265] {
+        for &(name, _) in codec.candidates() {
+            if crate::encoder_choice::EncoderChoice::vendor_of(name) != Some(vendor) {
+                continue;
+            }
+            let Ok(cname) = std::ffi::CString::new(name) else { continue };
+            // Compiled in or not: this is the difference between "we could try" and "there is
+            // nothing to try", and it costs one lookup.
+            if !unsafe { avcodec_find_encoder_by_name(cname.as_ptr()) }.is_null() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
+}
+
 /// L'encodeur vidéo retenu pour ce run, plus ce qu'il faut pour le nourrir.
 ///
 /// Le reste du pipeline continue de produire des frames GPU sans savoir qui encode : quand le
@@ -1410,10 +1436,25 @@ impl VideoEncoder {
         hw_frames: *mut AVBufferRef,
     ) -> Result<VideoEncoder> {
         let forced = std::env::var("OPENSCREEN_EXPORT_ENCODER").ok();
+        // The per-export choice travels on this thread (see `encoder_choice`): a manual pick
+        // narrows the candidate list to that vendor and never falls back, a CPU pick drops every
+        // hardware candidate, and Auto keeps the historical order below untouched.
+        let choice = crate::encoder_choice::choice();
         let mut refused: Vec<String> = Vec::new();
+        let mut skipped_by_choice: Vec<&'static str> = Vec::new();
         for &candidate in codec.candidates() {
             let (name, pix_fmt) = candidate;
             if forced.as_deref().is_some_and(|forced| forced != name) {
+                continue;
+            }
+            let allowed = match choice {
+                EncoderChoice::Auto => true,
+                // Not `is_software`: `*_mf` is vendor-less but may resolve to a hardware MFT.
+                EncoderChoice::Cpu => EncoderChoice::is_explicit_software(name),
+                EncoderChoice::Vendor(vendor) => EncoderChoice::vendor_of(name) == Some(vendor),
+            };
+            if !allowed {
+                skipped_by_choice.push(name);
                 continue;
             }
             // Sans pool D3D11 (backend CPU), les candidats zéro-copie n'ont rien à consommer :
@@ -1430,6 +1471,22 @@ impl VideoEncoder {
                     continue;
                 }
             };
+            // Recorded for the caller BEFORE the log: the app must be able to say which
+            // encoder and which adapter produced this file, not just print it to a console the
+            // user never sees.
+            crate::encoder_choice::record(crate::encoder_choice::EncoderReport {
+                encoder: name.to_string(),
+                zero_copy: encoder.sw.is_null(),
+                refused: refused.clone(),
+                fallback: match choice {
+                    EncoderChoice::Auto
+                        if EncoderChoice::is_software(name) && !refused.is_empty() =>
+                    {
+                        Some(refused.join(" ; "))
+                    }
+                    _ => None,
+                },
+            });
             // Journalisé sans condition : un rapport de support doit dire qui a encodé.
             eprintln!(
                 "[pipeline] encodeur vidéo : {name} ({}){}",
@@ -1450,6 +1507,13 @@ impl VideoEncoder {
                 bail!("OPENSCREEN_EXPORT_ENCODER={name} ne nomme aucun candidat de ce codec")
             }
             Some(name) => bail!("OPENSCREEN_EXPORT_ENCODER={name} inutilisable ici : {}", refused[0]),
+            // A pinned adapter that this codec has no encoder for: say which candidates were
+            // dropped for being the wrong vendor, so the message answers "why not?".
+            None if !skipped_by_choice.is_empty() => bail!(
+                "the selected GPU's encoder could not be opened: {} (skipped, other vendor: {})",
+                refused.join(" ; "),
+                skipped_by_choice.join(", "),
+            ),
             None => bail!(
                 "aucun encodeur vidéo utilisable sur cette machine : {}",
                 refused.join(" ; "),

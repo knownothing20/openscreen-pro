@@ -34,6 +34,7 @@ pub mod camera_motion;
 pub mod config;
 pub mod cursor;
 pub mod cursor_sdf;
+pub mod encoder_choice;
 pub mod export_probe;
 pub mod ffi;
 pub mod frame_geometry;

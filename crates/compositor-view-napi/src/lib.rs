@@ -412,6 +412,16 @@ pub struct ExportStats {
     pub fps: f64,
     /// Durée de la vidéo exportée (secondes) — distincte de `wall_s` (temps de rendu réel).
     pub video_duration_s: f64,
+    /// The encoder that actually opened, e.g. `h264_nvenc`. Absent only on a platform whose
+    /// pipeline does not report one yet.
+    pub encoder: Option<String>,
+    /// Composed GPU textures went to the encoder without a system-memory hop.
+    pub zero_copy: bool,
+    /// The adapter the frames were composed AND encoded on — read off the live device, so a
+    /// user who asked for the discrete GPU can see whether that is where it ran.
+    pub adapter: Option<String>,
+    /// Why `auto` ended up where it did: the vendors that were refused, in order.
+    pub fallback_reason: Option<String>,
 }
 
 /// Bilan d'un export GIF natif. Mêmes champs que `ExportStats` (frames /
@@ -584,6 +594,11 @@ pub struct ExportParamsInput {
     /// Débit vidéo visé, en bits/s, calculé par l'app d'après la taille et la cadence.
     /// Absent ou nul → le repli du pipeline, qui ignore la cadence.
     pub bitrate: Option<u32>,
+    /// Which encoder the user asked for: `"auto"` (default), `"cpu"`, or an adapter LUID as
+    /// hex. The device is created ON that adapter, so composing and encoding stay on one GPU —
+    /// the zero-copy path survives, which is the whole reason this is a device choice and not an
+    /// encoder-name choice.
+    pub encoder_device: Option<String>,
 }
 
 /// Export multiclip mesuré (worker libuv). Rend la vraie timeline (clips + trims) en un MP4.
@@ -592,6 +607,60 @@ pub struct ExportParamsInput {
 /// a configuré (le bug corrigé ici). Layout/zoom restent statiques (pas encore de zoom regions
 /// ni de camera-fullscreen animés côté export). Rend aux previews le transport qu'elles avaient
 /// (même en erreur) — voir `PreviewPause`.
+/// One adapter as the settings screen shows it.
+///
+/// `luid` is a hex string on purpose: a LUID is 64 bits and JS numbers lose precision past 2^53,
+/// so passing it as a number would quietly round two adapters onto the same id.
+#[napi(object)]
+pub struct GpuInfo {
+    pub index: u32,
+    pub name: String,
+    /// "NVIDIA" | "AMD" | "Intel" | "Microsoft" | "Other"
+    pub vendor: String,
+    pub vendor_id: u32,
+    pub device_id: u32,
+    /// Stable across reboots — this, not `index`, is what the setting stores.
+    pub luid: String,
+    pub dedicated_vram_mb: u32,
+    /// A software/virtual adapter (WARP, RDP, a virtual display): it can composite, it has no
+    /// hardware encoder behind it, and the UI says so instead of hiding it.
+    pub software: bool,
+    /// Encoders this build CONTAINS for the vendor. Compiled in is not "works": only opening one
+    /// on this card proves that, which is what the test-encode entry point is for.
+    pub encoders: Vec<String>,
+}
+
+/// Every display adapter this machine reports, plus what the build has for it.
+///
+/// Windows-only in substance (DXGI); elsewhere it returns an empty list rather than inventing
+/// devices — the settings screen hides the picker when there is nothing to pick.
+#[napi]
+pub fn list_gpus() -> Vec<GpuInfo> {
+    #[cfg(windows)]
+    {
+        use openscreen_compositor::d3d::enumerate_adapters;
+        let Ok(adapters) = enumerate_adapters() else { return Vec::new() };
+        adapters
+            .into_iter()
+            .map(|adapter| GpuInfo {
+                index: adapter.index,
+                name: adapter.name.clone(),
+                vendor: adapter.vendor_name().to_string(),
+                vendor_id: adapter.vendor_id,
+                device_id: adapter.device_id,
+                luid: format!("{:016x}", adapter.luid),
+                dedicated_vram_mb: (adapter.dedicated_video_memory / (1024 * 1024)) as u32,
+                software: adapter.software,
+                encoders: pipeline::encoder_names_for_vendor(adapter.vendor_id),
+            })
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
 pub struct ExportMultiTask {
     out_path: String,
     clips: Vec<pipeline::ClipSource>,
@@ -603,8 +672,65 @@ pub struct ExportMultiTask {
     control: Option<GifExportControl>,
 }
 
+/// What one export produced, including who produced it.
+pub struct ExportOutcome {
+    frames: u32,
+    wall_s: f64,
+    fps: f64,
+    video_duration_s: f64,
+    encoder: Option<String>,
+    zero_copy: bool,
+    adapter: Option<String>,
+    fallback_reason: Option<String>,
+}
+
+/// Turn the requested device string into a live device plus the encoder constraint that goes
+/// with it.
+///
+/// The vendor comes from the adapter the device was actually created on, not from the string:
+/// that is the difference between honouring the request and believing it did.
+#[cfg(windows)]
+fn create_export_gpu(
+    requested: &str,
+) -> std::result::Result<(Gpu, openscreen_compositor::encoder_choice::EncoderChoice, Option<String>), String>
+{
+    use openscreen_compositor::encoder_choice::EncoderChoice;
+    let (luid, pinned) = match requested {
+        "" | "auto" => (None, false),
+        "cpu" => (None, false),
+        other => {
+            let hex = other.trim_start_matches("0x");
+            let luid = u64::from_str_radix(hex, 16)
+                .map_err(|_| format!("invalid encoder device \"{other}\" (expected auto, cpu or an adapter id)"))?;
+            (Some(luid), true)
+        }
+    };
+    let cpu_only = requested == "cpu";
+    let gpu = Gpu::create_auto_on(luid, false).map_err(|e| format!("{e:#}"))?;
+    let adapter = Some(gpu.adapter.name.clone());
+    let choice = if cpu_only {
+        EncoderChoice::Cpu
+    } else if pinned {
+        // A pinned adapter with no vendor encoder is a real answer ("this card cannot encode"),
+        // not a reason to quietly use another one.
+        EncoderChoice::Vendor(gpu.adapter.vendor_id)
+    } else {
+        EncoderChoice::Auto
+    };
+    Ok((gpu, choice, adapter))
+}
+
+#[cfg(not(windows))]
+fn create_export_gpu(
+    _requested: &str,
+) -> std::result::Result<(Gpu, openscreen_compositor::encoder_choice::EncoderChoice, Option<String>), String>
+{
+    use openscreen_compositor::encoder_choice::EncoderChoice;
+    Ok((Gpu::create_auto(false).map_err(|e| format!("{e:#}"))?, EncoderChoice::Auto, None))
+}
+
 impl Task for ExportMultiTask {
-    type Output = (u32, f64, f64, f64);
+    type Output = ExportOutcome;
     type JsValue = ExportStats;
 
     fn compute(&mut self) -> Result<Self::Output> {
@@ -613,7 +739,14 @@ impl Task for ExportMultiTask {
         let _previews = PreviewPause::begin();
         // Même sélection que la preview : l'export d'un hôte sans GPU passe par
         // libopenh264 au lieu d'AMF, plutôt que d'échouer.
-        let gpu = Gpu::create_auto(false).map_err(|e| Error::from_reason(format!("{e:#}")))?;
+        let requested = self
+            .params
+            .as_ref()
+            .and_then(|p| p.encoder_device.clone())
+            .unwrap_or_else(|| "auto".to_string());
+        let (gpu, choice, adapter) = create_export_gpu(&requested).map_err(Error::from_reason)?;
+        // Per-thread, read by `VideoEncoder::open` below: this export's choice, nothing else's.
+        openscreen_compositor::encoder_choice::set_choice(choice);
         let mut cfg = config::all().pop().expect("au moins une config"); // C8
         cfg.zoom = false;
         cfg.layout_anim = false;
@@ -696,17 +829,39 @@ impl Task for ExportMultiTask {
         let s = match outcome {
             Ok(stats) => stats,
             Err(error) => {
+                // Nothing was recorded, but the CHOICE must not survive into the next export that
+                // reuses this worker thread.
+                openscreen_compositor::encoder_choice::reset();
                 if cancel_flag.map(|c| c.is_cancelled()).unwrap_or(false) {
                     return Err(Error::from_reason("EXPORT_CANCELLED"));
                 }
                 return Err(Error::from_reason(format!("{error:#}")));
             }
         };
-        Ok((s.frames as u32, s.wall_s, s.fps, s.video_duration_s))
+        let report = openscreen_compositor::encoder_choice::take_report();
+        Ok(ExportOutcome {
+            frames: s.frames as u32,
+            wall_s: s.wall_s,
+            fps: s.fps,
+            video_duration_s: s.video_duration_s,
+            encoder: report.as_ref().map(|r| r.encoder.clone()),
+            zero_copy: report.as_ref().map(|r| r.zero_copy).unwrap_or(false),
+            adapter,
+            fallback_reason: report.and_then(|r| r.fallback),
+        })
     }
 
     fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
-        Ok(ExportStats { frames: out.0, wall_s: out.1, fps: out.2, video_duration_s: out.3 })
+        Ok(ExportStats {
+            frames: out.frames,
+            wall_s: out.wall_s,
+            fps: out.fps,
+            video_duration_s: out.video_duration_s,
+            encoder: out.encoder,
+            zero_copy: out.zero_copy,
+            adapter: out.adapter,
+            fallback_reason: out.fallback_reason,
+        })
     }
 }
 

@@ -21,6 +21,7 @@ import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
+import { describeStoredChoice } from "@/lib/encoderDevices";
 import {
 	type ExportFormat,
 	type ExportProgress,
@@ -37,10 +38,11 @@ import {
 	cancelGifExportNative,
 	exportGifNative,
 	exportMultiNative,
+	listGpusNative,
 	useIsCpuCompositor,
 } from "@/native";
 import { NativeBridgeRequestError } from "@/native/client";
-import type { CompositorClipInput } from "@/native/contracts";
+import type { CompositorClipInput, CompositorGpuInfo } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
 import { ModalShell } from "./Modals";
 import styles from "./NewEditorShell.module.css";
@@ -115,7 +117,7 @@ function revealExportedFile(filePath: string): void {
  *  `NativeCompositorOverlay`, so export/preview/scene all see the exact same clip stream),
  *  each with its asset's screen file + camera file (falls back to the screen when a clip has
  *  no camera — the no-webcam layout is a later step) and its source trim. */
-function buildNativeClipList(document: AxcutDocument): CompositorClipInput[] {
+export function buildNativeClipList(document: AxcutDocument): CompositorClipInput[] {
 	const assetById = new Map(document.assets.map((a) => [a.id, a]));
 	return resolveVisibleClips(document).flatMap((clip) => {
 		const asset = assetById.get(clip.assetId);
@@ -179,6 +181,8 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	const [starPrompt, setStarPrompt] = useState<{ store: boolean } | null>(null);
 	const activeExport = useRef<ActiveExport | null>(null);
 	const [cancelPending, setCancelPending] = useState(false);
+	/** What the pipeline reported for the running/last export, once it has said anything. */
+	const [encoderLine, setEncoderLine] = useState<string | null>(null);
 	const pickerGeneration = useRef(0);
 
 	useEffect(
@@ -414,6 +418,16 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 				},
 			);
 			job.unsubscribe = unsubscribeProgress;
+			// The same stored choice the CLI reads: one setting, both entry points. Resolved before
+			// the encoder opens so the dialog can say which device it is waiting on.
+			const encoderPrefs = await window.electronAPI?.getEncoderPrefs?.().catch(() => null);
+			const encoderDevice = encoderPrefs?.device ?? "auto";
+			const gpus = await listGpusNative().catch(() => [] as CompositorGpuInfo[]);
+			setEncoderLine(
+				t("exportDialog.encoderPending", {
+					device: describeStoredChoice(encoderDevice, gpus).label,
+				}),
+			);
 			try {
 				// The webcam background effect is applied by the compositor from the scene,
 				// so the clip list needs no pre-rendering pass.
@@ -451,6 +465,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 									// measured Macs, and the files half the players cannot open.
 									codec: "h264",
 									bitrate: outDims?.bitrate,
+									encoderDevice,
 								},
 								// The dialog is not the CLI: it reads no file besides the clips, so it has
 								// no extra protected paths to declare.
@@ -458,6 +473,20 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								job.id,
 							);
 				if (activeExport.current !== job) return;
+				// What actually ran, not what was asked for. The GIF path has no hardware encoder at
+				// all, and saying so is better than leaving the line from the MP4 branch up.
+				const mp4Stats = "zeroCopy" in stats ? stats : null;
+				setEncoderLine(
+					mp4Stats
+						? `${t("exportDialog.encoderDone", {
+								encoder: mp4Stats.encoder ?? "?",
+								adapter: mp4Stats.adapter ?? "?",
+								path: mp4Stats.zeroCopy
+									? t("exportDialog.zeroCopy")
+									: t("exportDialog.systemMemory"),
+							})}${mp4Stats.fallbackReason ? t("exportDialog.encoderFallback", { reason: mp4Stats.fallbackReason }) : ""}`
+						: t("exportDialog.encoderGif"),
+				);
 				setSavedPath(pickedPath);
 				setPhase("done");
 				// Reported after the export succeeded, so a cancelled or failed run never counts.
@@ -672,6 +701,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 					pct={pct}
 					savedPath={savedPath}
 					starPrompt={starPrompt}
+					encoderLine={encoderLine}
 					onAnswerStarPrompt={() => {
 						// Starring and declining are the same answer here: the ask is over. Cleared
 						// locally first so the block goes away on the click, not on the round trip.
@@ -799,6 +829,7 @@ function ProgressBlock({
 	savedPath,
 	starPrompt,
 	onAnswerStarPrompt,
+	encoderLine,
 }: {
 	phase: Phase;
 	progress: ExportProgress | null;
@@ -807,6 +838,10 @@ function ProgressBlock({
 	savedPath: string | null;
 	starPrompt: { store: boolean } | null;
 	onAnswerStarPrompt: () => void;
+	/** Which device/encoder is doing the work, as reported by the pipeline — shown while it
+	 *  runs and after it finishes, because "I picked the NVIDIA card" and "NVIDIA encoded this
+	 *  file" are different claims and only the second one can be checked. */
+	encoderLine?: string | null;
 }) {
 	const t = useScopedT("editor");
 	// Same string as the permanent app-menu entry and the native Help menu. It lives in `common`
@@ -976,6 +1011,17 @@ function ProgressBlock({
 					? t("exportDialog.framesEta", { current, total, eta: Math.max(0, Math.round(eta)) })
 					: t("exportDialog.preparingEncoder")}
 			</div>
+			{encoderLine ? (
+				<div
+					style={{
+						font: "400 12px/1.4 var(--font-body)",
+						color: "var(--muted)",
+						wordBreak: "break-word",
+					}}
+				>
+					{encoderLine}
+				</div>
+			) : null}
 		</div>
 	);
 }

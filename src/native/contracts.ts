@@ -209,12 +209,46 @@ export interface CompositorClipInput {
 }
 
 /** Bilan d'un export natif (mesure enveloppante §10 : frames, durée, fps). */
+/** One display adapter, as the settings screen lists it. `luid` is hex because a LUID is 64 bits
+ *  and JS numbers lose precision past 2^53. */
+export interface CompositorGpuInfo {
+	index: number;
+	name: string;
+	vendor: string;
+	vendorId: number;
+	deviceId: number;
+	luid: string;
+	dedicatedVramMb: number;
+	/** WARP / virtual display: composites, cannot encode. */
+	software: boolean;
+	/** Encoders this build CONTAINS for the vendor — compiled in, not "verified working". */
+	encoders: string[];
+}
+
+/** What an actual test encode proved. Every field is measured, not inferred. */
+export interface CompositorEncoderTestResult {
+	encoder: string | null;
+	adapter: string | null;
+	zeroCopy: boolean;
+	fallbackReason: string | null;
+	frames: number;
+	wallMs: number;
+}
+
 export interface CompositorExportResult {
 	frames: number;
 	wallS: number;
 	fps: number;
 	/** Durée de la vidéo exportée (secondes) — distincte de `wallS` (temps de rendu réel). */
 	videoDurationS: number;
+	/** Encoder that actually opened (`h264_nvenc`, `libopenh264`, …). */
+	encoder?: string;
+	/** True when composed D3D11 textures went straight into the encoder. */
+	zeroCopy?: boolean;
+	/** The adapter the frames were composed and encoded on. */
+	adapter?: string;
+	/** Why `auto` chose what it chose: the candidates that were refused, in order. */
+	fallbackReason?: string;
 }
 
 /** Taille/cadence/codec de sortie voulus. Tout omis → 1920x1080 / fps du 1er clip / h264. */
@@ -227,6 +261,9 @@ export interface CompositorExportParams {
 	/** Débit vidéo visé (bits/s), d'après la taille ET la cadence
 	 *  (`calculateMp4ExportSettings`). Omis → 8 Mb/s à 1080p quelle que soit la cadence. */
 	bitrate?: number;
+	/** Which encoder to use: `"auto"` (default), `"cpu"`, or an adapter LUID as hex. The device
+	 *  is created on that adapter, so the frames are composed and encoded on the same GPU. */
+	encoderDevice?: string;
 }
 
 /** Sortie GIF native (le seul chemin GIF de l'app).
@@ -892,6 +929,25 @@ export type NativeBridgeRequest =
 			domain: "compositor";
 			action: "cancelExportMulti";
 			payload: { exportId: string };
+			requestId?: string;
+	  }
+	| {
+			domain: "compositor";
+			action: "listGpus";
+			payload: Record<string, never>;
+			requestId?: string;
+	  }
+	| {
+			domain: "compositor";
+			/** Encode one short clip through the chosen device, to a temp file main deletes. */
+			action: "selfTestEncoder";
+			payload: {
+				clips: CompositorClipInput[];
+				width?: number;
+				height?: number;
+				fps?: number;
+				encoderDevice?: string;
+			};
 			requestId?: string;
 	  }
 	| {

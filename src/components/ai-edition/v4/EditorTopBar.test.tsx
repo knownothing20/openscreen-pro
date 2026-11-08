@@ -73,6 +73,7 @@ function renderTopBar(
 					renameProject: onRename,
 					toggleChat: noop,
 					openProviderSettings: onOpenProviderSettings,
+					openEncoderSettings: noop,
 					showAbout: onShowAbout,
 					checkForUpdates: onCheckForUpdates,
 					undo: onUndo,

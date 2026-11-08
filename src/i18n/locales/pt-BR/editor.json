@@ -214,7 +214,13 @@
 		"failedToWriteFile": "Falha ao gravar o arquivo",
 		"qualityUpscaleWarning": "Upscaling",
 		"exportedVideoOf": "de vídeo exportado em",
-		"nothingToExport": "Nada para exportar — a linha do tempo está vazia."
+		"nothingToExport": "Nada para exportar — a linha do tempo está vazia.",
+		"encoderPending": "Encoder: choosing among the allowed devices ({{device}})…",
+		"encoderDone": "Encoder: {{encoder}} on {{adapter}} · {{path}}",
+		"encoderFallback": " · fell back: {{reason}}",
+		"zeroCopy": "zero-copy",
+		"systemMemory": "system memory",
+		"encoderGif": "Encoder: GIF palette (software — no hardware encoder for this format)"
 	},
 	"inspector": {
 		"resetFocusPoint": "Redefinir ponto de foco",
@@ -437,5 +443,22 @@
 	"cpuCompositor": {
 		"notice": "Sem GPU compatível — a renderização ocorre na CPU, então a reprodução fica mais lenta.",
 		"exportWarning": "Sem GPU compatível: esta exportação roda na CPU e vai demorar muito mais que o normal."
+	},
+	"encoderSettings": {
+		"title": "Video encoding device",
+		"subtitle": "Which GPU encodes your exports. Composing and encoding stay on the same card, so the zero-copy path is kept.",
+		"redetect": "Detect again",
+		"test": "Test encoder",
+		"detecting": "Looking for display adapters…",
+		"noDevices": "No display adapters were reported on this system.",
+		"autoHint": "Picks the best encoder this machine accepts, and falls back to CPU if none opens. This is what every previous version did.",
+		"cpuHint": "No hardware encoder. Slowest, always works.",
+		"noEncoder": "No encoder for this vendor in this build.",
+		"duplicateEntries": "{{count}} driver entries",
+		"noClipToTest": "Open a project with a clip to test an encoder.",
+		"testOkDetail": "{{encoder}} on {{adapter}} · {{path}} · {{frames}} frames in {{ms}} ms",
+		"zeroCopy": "zero-copy",
+		"systemMemory": "system memory",
+		"persistHint": "Saved for this computer, not for the project — reopening a project keeps it."
 	}
 }

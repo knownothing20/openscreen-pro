@@ -79,8 +79,23 @@ export const DEFAULT_STAR_PROMPT: StarPromptPreferences = {
 	dismissed: false,
 };
 
+/**
+ * Which encoder exports use.
+ *
+ * `device` is one of three shapes and nothing else: `"auto"` (the historical behaviour, and what
+ * a settings file written before this existed parses to), `"cpu"`, or an adapter LUID in hex.
+ * A device is stored rather than an encoder name because the device is what decides both the
+ * vendor encoder and whether the zero-copy path survives.
+ */
+export interface EncoderPreferences {
+	device: string;
+}
+
+export const DEFAULT_ENCODER_PREFERENCES: EncoderPreferences = { device: "auto" };
+
 export interface AppSettingsSnapshot {
 	recording: RecordingPreferences;
+	lastEncoder: EncoderPreferences;
 	lastSource: RecordingSourceDescriptor | null;
 	starPrompt: StarPromptPreferences;
 }
@@ -176,6 +191,23 @@ function parseStarPrompt(value: unknown): StarPromptPreferences {
 	};
 }
 
+/**
+ * A hand-edited or truncated file must not brick exports. Anything that is not one of the three
+ * valid shapes reads as `auto` — the behaviour every existing install already has — rather than
+ * as a device id that cannot resolve.
+ */
+function parseEncoder(raw: RawSettings): EncoderPreferences {
+	const value = raw.lastEncoder;
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		return DEFAULT_ENCODER_PREFERENCES;
+	const device = (value as Record<string, unknown>).device;
+	if (device === "auto" || device === "cpu") return { device };
+	if (typeof device === "string" && /^[0-9a-f]{1,16}$/i.test(device)) {
+		return { device: device.toLowerCase() };
+	}
+	return DEFAULT_ENCODER_PREFERENCES;
+}
+
 function validateRecordingPatch(patch: Partial<RecordingPreferences>): void {
 	const allowed = new Set(Object.keys(DEFAULT_RECORDING_PREFERENCES));
 	for (const [key, value] of Object.entries(patch)) {
@@ -213,9 +245,21 @@ export class AppSettingsStore {
 		const raw = readRaw(this.userData);
 		return {
 			recording: parseRecording(raw),
+			lastEncoder: parseEncoder(raw),
 			lastSource: parseSource(raw.lastSource),
 			starPrompt: parseStarPrompt(raw.starPrompt),
 		};
+	}
+
+	/** Persist the encoder choice. Validated at the source so a bad write is an error here,
+	 *  not a silently-ignored device later. */
+	setEncoderPreferences(prefs: EncoderPreferences): AppSettingsSnapshot {
+		const { device } = prefs;
+		const valid = device === "auto" || device === "cpu" || /^[0-9a-f]{1,16}$/i.test(device);
+		if (!valid) throw new TypeError(`invalid encoder device: ${device}`);
+		const raw = readRaw(this.userData);
+		atomicWrite(this.userData, { ...raw, lastEncoder: { device: device.toLowerCase() } });
+		return this.getSnapshot();
 	}
 
 	setRecordingPreferences(patch: Partial<RecordingPreferences>): AppSettingsSnapshot {

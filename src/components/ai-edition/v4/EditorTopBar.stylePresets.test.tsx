@@ -114,6 +114,7 @@ function renderPane() {
 							renameProject: noop,
 							toggleChat: noop,
 							openProviderSettings: noop,
+							openEncoderSettings: noop,
 							showAbout: noop,
 							checkForUpdates: noop,
 							undo: noop,

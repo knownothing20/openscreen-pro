@@ -9,6 +9,7 @@ import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/native", () => ({
+	listGpusNative: vi.fn(async () => []),
 	exportMultiNative: vi.fn(),
 	exportGifNative: vi.fn(),
 	cancelExportNative: vi.fn(async () => ({ accepted: true })),
@@ -113,6 +114,7 @@ describe("MP4 export cancellation", () => {
 		vi.mocked(cancelExportNative).mockResolvedValue({ accepted: true });
 		onClose = vi.fn();
 		window.electronAPI = {
+			getEncoderPrefs: vi.fn(async () => ({ device: "auto" })),
 			pickExportSavePath: vi.fn(async () => ({ path: "/tmp/result.mp4" })),
 			onNativeExportProgress: vi.fn(() => vi.fn()),
 		} as unknown as Window["electronAPI"];

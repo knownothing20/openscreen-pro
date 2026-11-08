@@ -69,6 +69,30 @@ export interface ExportStats {
 	fps: number;
 	/** Duration of the exported video (seconds) — distinct from `wallS` (real render time). */
 	videoDurationS: number;
+	/** The encoder that actually opened, e.g. `h264_nvenc`. Absent on a platform whose
+	 *  pipeline does not report one. */
+	encoder?: string;
+	/** Composed GPU textures reached the encoder without a system-memory hop. */
+	zeroCopy?: boolean;
+	/** The adapter the frames were composed AND encoded on, read off the live device. */
+	adapter?: string;
+	/** For `auto`: why it ended up on that encoder (the vendors refused, in order). */
+	fallbackReason?: string;
+}
+
+/** One display adapter, as the settings screen lists it. `luid` is hex because a LUID is 64
+ *  bits and JS numbers lose precision past 2^53. */
+export interface GpuInfo {
+	index: number;
+	name: string;
+	vendor: string;
+	vendorId: number;
+	deviceId: number;
+	luid: string;
+	dedicatedVramMb: number;
+	software: boolean;
+	/** Encoders this build CONTAINS for the vendor — compiled in, not "verified working". */
+	encoders: string[];
 }
 
 /** Bilan d'un export GIF natif (slice 1). Mêmes champs que `ExportStats`
@@ -116,6 +140,9 @@ export interface ExportParamsInput {
 	/** Target video bitrate in bits/s, from the output size and frame rate. Omitted or 0 → the
 	 *  pipeline's own fallback, which ignores the frame rate (8 Mb/s at 1080p). */
 	bitrate?: number;
+	/** `"auto"` (default), `"cpu"`, or an adapter LUID as hex. The device is created ON that
+	 *  adapter, so composing and encoding stay on one GPU and zero-copy survives. */
+	encoderDevice?: string;
 }
 
 /** One timeline clip for the native multiclip export (screen + webcam files + source trim). */
@@ -217,6 +244,8 @@ export interface CompositorViewAddon {
 	 *  effects); omitted or invalid → nothing configured is applied (not a masking fallback).
 	 *  `params` — output size/fps/codec; omitted → 1920x1080/first clip's fps/h264.
 	 *  `onProgress` (frames encoded so far) is optional, throttled to ~10/s. */
+	/** Every display adapter this machine reports. Empty where DXGI is unavailable. */
+	listGpus?(): GpuInfo[];
 	exportMulti(
 		clips: ClipInput[],
 		outPath: string,

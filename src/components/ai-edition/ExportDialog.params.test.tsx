@@ -11,6 +11,7 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/native", () => ({
+	listGpusNative: vi.fn(async () => []),
 	exportMultiNative: vi.fn(async () => ({ videoDurationS: 10, wallS: 2 })),
 	exportGifNative: vi.fn(async () => ({ videoDurationS: 10, wallS: 2 })),
 	cancelExportNative: vi.fn(async () => ({ accepted: true })),
@@ -119,6 +120,7 @@ async function exportGif() {
 describe("ExportDialog MP4 params", () => {
 	beforeEach(() => {
 		window.electronAPI = {
+			getEncoderPrefs: vi.fn(async () => ({ device: "auto" })),
 			pickExportSavePath: vi.fn(async () => ({ path: "/tmp/out.mp4" })),
 			onNativeExportProgress: vi.fn(() => noop),
 		} as unknown as ElectronAPI;

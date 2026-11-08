@@ -348,6 +348,11 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 					}
 				},
 				render: async (stage, protectedPaths) => {
+					// The same stored choice the dialog reads. One setting, both entry points: a CLI
+					// export that quietly used a different GPU than the GUI would make the setting a
+					// lie, and this is exactly the kind of divergence nobody notices until a support
+					// report says "it is fast in the app and slow from the command line".
+					const prefs = await window.electronAPI?.getEncoderPrefs?.().catch(() => null);
 					await exportMultiNative(
 						clips,
 						stage,
@@ -358,6 +363,7 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 							fps: MP4_EXPORT_FPS,
 							codec: "h264",
 							bitrate: outDims.bitrate,
+							encoderDevice: prefs?.device ?? "auto",
 						},
 						[...protectedPaths],
 					);

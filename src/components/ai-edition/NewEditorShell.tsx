@@ -58,6 +58,7 @@ import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
 import { resolveVisibleClips } from "@/native/sceneDescription";
 import { useNativePlaybackSync } from "@/native/useNativePlaybackSync";
+import { EncoderSettingsDialog } from "./EncoderSettingsDialog";
 import { ExportDialog } from "./ExportDialog";
 import { insertionsEnabled } from "./insertionsEnabled";
 import { ChatStripPanel } from "./LeftPanel";
@@ -267,6 +268,7 @@ export function NewEditorShell() {
 	// mounted per trigger site.
 	const [editClipTarget, setEditClipTarget] = useState<AxcutClip | null>(null);
 	const [exportOpen, setExportOpen] = useState(false);
+	const [encoderSettingsOpen, setEncoderSettingsOpen] = useState(false);
 	const [unsavedPrompt, setUnsavedPrompt] = useState<{
 		action: "close" | "new" | "open" | "record";
 		resolve: (choice: UnsavedChoice) => void;
@@ -1636,6 +1638,7 @@ export function NewEditorShell() {
 					renameProject: handleRenameProject,
 					toggleChat: () => setChatOpen((v) => !v),
 					openProviderSettings: () => openDialog("providers"),
+					openEncoderSettings: () => setEncoderSettingsOpen(true),
 					showAbout: handleShowAbout,
 					checkForUpdates: handleCheckForUpdates,
 					undo: runUndo,
@@ -1850,6 +1853,11 @@ export function NewEditorShell() {
 				onChoose={handleConfirmUnsaved}
 			/>
 			<ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} document={document} />
+			<EncoderSettingsDialog
+				open={encoderSettingsOpen}
+				onClose={() => setEncoderSettingsOpen(false)}
+				document={document}
+			/>
 			<AddAudioLayerDialog
 				open={voiceoverFlow !== null}
 				maxDurationSec={voiceoverFlow?.maxDurationSec ?? 0}

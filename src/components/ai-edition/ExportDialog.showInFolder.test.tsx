@@ -12,6 +12,7 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/native", () => ({
+	listGpusNative: vi.fn(async () => []),
 	exportMultiNative: vi.fn(async () => ({ videoDurationS: 12, wallS: 3 })),
 	exportGifNative: vi.fn(async () => ({ videoDurationS: 12, wallS: 3 })),
 	cancelExportNative: vi.fn(async () => ({ accepted: true })),
@@ -94,6 +95,7 @@ let revealInFolder: ReturnType<typeof vi.fn>;
 function stubElectronAPI(reveal: () => Promise<unknown>) {
 	revealInFolder = vi.fn(reveal);
 	window.electronAPI = {
+		getEncoderPrefs: vi.fn(async () => ({ device: "auto" })),
 		pickExportSavePath: vi.fn(async () => ({ path: SAVED_PATH })),
 		onNativeExportProgress: vi.fn(() => noop),
 		revealInFolder,
