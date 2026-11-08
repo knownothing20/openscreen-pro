@@ -1391,6 +1391,116 @@ pub fn encoder_names_for_vendor(vendor: u32) -> Vec<String> {
     names
 }
 
+/// The encoders this run is allowed to try, in order.
+///
+/// Pure on purpose: "which encoders may run for this choice" is the decision the whole fallback
+/// story hangs on, and it can be proven without a GPU, a driver or a file.
+pub(crate) fn plan_candidates(
+    codec: &ExportCodec,
+    choice: EncoderChoice,
+) -> Vec<(&'static str, AVPixelFormat::Type)> {
+    codec
+        .candidates()
+        .iter()
+        .copied()
+        .filter(|(name, _)| match choice {
+            EncoderChoice::Auto => true,
+            // Not `is_software`: `*_mf` is vendor-less but may resolve to a hardware MFT.
+            EncoderChoice::Cpu => EncoderChoice::is_explicit_software(name),
+            EncoderChoice::Vendor(vendor) => EncoderChoice::vendor_of(name) == Some(vendor),
+        })
+        .collect()
+}
+
+/// Drop the encoders a test asked to fail, exactly as a real `avcodec_open2` refusal would.
+///
+/// `OPENSCREEN_TEST_FAIL_ENCODER=h264_nvenc,h264_amf` is how the fallback path is exercised on a
+/// machine where those encoders actually work: without it, "Auto falls back to the next candidate"
+/// and "Manual refuses instead of falling back" could only be tested by breaking a driver.
+pub(crate) fn without_injected_failures<T>(
+    candidates: Vec<(T, AVPixelFormat::Type)>,
+    forced_failures: &std::collections::HashSet<String>,
+) -> (Vec<(T, AVPixelFormat::Type)>, Vec<String>)
+where
+    T: AsRef<str>,
+{
+    let mut kept = Vec::new();
+    let mut dropped = Vec::new();
+    for candidate in candidates {
+        if forced_failures.contains(candidate.0.as_ref()) {
+            dropped.push(format!("{}: injected failure", candidate.0.as_ref()));
+            continue;
+        }
+        kept.push(candidate);
+    }
+    (kept, dropped)
+}
+
+fn forced_failures() -> std::collections::HashSet<String> {
+    std::env::var("OPENSCREEN_TEST_FAIL_ENCODER")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Give one quality target to three encoders that do not share a vocabulary.
+///
+/// `ctx.bit_rate` alone is not a rate-control decision. Measured on the test machine, same timeline
+/// and same target: NVENC honours the bitrate (36.2 MB), AMF ignores it and runs its default
+/// quality mode (77.7 MB), and openh264 undershoots at 16.9 MB. None of them is wrong — they have
+/// different defaults — so the target has to be stated in each one's own terms.
+///
+/// Deliberately NOT touching presets: `p4` on NVENC and `balanced` on AMF are quality/speed knobs,
+/// and changing them would make "same quality tier" mean something different than it did before.
+/// Only the rate-control method and the target are set, which is what makes the files comparable.
+fn apply_rate_control(ctx: *mut AVCodecContext, encoder: &str, bit_rate: i64) {
+    if bit_rate <= 0 || ctx.is_null() {
+        return;
+    }
+    let set = |key: &str, value: i64| {
+        let Ok(ckey) = CString::new(key) else { return };
+        let ret = unsafe {
+            av_opt_set_int(
+                ctx as *mut std::ffi::c_void,
+                ckey.as_ptr(),
+                value,
+                AV_OPT_SEARCH_CHILDREN as i32,
+            )
+        };
+        if ret < 0 {
+            eprintln!("[pipeline] {encoder}: option {key}={value} refusée (ret={ret})");
+        }
+    };
+    match encoder {
+        // VBR against the tier's budget. Deliberately no `maxrate == bitrate`: measured on the
+        // test timeline, that cap dropped NVENC from 6.8 Mbit/s to 5.5 for no visible gain, and
+        // the budget is a budget, not a floor.
+        "h264_nvenc" | "hevc_nvenc" => {
+            set("rc", 1);
+            set("bitrate", bit_rate);
+        }
+        // `vbr_peak` (2) is the AMF rate-control method that reads a target at all; its default is
+        // `cqp`, a constant-quantiser mode with no bitrate notion. AMF has no `bitrate` AVOption —
+        // it reads `ctx.bit_rate`, which is already set — so only the mode is chosen here.
+        "h264_amf" | "hevc_amf" => {
+            set("rc", 2);
+        }
+        // openh264's default is quality-driven; `rc_mode` 2 asks for a bitrate target.
+        "libopenh264" | "libkvazaar" => {
+            set("rc_mode", 2);
+            set("bitrate", bit_rate);
+        }
+        // QSV and `*_mf` already honour `ctx.bit_rate`: adding knobs nobody has measured here
+        // would be guesswork dressed as configuration.
+        _ => {}
+    }
+}
+
 /// L'encodeur vidéo retenu pour ce run, plus ce qu'il faut pour le nourrir.
 ///
 /// Le reste du pipeline continue de produire des frames GPU sans savoir qui encode : quand le
@@ -1440,21 +1550,18 @@ impl VideoEncoder {
         // narrows the candidate list to that vendor and never falls back, a CPU pick drops every
         // hardware candidate, and Auto keeps the historical order below untouched.
         let choice = crate::encoder_choice::choice();
-        let mut refused: Vec<String> = Vec::new();
-        let mut skipped_by_choice: Vec<&'static str> = Vec::new();
-        for &candidate in codec.candidates() {
-            let (name, pix_fmt) = candidate;
+        let allowed = plan_candidates(codec, choice);
+        // Everything the choice excluded, kept only to explain a failure ("no encoder for this
+        // vendor") instead of printing an empty refusal list.
+        let skipped_by_choice: Vec<&'static str> = codec
+            .candidates()
+            .iter()
+            .map(|(name, _)| *name)
+            .filter(|name| !allowed.iter().any(|(kept, _)| kept == name))
+            .collect();
+        let (attempts, mut refused) = without_injected_failures(allowed, &forced_failures());
+        for (name, pix_fmt) in attempts {
             if forced.as_deref().is_some_and(|forced| forced != name) {
-                continue;
-            }
-            let allowed = match choice {
-                EncoderChoice::Auto => true,
-                // Not `is_software`: `*_mf` is vendor-less but may resolve to a hardware MFT.
-                EncoderChoice::Cpu => EncoderChoice::is_explicit_software(name),
-                EncoderChoice::Vendor(vendor) => EncoderChoice::vendor_of(name) == Some(vendor),
-            };
-            if !allowed {
-                skipped_by_choice.push(name);
                 continue;
             }
             // Sans pool D3D11 (backend CPU), les candidats zéro-copie n'ont rien à consommer :
@@ -1464,7 +1571,7 @@ impl VideoEncoder {
                 refused.push(format!("{name}: pas de pool D3D11 (backend CPU)"));
                 continue;
             }
-            let encoder = match Self::try_open(candidate, w, h, fps, bit_rate, hw_frames) {
+            let encoder = match Self::try_open((name, pix_fmt), w, h, fps, bit_rate, hw_frames) {
                 Ok(encoder) => encoder,
                 Err(error) => {
                     refused.push(format!("{name}: {error}"));
@@ -1564,6 +1671,7 @@ impl VideoEncoder {
         if pix_fmt == AVPixelFormat::AV_PIX_FMT_D3D11 {
             (*ctx).hw_frames_ctx = av_buffer_ref(hw_frames);
         }
+        apply_rate_control(ctx, name, bit_rate);
         if let Err(error) = averr(avcodec_open2(ctx, enc, ptr::null_mut()), "avcodec_open2(enc)") {
             avcodec_free_context(&mut ctx);
             return Err(error);
@@ -3056,5 +3164,71 @@ pub fn probe_frame_count(path: &str) -> Result<u64> {
             n = crate::compositor::FIXTURE_FRAMES as u64;
         }
         Ok(n)
+    }
+}
+
+#[cfg(test)]
+mod encoder_plan_tests {
+    use super::*;
+    use crate::encoder_choice::EncoderChoice;
+    use std::collections::HashSet;
+
+    fn names(codec: ExportCodec, choice: EncoderChoice) -> Vec<&'static str> {
+        plan_candidates(&codec, choice).into_iter().map(|(name, _)| name).collect()
+    }
+
+    #[test]
+    fn auto_keeps_the_historical_order_untouched() {
+        assert_eq!(
+            names(ExportCodec::H264, EncoderChoice::Auto),
+            vec!["h264_amf", "h264_nvenc", "h264_qsv", "h264_mf", "libopenh264"]
+        );
+    }
+
+    #[test]
+    fn a_pinned_vendor_sees_only_its_own_encoder() {
+        assert_eq!(names(ExportCodec::H264, EncoderChoice::Vendor(0x10DE)), vec!["h264_nvenc"]);
+        assert_eq!(names(ExportCodec::H264, EncoderChoice::Vendor(0x1002)), vec!["h264_amf"]);
+        assert_eq!(names(ExportCodec::H264, EncoderChoice::Vendor(0x8086)), vec!["h264_qsv"]);
+        // A vendor with no hardware encoder in the build has nothing to try, which is a failure
+        // the caller reports — not a licence to use somebody else's encoder.
+        assert!(names(ExportCodec::H264, EncoderChoice::Vendor(0x1414)).is_empty());
+    }
+
+    #[test]
+    fn cpu_is_only_encoders_that_carry_their_own_implementation() {
+        // `h264_mf` is absent on purpose: MediaFoundation may resolve to a hardware MFT.
+        assert_eq!(names(ExportCodec::H264, EncoderChoice::Cpu), vec!["libopenh264"]);
+        assert_eq!(names(ExportCodec::H265, EncoderChoice::Cpu), vec!["libkvazaar"]);
+    }
+
+    #[test]
+    fn auto_still_offers_the_next_candidate_when_one_is_simulated_as_failing() {
+        let failing: HashSet<String> = ["h264_amf".to_string()].into_iter().collect();
+        let (kept, dropped) = without_injected_failures(plan_candidates(&ExportCodec::H264, EncoderChoice::Auto), &failing);
+        let kept: Vec<&str> = kept.into_iter().map(|(name, _)| name).collect();
+        assert_eq!(kept, vec!["h264_nvenc", "h264_qsv", "h264_mf", "libopenh264"]);
+        assert_eq!(dropped.len(), 1);
+        assert!(dropped[0].contains("h264_amf"));
+    }
+
+    #[test]
+    fn manual_has_nothing_left_when_its_encoder_is_simulated_as_failing() {
+        let failing: HashSet<String> = ["h264_nvenc".to_string()].into_iter().collect();
+        let (kept, dropped) =
+            without_injected_failures(plan_candidates(&ExportCodec::H264, EncoderChoice::Vendor(0x10DE)), &failing);
+        assert!(kept.is_empty(), "manual must not fall back to another vendor or to the CPU");
+        assert_eq!(dropped.len(), 1);
+    }
+
+    #[test]
+    fn every_hardware_candidate_in_the_plan_declares_its_vendor() {
+        // Guards the table in `EncoderChoice::vendor_of` against a future candidate that is
+        // hardware but unlabelled — it would silently be excluded from every manual choice.
+        for (name, _) in plan_candidates(&ExportCodec::H264, EncoderChoice::Auto) {
+            if !EncoderChoice::is_software(name) {
+                assert!(EncoderChoice::vendor_of(name).is_some(), "{name}");
+            }
+        }
     }
 }

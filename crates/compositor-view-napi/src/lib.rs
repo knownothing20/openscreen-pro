@@ -619,7 +619,13 @@ pub struct GpuInfo {
     pub vendor: String,
     pub vendor_id: u32,
     pub device_id: u32,
-    /// Stable across reboots — this, not `index`, is what the setting stores.
+    /// PnP device instance id. THIS is what the setting stores: it names the physical device and
+    /// survives reboots and driver updates, unlike `luid`, which the driver may change.
+    pub stable_id: String,
+    /// True when `stable_id` is a model-level key shared with another adapter (two identical
+    /// cards), so it cannot be used to tell them apart.
+    pub identity_ambiguous: bool,
+    /// Runtime handle, valid for this session only — what a device is created on.
     pub luid: String,
     pub dedicated_vram_mb: u32,
     /// A software/virtual adapter (WARP, RDP, a virtual display): it can composite, it has no
@@ -628,6 +634,19 @@ pub struct GpuInfo {
     /// Encoders this build CONTAINS for the vendor. Compiled in is not "works": only opening one
     /// on this card proves that, which is what the test-encode entry point is for.
     pub encoders: Vec<String>,
+}
+
+/// TEMPORARY diagnostic: what the PnP display list actually contains on this machine.
+#[napi]
+pub fn debug_pnp_adapters() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        openscreen_compositor::d3d::debug_pnp_adapters()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
 }
 
 /// Every display adapter this machine reports, plus what the build has for it.
@@ -648,6 +667,8 @@ pub fn list_gpus() -> Vec<GpuInfo> {
                 vendor: adapter.vendor_name().to_string(),
                 vendor_id: adapter.vendor_id,
                 device_id: adapter.device_id,
+                stable_id: adapter.stable_id.clone(),
+                identity_ambiguous: adapter.identity_ambiguous,
                 luid: format!("{:016x}", adapter.luid),
                 dedicated_vram_mb: (adapter.dedicated_video_memory / (1024 * 1024)) as u32,
                 software: adapter.software,

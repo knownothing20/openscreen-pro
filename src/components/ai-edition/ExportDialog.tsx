@@ -21,7 +21,7 @@ import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
-import { describeStoredChoice } from "@/lib/encoderDevices";
+import { resolveEncoderDevice } from "@/lib/encoderDevices";
 import {
 	type ExportFormat,
 	type ExportProgress,
@@ -421,13 +421,16 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			// The same stored choice the CLI reads: one setting, both entry points. Resolved before
 			// the encoder opens so the dialog can say which device it is waiting on.
 			const encoderPrefs = await window.electronAPI?.getEncoderPrefs?.().catch(() => null);
-			const encoderDevice = encoderPrefs?.device ?? "auto";
 			const gpus = await listGpusNative().catch(() => [] as CompositorGpuInfo[]);
-			setEncoderLine(
-				t("exportDialog.encoderPending", {
-					device: describeStoredChoice(encoderDevice, gpus).label,
-				}),
-			);
+			// Resolves the STORED identity (a PnP id) to this session's LUID, and throws when the
+			// card is gone — a manual choice must stop the export rather than encode elsewhere.
+			const encoderChoice = resolveEncoderDevice(encoderPrefs?.device ?? "auto", gpus);
+			const encoderDevice = encoderChoice.device;
+			if (encoderChoice.migratedTo) {
+				// A V2.2 LUID that still resolves: upgrade the stored value to the stable id once.
+				void window.electronAPI?.setEncoderPrefs?.({ device: encoderChoice.migratedTo });
+			}
+			setEncoderLine(t("exportDialog.encoderPending", { device: encoderChoice.label }));
 			try {
 				// The webcam background effect is applied by the compositor from the scene,
 				// so the clip list needs no pre-rendering pass.

@@ -5,7 +5,7 @@
 
 use anyhow::{bail, Result};
 use std::sync::OnceLock;
-use windows::core::Interface;
+use windows::core::{Interface, PCWSTR};
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_UNKNOWN, D3D_DRIVER_TYPE_WARP,
@@ -19,6 +19,14 @@ use windows::Win32::Graphics::Direct3D11::{
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1, DXGI_ADAPTER_DESC1,
     DXGI_ADAPTER_FLAG_SOFTWARE,
+};
+use windows::Win32::Devices::DeviceAndDriverInstallation::{
+    SetupDiEnumDeviceInfo, SetupDiGetClassDevsW, SetupDiGetDeviceInstanceIdW,
+    SetupDiGetDeviceRegistryPropertyW, DIGCF_PRESENT, GUID_DEVCLASS_DISPLAY, HDEVINFO,
+    SP_DEVINFO_DATA, SPDRP_DEVICEDESC, SPDRP_DRIVER,
+};
+use windows::Win32::System::Registry::{
+    RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ, REG_SZ,
 };
 
 /// Qui exécute le pipeline. Le rendu et le décodage sont DEUX axes distincts, et aucune
@@ -62,16 +70,34 @@ impl Backend {
 
 /// One display adapter, as a user would recognise it in the settings list.
 ///
-/// `luid` is the identity that gets stored: the enumeration index is not stable across reboots,
-/// driver updates or plugging a monitor in, and a saved setting that silently points at a
-/// different card after a restart is worse than no setting at all.
+/// Two identities, and they are not interchangeable:
+///
+///  - `luid` is the RUNTIME handle. It is what a device has to be created on, and it is what
+///    DXGI changes when a driver updates, a card is re-enumerated, or the session differs. Storing
+///    it across restarts is what V2.2 did, and it is why a saved choice can point at a different
+///    card (or at nothing).
+///  - `stable_id` is the PnP device instance id (`PCI\VEN_..&DEV_..&SUBSYS_..&REV_..\<instance>`),
+///    which names the physical device and survives reboots and driver updates. This is what the
+///    setting stores.
+///
+/// `identity_ambiguous` is set when the PnP list cannot be paired one-to-one with a DXGI entry —
+/// several identical cards, or an adapter that reports no PCI identity. It is a "do not merge
+/// these, and do not promise the choice will survive" flag, not an error.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdapterInfo {
     pub index: u32,
     pub name: String,
     pub vendor_id: u32,
     pub device_id: u32,
+    pub subsystem_id: u32,
+    pub revision: u32,
     pub luid: u64,
+    /// PnP instance id, or a PCI key when the instance id could not be established.
+    pub stable_id: String,
+    /// True when `stable_id` is a model-level key shared with another adapter.
+    pub identity_ambiguous: bool,
+    /// Driver version from the display class key, when it could be read.
+    pub driver_version: Option<String>,
     pub dedicated_video_memory: u64,
     /// A software renderer (WARP, RDP, a virtual display driver) — it can composite but has no
     /// hardware encoder behind it, and saying so is better than listing it as a GPU.
@@ -96,10 +122,234 @@ impl AdapterInfo {
             name: "Unknown adapter".to_string(),
             vendor_id: 0,
             device_id: 0,
+            subsystem_id: 0,
+            revision: 0,
             luid: 0,
+            stable_id: "unknown".to_string(),
+            identity_ambiguous: true,
+            driver_version: None,
             dedicated_video_memory: 0,
             software: false,
         }
+    }
+}
+
+/// One display adapter as Windows' device tree knows it.
+#[derive(Clone, Debug)]
+struct PnpDisplayAdapter {
+    instance_id: String,
+    description: String,
+    driver_version: Option<String>,
+}
+
+fn wide_to_string(raw: &[u16]) -> String {
+    let end = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
+    String::from_utf16_lossy(&raw[..end])
+}
+
+fn utf16_bytes_to_string(buffer: &[u8]) -> String {
+    let units: Vec<u16> = buffer
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .take_while(|&unit| unit != 0)
+        .collect();
+    String::from_utf16_lossy(&units)
+}
+
+/// `DriverVersion` from the display class key named by `SPDRP_DRIVER` (e.g. "0000").
+///
+/// Optional on purpose: this is presentation (the settings list shows it), and a machine where the
+/// key cannot be read is still perfectly able to encode.
+fn driver_version_for(class_subkey: &str) -> Option<String> {
+    if class_subkey.is_empty() {
+        return None;
+    }
+    let path = format!(
+        "SYSTEM\\CurrentControlSet\\Control\\Class\\{{4d36e968-e325-11ce-bfc1-08002be10318}}\\{class_subkey}"
+    );
+    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let mut key = HKEY::default();
+        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, PCWSTR(wide.as_ptr()), 0, KEY_READ, &mut key).is_err() {
+            return None;
+        }
+        let name: Vec<u16> = "DriverVersion".encode_utf16().chain(std::iter::once(0)).collect();
+        let mut kind = REG_SZ;
+        let mut size: u32 = 0;
+        let ok = RegQueryValueExW(key, PCWSTR(name.as_ptr()), None, Some(&mut kind), None, Some(&mut size));
+        if ok.is_err() || size == 0 || size > 512 {
+            let _ = RegCloseKey(key);
+            return None;
+        }
+        let mut buffer = vec![0u8; size as usize];
+        let read = RegQueryValueExW(
+            key,
+            PCWSTR(name.as_ptr()),
+            None,
+            Some(&mut kind),
+            Some(buffer.as_mut_ptr()),
+            Some(&mut size),
+        );
+        let _ = RegCloseKey(key);
+        if read.is_err() {
+            return None;
+        }
+        buffer.truncate(size as usize);
+        let value = utf16_bytes_to_string(&buffer);
+        if value.is_empty() { None } else { Some(value) }
+    }
+}
+
+/// Display adapters from the PnP device tree.
+///
+/// `EnumDisplayDevicesW` is the obvious call and it is the wrong one here: in an RDP or indirect
+/// session it reports the session's own display adapter (16 identical `RDPIDD_INDIRECTDISPLAY`
+/// entries on the machine this was written on) and never the physical cards. `SetupDiGetClassDevs`
+/// walks the device tree instead, which is where the PCI instance ids live and where a driver
+/// update does not change them.
+///
+/// Cached: a device-tree walk does not change during a session, and this is called per adapter.
+fn enumerate_pnp_adapters() -> Vec<PnpDisplayAdapter> {
+    static CACHE: OnceLock<Vec<PnpDisplayAdapter>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| unsafe {
+            let mut adapters = Vec::new();
+            let Ok(set) = SetupDiGetClassDevsW(Some(&GUID_DEVCLASS_DISPLAY), None, None, DIGCF_PRESENT)
+            else {
+                return adapters;
+            };
+            for index in 0..64u32 {
+                let mut info = SP_DEVINFO_DATA::default();
+                info.cbSize = std::mem::size_of::<SP_DEVINFO_DATA>() as u32;
+                if SetupDiEnumDeviceInfo(set, index, &mut info).is_err() {
+                    break;
+                }
+
+                let mut id_buffer = [0u16; 512];
+                let mut required: u32 = 0;
+                if SetupDiGetDeviceInstanceIdW(
+                    set,
+                    &info,
+                    Some(&mut id_buffer[..]),
+                    Some(&mut required),
+                )
+                .is_err()
+                {
+                    continue;
+                }
+                let instance_id = wide_to_string(&id_buffer).to_uppercase();
+                if instance_id.is_empty() {
+                    continue;
+                }
+
+                let mut desc_buffer = [0u8; 512];
+                let mut desc_kind = 0u32;
+                let description = if SetupDiGetDeviceRegistryPropertyW(
+                    set,
+                    &info,
+                    SPDRP_DEVICEDESC,
+                    Some(&mut desc_kind),
+                    Some(&mut desc_buffer),
+                    Some(&mut required),
+                )
+                .is_ok()
+                {
+                    utf16_bytes_to_string(&desc_buffer)
+                } else {
+                    String::new()
+                };
+
+                let mut driver_buffer = [0u8; 512];
+                let class_subkey = if SetupDiGetDeviceRegistryPropertyW(
+                    set,
+                    &info,
+                    SPDRP_DRIVER,
+                    Some(&mut desc_kind),
+                    Some(&mut driver_buffer),
+                    Some(&mut required),
+                )
+                .is_ok()
+                {
+                    utf16_bytes_to_string(&driver_buffer)
+                } else {
+                    String::new()
+                };
+
+                adapters.push(PnpDisplayAdapter {
+                    driver_version: driver_version_for(&class_subkey),
+                    instance_id,
+                    description,
+                });
+            }
+            let _ = set;
+            adapters
+        })
+        .clone()
+}
+
+/// TEMPORARY: the raw PnP adapter list, for diagnosing identity pairing on a real machine.
+pub fn debug_pnp_adapters() -> Vec<String> {
+    enumerate_pnp_adapters()
+        .into_iter()
+        .map(|adapter| {
+            format!(
+                "{} | {} | {}",
+                adapter.instance_id,
+                adapter.description,
+                adapter.driver_version.unwrap_or_else(|| "-".to_string())
+            )
+        })
+        .collect()
+}
+
+/// The PCI model fragment both DXGI and the PnP instance id carry, e.g.
+/// `VEN_10DE&DEV_2705&SUBSYS_413C1458&REV_A1`.
+fn pci_model_key(desc: &DXGI_ADAPTER_DESC1) -> String {
+    format!(
+        "VEN_{:04X}&DEV_{:04X}&SUBSYS_{:08X}&REV_{:02X}",
+        desc.VendorId,
+        desc.DeviceId,
+        desc.SubSysId,
+        desc.Revision & 0xFF
+    )
+}
+
+/// (stable_id, ambiguous, driver_version) for one DXGI adapter.
+///
+/// One PnP match means the instance id names this card and nothing else. Several matches mean the
+/// machine has two cards of the same model, and the PCI fragment cannot tell them apart: the id
+/// falls back to the model, and `ambiguous` says so — the caller must not merge entries on it.
+/// Zero matches means the adapter reports no PCI identity (software, virtual, or a driver that
+/// hides it); an exact description match is tried once, and the answer stays "ambiguous" either
+/// way rather than being invented.
+fn stable_identity(desc: &DXGI_ADAPTER_DESC1, name: &str) -> (String, bool, Option<String>) {
+    let key = pci_model_key(desc);
+    let pnp = enumerate_pnp_adapters();
+    let by_pci: Vec<&PnpDisplayAdapter> = pnp
+        .iter()
+        .filter(|adapter| adapter.instance_id.contains(key.as_str()))
+        .collect();
+    match by_pci.len() {
+        1 => (
+            by_pci[0].instance_id.clone(),
+            false,
+            by_pci[0].driver_version.clone(),
+        ),
+        0 => {
+            let by_name: Vec<&PnpDisplayAdapter> = pnp
+                .iter()
+                .filter(|adapter| adapter.description.eq_ignore_ascii_case(name))
+                .collect();
+            match by_name.len() {
+                1 => (
+                    by_name[0].instance_id.clone(),
+                    false,
+                    by_name[0].driver_version.clone(),
+                ),
+                _ => (format!("pci:{key}"), true, None),
+            }
+        }
+        _ => (format!("pci:{key}"), true, None),
     }
 }
 
@@ -111,12 +361,18 @@ fn adapter_info(index: u32, desc: &DXGI_ADAPTER_DESC1) -> AdapterInfo {
     let name = String::from_utf16_lossy(
         &desc.Description[..desc.Description.iter().position(|&c| c == 0).unwrap_or(desc.Description.len())],
     );
+    let (stable_id, identity_ambiguous, driver_version) = stable_identity(desc, &name);
     AdapterInfo {
         index,
         name,
         vendor_id: desc.VendorId,
         device_id: desc.DeviceId,
+        subsystem_id: desc.SubSysId,
+        revision: desc.Revision,
         luid: luid_of(desc),
+        stable_id,
+        identity_ambiguous,
+        driver_version,
         dedicated_video_memory: desc.DedicatedVideoMemory as u64,
         // Microsoft's "Basic Render Driver" is WARP and is NOT flagged SOFTWARE by DXGI on this
         // platform — it reports as a normal adapter with no VRAM. Both readings are folded in so

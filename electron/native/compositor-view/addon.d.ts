@@ -88,6 +88,8 @@ export interface GpuInfo {
 	vendor: string;
 	vendorId: number;
 	deviceId: number;
+	stableId: string;
+	identityAmbiguous: boolean;
 	luid: string;
 	dedicatedVramMb: number;
 	software: boolean;

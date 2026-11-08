@@ -2,7 +2,11 @@ import { Cpu, Loader2, MonitorCog, RefreshCw, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
-import { buildDeviceOptions, type EncoderDeviceOption } from "@/lib/encoderDevices";
+import {
+	buildDeviceOptions,
+	type EncoderDeviceOption,
+	resolveDeviceSelection,
+} from "@/lib/encoderDevices";
 import { listGpusNative, selfTestEncoderNative } from "@/native";
 import type { CompositorGpuInfo } from "@/native/contracts";
 import { buildNativeClipList } from "./ExportDialog";
@@ -116,6 +120,8 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 	};
 
 	const options = buildDeviceOptions(gpus ?? []);
+	// A stored legacy LUID is not an option value, but the card it names is still the selected one.
+	const selectedLuid = resolveDeviceSelection(device, gpus ?? []).luid;
 
 	return (
 		<ModalShell
@@ -152,7 +158,9 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 						<DeviceRow
 							key={option.device}
 							option={option}
-							selected={device === option.device}
+							selected={
+								device === option.device || (Boolean(selectedLuid) && option.luid === selectedLuid)
+							}
 							test={test && test.device === option.device ? test : null}
 							onSelect={() => void choose(option.device)}
 							t={t}
@@ -233,6 +241,16 @@ function DeviceRow({
 					</span>
 				) : null}
 
+				{option.kind === "gpu" && option.stableId ? (
+					// The identity that is actually stored, and the handle that is only good for this
+					// session — side by side, because confusing them is what V2.2 did.
+					<span style={identLine}>
+						{t("encoderSettings.stableId")}: {option.stableId}
+						{option.identityAmbiguous ? ` (${t("encoderSettings.ambiguousIdentity")})` : ""}
+						{option.luid ? ` · ${t("encoderSettings.runtimeLuid")}: ${option.luid}` : ""}
+					</span>
+				) : null}
+
 				{option.disabledReason ? (
 					<span style={{ ...sub, color: "var(--warning, #d97706)" }}>{option.disabledReason}</span>
 				) : null}
@@ -264,6 +282,13 @@ const sub: React.CSSProperties = {
 	fontSize: 12,
 	color: "var(--text-muted, #a1a1aa)",
 	lineHeight: 1.5,
+};
+const identLine: React.CSSProperties = {
+	fontSize: 10.5,
+	fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+	color: "var(--text-muted, #71717a)",
+	overflowWrap: "anywhere",
+	lineHeight: 1.45,
 };
 const hint: React.CSSProperties = { fontSize: 12, color: "var(--text-muted, #71717a)" };
 const errorBox: React.CSSProperties = {

@@ -166,3 +166,29 @@ describe("app settings store", () => {
 		expect(new AppSettingsStore(dir).getSnapshot().recording.camQuality).toBe("2160p");
 	});
 });
+
+describe("encoder preferences", () => {
+	it("round-trips a stable PnP id without changing its case", () => {
+		// The instance id IS the device-tree spelling; a lowercased copy stops matching the adapter
+		// list, which is how a saved choice silently turns into "auto".
+		const id = "id:PCI\\VEN_10DE&DEV_2705&SUBSYS_413C1458&REV_A1\\4&25C6DA53&0&0009";
+		const store = new AppSettingsStore(temp());
+		store.setEncoderPreferences({ device: id });
+		expect(store.getSnapshot().lastEncoder.device).toBe(id);
+	});
+
+	it("normalises a legacy LUID, which is hex and case-free", () => {
+		const store = new AppSettingsStore(temp());
+		store.setEncoderPreferences({ device: "000000000438724D" });
+		expect(store.getSnapshot().lastEncoder.device).toBe("000000000438724d");
+	});
+
+	it("reads an unreadable value as auto rather than bricking exports", () => {
+		const dir = temp();
+		writeFileSync(
+			path.join(dir, "recording-settings.json"),
+			JSON.stringify({ lastEncoder: { device: "nonsense value" } }),
+		);
+		expect(new AppSettingsStore(dir).getSnapshot().lastEncoder.device).toBe("auto");
+	});
+});

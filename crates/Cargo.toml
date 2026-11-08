@@ -70,6 +70,10 @@ features = [
     "Win32_Graphics_Gdi",            # brosses/police GUI de la preview (poc-d3d/src/app.rs)
     "Win32_Security",                # IDXGIResource1::CreateSharedHandle (shared_frames.rs)
     "Win32_System_Performance",      # QueryPerformanceCounter / Frequency (§10)
+    # GPU identity: the PnP device tree, not GDI's display list — the latter only reports the
+    # session's indirect display adapter over RDP, which is exactly where a stable id is needed.
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_System_Registry",         # driver version, read off the display class key
     "Win32_System_LibraryLoader",    # GetModuleHandleW (hInstance)
     "Win32_UI_WindowsAndMessaging",  # fenêtres (harnais live + GUI du POC)
     "Win32_UI_Controls",             # barre de progression (poc-d3d/src/app.rs)

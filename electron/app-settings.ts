@@ -202,6 +202,11 @@ function parseEncoder(raw: RawSettings): EncoderPreferences {
 		return DEFAULT_ENCODER_PREFERENCES;
 	const device = (value as Record<string, unknown>).device;
 	if (device === "auto" || device === "cpu") return { device };
+	// `id:<PnP instance id>` — the shape that survives reboots. Case is preserved: it IS the
+	// device-tree spelling, and lowercasing it silently stops it matching the adapter list.
+	if (typeof device === "string" && /^id:[\x20-\x7e]{1,256}$/.test(device)) return { device };
+	// V2.2 stored a bare LUID. Still readable, still resolvable — the renderer migrates it to the
+	// stable id the first time it resolves.
 	if (typeof device === "string" && /^[0-9a-f]{1,16}$/i.test(device)) {
 		return { device: device.toLowerCase() };
 	}
@@ -255,10 +260,18 @@ export class AppSettingsStore {
 	 *  not a silently-ignored device later. */
 	setEncoderPreferences(prefs: EncoderPreferences): AppSettingsSnapshot {
 		const { device } = prefs;
-		const valid = device === "auto" || device === "cpu" || /^[0-9a-f]{1,16}$/i.test(device);
+		const valid =
+			device === "auto" ||
+			device === "cpu" ||
+			// `id:<PnP instance id>`, or a legacy bare LUID from V2.2.
+			/^id:[\x20-\x7e]{1,256}$/.test(device) ||
+			/^[0-9a-f]{1,16}$/i.test(device);
 		if (!valid) throw new TypeError(`invalid encoder device: ${device}`);
 		const raw = readRaw(this.userData);
-		atomicWrite(this.userData, { ...raw, lastEncoder: { device: device.toLowerCase() } });
+		// A LUID is hex and case-free; a PnP instance id is not, and lowercasing it would make the
+		// stored value stop matching the adapter it names.
+		const stored = device.startsWith("id:") ? device : device.toLowerCase();
+		atomicWrite(this.userData, { ...raw, lastEncoder: { device: stored } });
 		return this.getSnapshot();
 	}
 

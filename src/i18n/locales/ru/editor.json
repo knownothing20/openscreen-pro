@@ -459,6 +459,11 @@
 		"testOkDetail": "{{encoder}} on {{adapter}} · {{path}} · {{frames}} frames in {{ms}} ms",
 		"zeroCopy": "zero-copy",
 		"systemMemory": "system memory",
-		"persistHint": "Saved for this computer, not for the project — reopening a project keeps it."
+		"persistHint": "Saved for this computer, not for the project — reopening a project keeps it.",
+		"stableId": "Device id",
+		"runtimeLuid": "Session handle",
+		"driverVersion": "Driver",
+		"ambiguousIdentity": "identity shared with another card",
+		"deviceMissing": "not present — the export will refuse until it is back or you pick another device"
 	}
 }

@@ -217,6 +217,13 @@ export interface CompositorGpuInfo {
 	vendor: string;
 	vendorId: number;
 	deviceId: number;
+	/** PnP device instance id — the identity that survives reboots and driver updates. This is
+	 *  what a saved choice stores. */
+	stableId: string;
+	/** True when `stableId` is a model-level key shared with another adapter (two identical
+	 *  cards), so it cannot tell them apart and the entries must not be merged. */
+	identityAmbiguous: boolean;
+	/** Runtime handle, this session only — what a device is created on. */
 	luid: string;
 	dedicatedVramMb: number;
 	/** WARP / virtual display: composites, cannot encode. */

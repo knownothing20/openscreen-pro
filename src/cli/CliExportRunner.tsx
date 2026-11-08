@@ -29,11 +29,12 @@ import {
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
 import type { CliDoneResult, CliExportRequest } from "@/lib/cliContracts";
+import { resolveEncoderDevice } from "@/lib/encoderDevices";
 import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
 import { calculateMp4ExportSettings } from "@/lib/exporter/mp4ExportSettings";
 import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
 import { mixVoiceoverIntoVideo } from "@/lib/exporter/voiceoverMix";
-import { exportGifNative, exportMultiNative, nativeBridgeClient } from "@/native";
+import { exportGifNative, exportMultiNative, listGpusNative, nativeBridgeClient } from "@/native";
 import type { CompositorClipInput } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
 import { type ExportProject, exportedInputPaths, loadDocumentProject } from "./exportProject";
@@ -353,6 +354,11 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 					// lie, and this is exactly the kind of divergence nobody notices until a support
 					// report says "it is fast in the app and slow from the command line".
 					const prefs = await window.electronAPI?.getEncoderPrefs?.().catch(() => null);
+					const gpus = await listGpusNative().catch(() => []);
+					const choice = resolveEncoderDevice(prefs?.device ?? "auto", gpus);
+					if (choice.migratedTo) {
+						void window.electronAPI?.setEncoderPrefs?.({ device: choice.migratedTo });
+					}
 					await exportMultiNative(
 						clips,
 						stage,
@@ -363,7 +369,7 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 							fps: MP4_EXPORT_FPS,
 							codec: "h264",
 							bitrate: outDims.bitrate,
-							encoderDevice: prefs?.device ?? "auto",
+							encoderDevice: choice.device,
 						},
 						[...protectedPaths],
 					);
