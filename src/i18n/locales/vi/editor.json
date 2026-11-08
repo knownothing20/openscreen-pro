@@ -473,6 +473,7 @@
 		"codecUnavailable": "Thiết bị này không có bộ mã hóa {{codec}}.",
 		"reasonSoftwareAdapter": "Bộ điều hợp phần mềm — có thể tổng hợp nhưng không có bộ mã hóa phần cứng.",
 		"reasonNoVendorEncoder": "Bản dựng này không có bộ mã hóa {{codec}} cho nhà sản xuất này.",
-		"reasonNoSoftwareEncoder": "Bản dựng này không có bộ mã hóa {{codec}} phần mềm."
+		"reasonNoSoftwareEncoder": "Bản dựng này không có bộ mã hóa {{codec}} phần mềm.",
+		"reasonSoftwareSize": "Mã hóa phần mềm yêu cầu cả hai chiều là bội số của {{block}} px — lần xuất này là {{size}}."
 	}
 }

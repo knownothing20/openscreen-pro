@@ -1466,6 +1466,22 @@ pub(crate) fn injected_open_failure(_encoder: &str) -> Option<String> {
     None
 }
 
+/// Initialization-stage injection's sibling: fail the FIRST FRAME instead of the open.
+///
+/// This is the failure `hevc_mf` actually exhibits, and the one the probe exists for. Same
+/// compile-time gate as `injected_open_failure`, so a shipped binary has no code path for it.
+#[cfg(feature = "encoder-test-hooks")]
+pub(crate) fn injected_first_frame_failure(encoder: &str) -> Option<String> {
+    let raw = std::env::var("OPENSCREEN_TEST_FAIL_FIRST_FRAME").ok()?;
+    let requested = raw.split(',').map(str::trim).any(|name| name == encoder);
+    requested.then(|| format!("injected first-frame failure for {encoder}"))
+}
+
+#[cfg(not(feature = "encoder-test-hooks"))]
+pub(crate) fn injected_first_frame_failure(_encoder: &str) -> Option<String> {
+    None
+}
+
 /// Give one quality target to three encoders that do not share a vocabulary.
 ///
 /// `ctx.bit_rate` alone is not a rate-control decision. Measured on the test machine, same timeline
@@ -1604,6 +1620,30 @@ impl VideoEncoder {
         bit_rate: i64,
         hw_frames: *mut AVBufferRef,
     ) -> Result<VideoEncoder> {
+        Self::open_with_probe(codec, w, h, fps, bit_rate, hw_frames, None)
+    }
+
+    /// `open`, but a candidate only counts as usable once it has encoded one frame.
+    ///
+    /// `avcodec_open2` says the driver accepted the configuration, not that the encoder works.
+    /// `hevc_mf` is the measured counter-example: it opens, and then the very first `send_frame`
+    /// returns `-542398533 (Generic error)`. Treating the open as the decision meant Auto stopped
+    /// there — with `libkvazaar` still sitting untried in the candidate list. So the probe runs on
+    /// a **throwaway** encoder: feed one frame through the same `send`/`send_composited` path the
+    /// export uses, and only then open the instance that will actually encode.
+    ///
+    /// Two opens per successful candidate, deliberately. Reusing the probed instance would leave
+    /// its GOP state dirty and shift the timeline by one frame; the cost is ~100 ms once per
+    /// export, against an export that takes twelve seconds.
+    unsafe fn open_with_probe(
+        codec: &ExportCodec,
+        w: i32,
+        h: i32,
+        fps: i32,
+        bit_rate: i64,
+        hw_frames: *mut AVBufferRef,
+        probe: Option<&dyn Fn(&mut VideoEncoder, &str) -> Result<()>>,
+    ) -> Result<VideoEncoder> {
         let forced = std::env::var("OPENSCREEN_EXPORT_ENCODER").ok();
         // The per-export choice travels on this thread (see `encoder_choice`): a manual pick
         // narrows the candidate list to that vendor and never falls back, a CPU pick drops every
@@ -1629,6 +1669,23 @@ impl VideoEncoder {
             if hw_frames.is_null() && pix_fmt == AVPixelFormat::AV_PIX_FMT_D3D11 {
                 refused.push(format!("{name}: pas de pool D3D11 (backend CPU)"));
                 continue;
+            }
+            // The probe instance is thrown away whether it passes or not: a failure is one more
+            // line in `refused` and the loop moves on, which is the whole point.
+            if let Some(probe) = probe {
+                let mut candidate =
+                    match Self::try_open((name, pix_fmt), w, h, fps, bit_rate, hw_frames) {
+                        Ok(encoder) => encoder,
+                        Err(error) => {
+                            refused.push(format!("{name}: {error}"));
+                            continue;
+                        }
+                    };
+                if let Err(error) = probe(&mut candidate, name) {
+                    refused.push(format!("{name}: first frame failed ({error})"));
+                    continue;
+                }
+                drop(candidate);
             }
             let encoder = match Self::try_open((name, pix_fmt), w, h, fps, bit_rate, hw_frames) {
                 Ok(encoder) => encoder,
@@ -1935,13 +1992,57 @@ unsafe fn run_multi_inner(
     let bit_rate = params.bit_rate.unwrap_or_else(|| {
         ((out_w as i64 * out_h as i64 * 8_000_000) / (1920 * 1080)).max(2_000_000)
     });
-    let mut enc = VideoEncoder::open(
+    // The probe: one frame through the real send path, on a throwaway encoder. It uses the
+    // compositor's own NV12 (or the D3D11 texture the export renders into), so the frame has the
+    // export's exact size and pixel format — the two things a fabricated test frame gets wrong.
+    let probe_frame = |encoder: &mut VideoEncoder, name: &str| -> Result<()> {
+        // Before the real send, so the injected failure travels the same path a driver failure
+        // does — the probe decides, and the loop moves on.
+        if let Some(reason) = injected_first_frame_failure(name) {
+            bail!("{reason}");
+        }
+        unsafe {
+            if encoder.sw.is_null() {
+                // Zero-copy candidate: hand it the texture the compositor would render into.
+                let frame = av_frame_alloc();
+                if frame.is_null() {
+                    bail!("probe: av_frame_alloc");
+                }
+                let outcome = (|| -> Result<()> {
+                    averr(
+                        av_hwframe_get_buffer(enc_frames, frame, 0),
+                        "probe: hwframe_get_buffer",
+                    )?;
+                    let texture = (*frame).data[0] as *mut c_void;
+                    let slice = (*frame).data[1] as u32;
+                    comp.rgb_to_nv12(texture, slice)?;
+                    (*frame).pts = 0;
+                    encoder.send(frame)
+                })();
+                av_frame_free(&mut (frame as *mut _));
+                outcome?;
+            } else {
+                encoder.send_composited(comp, out_w, out_h, 0)?;
+            }
+            // "Not yet" is the normal first answer; any other negative code is the encoder
+            // refusing to produce output at all, which is what the probe exists to catch.
+            let packet = av_packet_alloc();
+            let code = avcodec_receive_packet(encoder.ctx, packet);
+            av_packet_free(&mut (packet as *mut _));
+            if code < 0 && code != AVERROR_EAGAIN && code != AVERROR_EOF {
+                bail!("receive_packet({code})");
+            }
+            Ok(())
+        }
+    };
+    let mut enc = VideoEncoder::open_with_probe(
         &params.codec,
         out_w as i32,
         out_h as i32,
         out_fps,
         bit_rate,
         enc_frames,
+        Some(&probe_frame as &dyn Fn(&mut VideoEncoder, &str) -> Result<()>),
     )?;
     let ectx = enc.ctx;
 
@@ -3357,7 +3458,7 @@ mod encoder_plan_tests {
 /// state to reach into. This test therefore exists only in a `encoder-test-hooks` build.
 #[cfg(all(test, feature = "encoder-test-hooks"))]
 mod injected_open_failure_tests {
-    use super::injected_open_failure;
+    use super::{injected_first_frame_failure, injected_open_failure};
 
     #[test]
     fn fails_exactly_the_encoders_named_in_the_environment() {
@@ -3368,5 +3469,226 @@ mod injected_open_failure_tests {
         assert!(injected_open_failure("libopenh264").is_none());
         std::env::remove_var("OPENSCREEN_TEST_FAIL_OPEN");
         assert!(injected_open_failure("h264_nvenc").is_none());
+    }
+
+    /// The first-frame hook is a separate variable on purpose: the two failures are different
+    /// events, and a test that wants "opens fine, dies on frame one" must be able to say so.
+    #[test]
+    fn first_frame_hook_names_only_the_encoders_it_was_given() {
+        std::env::set_var("OPENSCREEN_TEST_FAIL_FIRST_FRAME", "hevc_mf");
+        assert!(injected_first_frame_failure("hevc_mf").is_some());
+        assert!(injected_first_frame_failure("libkvazaar").is_none());
+        // The open hook stays silent: an encoder told to fail on frame one must still open.
+        assert!(injected_open_failure("hevc_mf").is_none());
+        std::env::remove_var("OPENSCREEN_TEST_FAIL_FIRST_FRAME");
+        assert!(injected_first_frame_failure("hevc_mf").is_none());
+    }
+}
+
+/// Why CPU HEVC is unavailable at some resolutions — proved, not assumed.
+///
+/// The export size comes from the project (1598x1080 at the `good` tier), and `libkvazaar`
+/// refuses anything whose width or height is not a multiple of 8. The obvious escapes are
+/// `coded_width`/`coded_height` (encode 1600, declare 1598) and `AVFrame.crop_right` (the
+/// conformance-window route). Both are tested here so the UI can state a limit instead of
+/// discovering it at export time.
+#[cfg(all(test, windows))]
+mod hevc_software_geometry {
+    use super::*;
+
+    unsafe fn try_open(name: &str, w: i32, h: i32, coded: Option<(i32, i32)>) -> i32 {
+        let cname = CString::new(name).unwrap();
+        let enc = avcodec_find_encoder_by_name(cname.as_ptr());
+        if enc.is_null() {
+            return i32::MIN; // encoder not in this build
+        }
+        let ctx = avcodec_alloc_context3(enc);
+        (*ctx).width = w;
+        (*ctx).height = h;
+        (*ctx).pix_fmt = AVPixelFormat::AV_PIX_FMT_YUV420P;
+        (*ctx).time_base = AVRational { num: 1, den: 30 };
+        (*ctx).bit_rate = 6_000_000;
+        if let Some((cw, ch)) = coded {
+            (*ctx).coded_width = cw;
+            (*ctx).coded_height = ch;
+        }
+        let ret = avcodec_open2(ctx, enc, ptr::null_mut());
+        avcodec_free_context(&mut (ctx as *mut _));
+        ret
+    }
+
+    #[test]
+    fn libkvazaar_accepts_multiples_of_eight_only() {
+        unsafe {
+            // The machine has to have the encoder for this to mean anything.
+            if try_open("libkvazaar", 1280, 720, None) < 0 {
+                eprintln!("libkvazaar absent from this build; geometry test skipped");
+                return;
+            }
+            assert!(try_open("libkvazaar", 1600, 1080, None) >= 0, "1600x1080 should open");
+            assert!(try_open("libkvazaar", 1592, 1080, None) >= 0, "1592x1080 should open");
+            // This is the export's actual width at the `good` tier.
+            assert!(
+                try_open("libkvazaar", 1598, 1080, None) < 0,
+                "1598x1080 must be refused — if this ever passes, the limit is gone and the UI \
+                 can offer CPU HEVC at every size"
+            );
+        }
+    }
+
+    /// Encode a padded (coded) size while declaring the real display size, the way the
+    /// conformance-window route is supposed to work, and read back what a player would see.
+    ///
+    /// Returns `(display_w, display_h)` from the written file — i.e. what ffprobe reports.
+    unsafe fn padded_encode_probe(
+        display: (i32, i32),
+        coded: (i32, i32),
+    ) -> Result<(i32, i32)> {
+        let cname = CString::new("libkvazaar")?;
+        let enc = avcodec_find_encoder_by_name(cname.as_ptr());
+        if enc.is_null() {
+            bail!("libkvazaar absent");
+        }
+        let ctx = avcodec_alloc_context3(enc);
+        (*ctx).width = display.0;
+        (*ctx).height = display.1;
+        (*ctx).coded_width = coded.0;
+        (*ctx).coded_height = coded.1;
+        (*ctx).pix_fmt = AVPixelFormat::AV_PIX_FMT_YUV420P;
+        (*ctx).time_base = AVRational { num: 1, den: 30 };
+        (*ctx).bit_rate = 6_000_000;
+        averr(avcodec_open2(ctx, enc, ptr::null_mut()), "open(libkvazaar padded)")?;
+
+        // The encoder expects a frame at the CODED size: the extra columns are padding that the
+        // conformance window will hide.
+        let frame = av_frame_alloc();
+        (*frame).format = AVPixelFormat::AV_PIX_FMT_YUV420P as i32;
+        (*frame).width = coded.0;
+        (*frame).height = coded.1;
+        averr(av_frame_get_buffer(frame, 32), "frame_get_buffer")?;
+        averr(av_frame_make_writable(frame), "frame_make_writable")?;
+        // Mid grey, so the padding columns carry no content anyone could mistake for picture.
+        for plane in 0..3 {
+            let lines = if plane == 0 { coded.1 } else { coded.1 / 2 };
+            let width = if plane == 0 { coded.0 } else { coded.0 / 2 };
+            let data = (*frame).data[plane];
+            let stride = (*frame).linesize[plane] as usize;
+            for y in 0..lines as usize {
+                std::ptr::write_bytes(data.add(y * stride), 128u8, width as usize);
+            }
+        }
+        (*frame).pts = 0;
+
+        let path = std::env::temp_dir().join(format!(
+            "openscreen-padded-{}-{}.mp4",
+            std::process::id(),
+            coded.0
+        ));
+        let cpath = CString::new(path.to_string_lossy().to_string())?;
+
+        let mut octx: *mut AVFormatContext = ptr::null_mut();
+        averr(
+            avformat_alloc_output_context2(&mut octx, ptr::null(), ptr::null(), cpath.as_ptr()),
+            "alloc_output_context2",
+        )?;
+        let ostream = avformat_new_stream(octx, ptr::null());
+        averr(avcodec_parameters_from_context((*ostream).codecpar, ctx), "params_from_ctx")?;
+        (*ostream).time_base = (*ctx).time_base;
+        let mut pb: *mut AVIOContext = ptr::null_mut();
+        averr(avio_open(&mut pb, cpath.as_ptr(), AVIO_FLAG_WRITE as i32), "avio_open")?;
+        sn_fmt_set_pb(octx, pb);
+        averr(avformat_write_header(octx, ptr::null_mut()), "write_header")?;
+
+        let pkt = av_packet_alloc();
+        let mut wrote = false;
+        // libkvazaar has a look-ahead delay (`--owf`), so one frame produces nothing. Feed a
+        // short run and flush — a single-frame probe would report a working encoder as broken.
+        for index in 0..12i64 {
+            if index > 0 {
+                averr(av_frame_make_writable(frame), "frame_make_writable")?;
+            }
+            (*frame).pts = index;
+            averr(avcodec_send_frame(ctx, frame), "send_frame")?;
+            loop {
+                let code = avcodec_receive_packet(ctx, pkt);
+                if code == AVERROR_EAGAIN || code == AVERROR_EOF {
+                    break;
+                }
+                averr(code, "receive_packet")?;
+                (*pkt).stream_index = (*ostream).index;
+                av_packet_rescale_ts(pkt, (*ctx).time_base, (*ostream).time_base);
+                averr(av_interleaved_write_frame(octx, pkt), "write_frame")?;
+                av_packet_unref(pkt);
+                wrote = true;
+            }
+        }
+        averr(avcodec_send_frame(ctx, ptr::null_mut()), "flush")?;
+        loop {
+            let code = avcodec_receive_packet(ctx, pkt);
+            if code == AVERROR_EOF {
+                break;
+            }
+            if code == AVERROR_EAGAIN {
+                continue;
+            }
+            averr(code, "receive_packet(flush)")?;
+            (*pkt).stream_index = (*ostream).index;
+            av_packet_rescale_ts(pkt, (*ctx).time_base, (*ostream).time_base);
+            averr(av_interleaved_write_frame(octx, pkt), "write_frame")?;
+            av_packet_unref(pkt);
+            wrote = true;
+        }
+        averr(av_write_trailer(octx), "write_trailer")?;
+        av_packet_free(&mut (pkt as *mut _));
+        let mut pb2 = sn_fmt_get_pb(octx);
+        if !pb2.is_null() {
+            avio_closep(&mut pb2);
+            sn_fmt_set_pb(octx, ptr::null_mut());
+        }
+        avformat_free_context(octx);
+        av_frame_free(&mut (frame as *mut _));
+        avcodec_free_context(&mut (ctx as *mut _));
+
+        if !wrote {
+            bail!("no packet produced");
+        }
+
+        // Read it back the way a player would.
+        let mut ifmt: *mut AVFormatContext = ptr::null_mut();
+        averr(
+            avformat_open_input(&mut ifmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+            "reopen",
+        )?;
+        averr(avformat_find_stream_info(ifmt, ptr::null_mut()), "find_stream_info")?;
+        let stream = sn_fmt_stream(ifmt, 0);
+        let seen = ((*(*stream).codecpar).width, (*(*stream).codecpar).height);
+        avformat_close_input(&mut ifmt);
+        let _ = std::fs::remove_file(&path);
+        Ok(seen)
+    }
+
+    /// The padded-encode idea, measured rather than assumed: encode 1600 wide, declare 1598, and
+    /// see what the file actually says.
+    ///
+    /// It says 1600. `libkvazaar` validates `coded_width` (which is why `open` accepts 1600/1598)
+    /// but then writes the CODED size into the bitstream and the container, with no conformance
+    /// window. Two extra columns of padding would be part of the picture — a 1598-wide export
+    /// would come out 1600 wide. So CPU HEVC stays unavailable at sizes that are not multiples of
+    /// 8, and the UI says so before the user exports instead of after.
+    #[test]
+    fn padded_encode_cannot_preserve_the_display_size() {
+        unsafe {
+            if try_open("libkvazaar", 1280, 720, None) < 0 {
+                return;
+            }
+            let seen = padded_encode_probe((1598, 1080), (1600, 1080))
+                .expect("padded encode runs — that is exactly what makes the trap subtle");
+            assert_eq!(
+                seen,
+                (1600, 1080),
+                "if this starts reading 1598, libkvazaar began writing a conformance window and \
+                 the padded route becomes usable — revisit the CPU HEVC size limit then"
+            );
+        }
     }
 }

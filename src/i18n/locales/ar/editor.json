@@ -473,6 +473,7 @@
 		"codecUnavailable": "لا يوجد مُرمِّز {{codec}} على هذا الجهاز.",
 		"reasonSoftwareAdapter": "محوّل برمجي — يمكنه التركيب لكن لا يوجد مُرمِّز عتاد.",
 		"reasonNoVendorEncoder": "لا يوجد مُرمِّز {{codec}} لهذه الشركة المصنّعة في هذا البناء.",
-		"reasonNoSoftwareEncoder": "لا يوجد مُرمِّز {{codec}} برمجي في هذا البناء."
+		"reasonNoSoftwareEncoder": "لا يوجد مُرمِّز {{codec}} برمجي في هذا البناء.",
+		"reasonSoftwareSize": "يتطلب الترميز البرمجي أن يكون البُعدان من مضاعفات {{block}} بكسل — هذا التصدير {{size}}."
 	}
 }

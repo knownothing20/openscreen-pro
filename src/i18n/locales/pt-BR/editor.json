@@ -473,6 +473,7 @@
 		"codecUnavailable": "Este dispositivo não tem codificador {{codec}}.",
 		"reasonSoftwareAdapter": "Adaptador de software: compõe, mas não tem codificador de hardware.",
 		"reasonNoVendorEncoder": "Esta compilação não tem codificador {{codec}} para este fabricante.",
-		"reasonNoSoftwareEncoder": "Esta compilação não tem codificador {{codec}} de software."
+		"reasonNoSoftwareEncoder": "Esta compilação não tem codificador {{codec}} de software.",
+		"reasonSoftwareSize": "A codificação por software exige que ambos os lados sejam múltiplos de {{block}} px — esta exportação é {{size}}."
 	}
 }

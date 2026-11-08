@@ -473,6 +473,7 @@
 		"codecUnavailable": "このデバイスには {{codec}} エンコーダーがありません。",
 		"reasonSoftwareAdapter": "ソフトウェアアダプター — 合成はできますが、ハードウェアエンコーダーはありません。",
 		"reasonNoVendorEncoder": "このビルドにはこのベンダーの {{codec}} エンコーダーがありません。",
-		"reasonNoSoftwareEncoder": "このビルドにはソフトウェア {{codec}} エンコーダーがありません。"
+		"reasonNoSoftwareEncoder": "このビルドにはソフトウェア {{codec}} エンコーダーがありません。",
+		"reasonSoftwareSize": "ソフトウェアエンコードは幅と高さが {{block}} の倍数である必要があります（この書き出しは {{size}}）。"
 	}
 }

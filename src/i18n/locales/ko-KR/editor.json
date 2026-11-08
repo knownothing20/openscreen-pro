@@ -473,6 +473,7 @@
 		"codecUnavailable": "이 장치에는 {{codec}} 인코더가 없습니다.",
 		"reasonSoftwareAdapter": "소프트웨어 어댑터 — 합성은 가능하지만 하드웨어 인코더가 없습니다.",
 		"reasonNoVendorEncoder": "이 빌드에는 이 제조사의 {{codec}} 인코더가 없습니다.",
-		"reasonNoSoftwareEncoder": "이 빌드에는 소프트웨어 {{codec}} 인코더가 없습니다."
+		"reasonNoSoftwareEncoder": "이 빌드에는 소프트웨어 {{codec}} 인코더가 없습니다.",
+		"reasonSoftwareSize": "소프트웨어 인코딩은 가로와 세로가 모두 {{block}}의 배수여야 합니다 — 이번 내보내기는 {{size}}입니다."
 	}
 }

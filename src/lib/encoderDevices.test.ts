@@ -7,6 +7,7 @@ import {
 	groupAdapters,
 	resolveDeviceSelection,
 	resolveEncoderDevice,
+	softwareHevcSupportsSize,
 } from "./encoderDevices";
 
 /**
@@ -318,5 +319,50 @@ describe("format awareness — a card that encodes H.264 does not thereby encode
 	it("leaves Auto alone: it is a strategy, not a format claim", () => {
 		const auto = buildDeviceOptions(GPU, "hevc", support).find((o) => o.kind === "auto");
 		expect(auto?.selectable).toBe(true);
+	});
+});
+
+describe("software HEVC geometry — the limit is measured, not guessed", () => {
+	it("accepts sizes that are multiples of 8", () => {
+		expect(softwareHevcSupportsSize("hevc", 1280, 720)).toBe(true);
+		expect(softwareHevcSupportsSize("hevc", 1600, 1080)).toBe(true);
+	});
+
+	it("refuses the good tier's 1598×1080", () => {
+		// libkvazaar's wrapper rejects anything else; pipeline_windows keeps a Rust test on it.
+		expect(softwareHevcSupportsSize("hevc", 1598, 1080)).toBe(false);
+	});
+
+	it("never blocks H.264, whose software encoder has no such rule", () => {
+		expect(softwareHevcSupportsSize("h264", 1598, 1080)).toBe(true);
+	});
+
+	it("does not block on an unknown size", () => {
+		expect(softwareHevcSupportsSize("hevc", undefined, undefined)).toBe(true);
+	});
+
+	it("disables the CPU row for a size it cannot take, and says which size", () => {
+		const support = {
+			h264: ["libopenh264"],
+			hevc: ["libkvazaar"],
+			h264Software: true,
+			hevcSoftware: true,
+		};
+		const blocked = buildDeviceOptions(GPU, "hevc", support, { width: 1598, height: 1080 }).find(
+			(o) => o.kind === "cpu",
+		);
+		expect(blocked?.selectable).toBe(false);
+		expect(blocked?.disabledReason?.key).toBe("encoderSettings.reasonSoftwareSize");
+		expect(blocked?.disabledReason?.vars?.size).toBe("1598×1080");
+
+		const fine = buildDeviceOptions(GPU, "hevc", support, { width: 1280, height: 720 }).find(
+			(o) => o.kind === "cpu",
+		);
+		expect(fine?.selectable).toBe(true);
+		// The same size is fine for H.264, which has no block constraint.
+		const h264 = buildDeviceOptions(GPU, "h264", support, { width: 1598, height: 1080 }).find(
+			(o) => o.kind === "cpu",
+		);
+		expect(h264?.selectable).toBe(true);
 	});
 });

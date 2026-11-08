@@ -473,6 +473,7 @@
 		"codecUnavailable": "Dieses Gerät hat keinen {{codec}}-Encoder.",
 		"reasonSoftwareAdapter": "Software-Adapter — kann komponieren, hat aber keinen Hardware-Encoder.",
 		"reasonNoVendorEncoder": "Dieser Build hat keinen {{codec}}-Encoder für diesen Hersteller.",
-		"reasonNoSoftwareEncoder": "Dieser Build hat keinen Software-{{codec}}-Encoder."
+		"reasonNoSoftwareEncoder": "Dieser Build hat keinen Software-{{codec}}-Encoder.",
+		"reasonSoftwareSize": "Software-Encoding verlangt, dass beide Seiten ein Vielfaches von {{block}} px sind — dieser Export ist {{size}}."
 	}
 }

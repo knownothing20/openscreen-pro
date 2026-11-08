@@ -473,6 +473,7 @@
 		"codecUnavailable": "Bu aygıtta {{codec}} kodlayıcısı yok.",
 		"reasonSoftwareAdapter": "Yazılım bağdaştırıcısı — birleştirme yapar ama donanım kodlayıcısı yok.",
 		"reasonNoVendorEncoder": "Bu derlemede bu üretici için {{codec}} kodlayıcısı yok.",
-		"reasonNoSoftwareEncoder": "Bu derlemede yazılım {{codec}} kodlayıcısı yok."
+		"reasonNoSoftwareEncoder": "Bu derlemede yazılım {{codec}} kodlayıcısı yok.",
+		"reasonSoftwareSize": "Yazılım kodlaması her iki kenarın {{block}} pikselin katı olmasını gerektirir — bu dışa aktarma {{size}}."
 	}
 }

@@ -473,6 +473,7 @@
 		"codecUnavailable": "此裝置沒有 {{codec}} 編碼器。",
 		"reasonSoftwareAdapter": "軟體介面卡 —— 可以合成畫面，但沒有硬體編碼器。",
 		"reasonNoVendorEncoder": "目前建置沒有該廠商的 {{codec}} 編碼器。",
-		"reasonNoSoftwareEncoder": "目前建置沒有軟體 {{codec}} 編碼器。"
+		"reasonNoSoftwareEncoder": "目前建置沒有軟體 {{codec}} 編碼器。",
+		"reasonSoftwareSize": "軟體編碼要求寬高都是 {{block}} 的倍數 —— 本次匯出為 {{size}}。"
 	}
 }

@@ -8,6 +8,32 @@ export function encodersForCodec(gpu: CompositorGpuInfo, codec: VideoCodec): rea
 	return codec === "hevc" ? gpu.encodersHevc : gpu.encodersH264;
 }
 
+/**
+ * The size constraint of the software HEVC encoder.
+ *
+ * `libkvazaar` requires both dimensions to be multiples of 8. Not inferred from the name: its
+ * ffmpeg wrapper refuses anything else, and `pipeline_windows::hevc_software_geometry` pins that
+ * down with tests — including the padded-encode route, which does NOT work (it writes the padded
+ * size into the file instead of a conformance window).
+ */
+export const SOFTWARE_HEVC_BLOCK = 8;
+
+/**
+ * Whether the software encoder can take this exact output size.
+ *
+ * The `good` tier exports 1598×1080, which fails this — so the settings screen disables CPU HEVC
+ * for that project rather than letting the export fail after the user picks it.
+ */
+export function softwareHevcSupportsSize(
+	codec: VideoCodec,
+	width: number | undefined,
+	height: number | undefined,
+): boolean {
+	if (codec !== "hevc") return true;
+	if (!width || !height) return true; // unknown size: do not block on a guess
+	return width % SOFTWARE_HEVC_BLOCK === 0 && height % SOFTWARE_HEVC_BLOCK === 0;
+}
+
 /** Whether the CPU can encode this format at all — a software encoder must actually exist. */
 export function cpuSupportsCodec(
 	codec: VideoCodec,
@@ -112,6 +138,8 @@ export function buildDeviceOptions(
 	gpus: readonly CompositorGpuInfo[],
 	codec: VideoCodec = "h264",
 	support?: CompositorCodecSupport | null,
+	/** The size the export will produce, when known — it decides whether the CPU can help. */
+	geometry?: { width: number; height: number } | null,
 ): EncoderDeviceOption[] {
 	const options: EncoderDeviceOption[] = [
 		{ device: "auto", kind: "auto", label: "Auto", selectable: true, encoders: [] },
@@ -144,18 +172,27 @@ export function buildDeviceOptions(
 		});
 	}
 
-	const cpuUsable = cpuSupportsCodec(codec, support);
+	const hasSoftware = cpuSupportsCodec(codec, support);
+	const sizeOk = softwareHevcSupportsSize(codec, geometry?.width, geometry?.height);
 	options.push({
 		device: "cpu",
 		kind: "cpu",
 		label: "CPU (software encoding)",
-		selectable: cpuUsable,
-		disabledReason: cpuUsable
-			? undefined
-			: {
+		selectable: hasSoftware && sizeOk,
+		disabledReason: !hasSoftware
+			? {
 					key: "encoderSettings.reasonNoSoftwareEncoder",
 					vars: { codec: codec === "hevc" ? "H.265/HEVC" : "H.264" },
-				},
+				}
+			: !sizeOk
+				? {
+						key: "encoderSettings.reasonSoftwareSize",
+						vars: {
+							size: `${geometry?.width}×${geometry?.height}`,
+							block: String(SOFTWARE_HEVC_BLOCK),
+						},
+					}
+				: undefined,
 		encoders: [],
 	});
 

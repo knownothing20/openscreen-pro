@@ -1,15 +1,19 @@
 import { Cpu, Loader2, MonitorCog, RefreshCw, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
+import { resolveAspectRatioValue } from "@/lib/ai-edition/document/outputFormat";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
+import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import {
 	buildDeviceOptions,
 	type EncoderDeviceOption,
 	encodersForCodec,
 	resolveDeviceSelection,
 	resolveEncoderDevice,
+	softwareHevcSupportsSize,
 	type VideoCodec,
 } from "@/lib/encoderDevices";
+import { resolveExportGeometry } from "@/lib/exporter/exportGeometry";
 import { codecSupportNative, listGpusNative, selfTestEncoderNative } from "@/native";
 import type { CompositorCodecSupport, CompositorGpuInfo } from "@/native/contracts";
 import { buildNativeClipList } from "./ExportDialog";
@@ -45,6 +49,9 @@ interface TestResult {
 /** One second of the first visible clip: long enough to open the encoder and push real frames
  *  through it, short enough that the button feels like a test rather than an export. */
 const TEST_SECONDS = 1;
+
+/** The export dialog's default frame rate; the test uses it so bitrate and cadence match. */
+const EXPORT_FPS = 60;
 
 export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettingsDialogProps) {
 	const t = useScopedT("editor");
@@ -117,9 +124,9 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 						sourceEndSec: Math.min(first.sourceEndSec, first.sourceStartSec + TEST_SECONDS),
 					},
 				],
-				width: 1280,
-				height: 720,
-				fps: 30,
+				width: geometry?.width,
+				height: geometry?.height,
+				fps: geometry ? EXPORT_FPS : undefined,
 				encoderDevice: choice.device,
 				// The test produces the format being configured. Testing H.264 while the user picked
 				// H.265 would report a success the export would never reproduce.
@@ -128,13 +135,13 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 			setTest({
 				device,
 				ok: true,
-				detail: t("encoderSettings.testOkDetail", {
+				detail: `${t("encoderSettings.testOkDetail", {
 					encoder: result.encoder ?? "?",
 					adapter: result.adapter ?? "?",
 					path: result.zeroCopy ? t("encoderSettings.zeroCopy") : t("encoderSettings.systemMemory"),
 					frames: result.frames,
 					ms: result.wallMs,
-				}),
+				})}${geometry ? ` · ${geometry.width}×${geometry.height}` : ""}`,
 			});
 		} catch (err) {
 			setTest({ device, ok: false, detail: err instanceof Error ? err.message : String(err) });
@@ -143,7 +150,18 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 		}
 	};
 
-	const options = buildDeviceOptions(gpus ?? [], codec, support);
+	// The size the export will actually produce. The test encodes at this size — a 1280x720 test
+	// that passes while the 1598x1080 export fails is worse than no test at all.
+	const geometry = document
+		? resolveExportGeometry(
+				document,
+				"good",
+				EXPORT_FPS,
+				resolveAspectRatioValue(document, getEditorSettings(document).aspectRatio),
+			)
+		: null;
+
+	const options = buildDeviceOptions(gpus ?? [], codec, support, geometry);
 	// A stored legacy LUID is not an option value, but the card it names is still the selected one.
 	const selectedLuid = resolveDeviceSelection(device, gpus ?? []).luid;
 	// The chosen device may not carry the newly selected format. That is shown, not fixed
@@ -153,6 +171,10 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 	const selectedLacksFormat =
 		Boolean(selectedCard) &&
 		encodersForCodec(selectedCard as CompositorGpuInfo, codec).length === 0;
+	// Chosen CPU for a format whose software encoder cannot take this size. Shown, not silently
+	// switched: the export would refuse, so the dialog says why before the user tries.
+	const cpuSizeBlocked =
+		device === "cpu" && !softwareHevcSupportsSize(codec, geometry?.width, geometry?.height);
 
 	return (
 		<ModalShell
@@ -179,6 +201,14 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 							onClick={() => void chooseCodec("hevc")}
 						/>
 					</div>
+					{cpuSizeBlocked && geometry ? (
+						<div style={{ ...sub, color: "var(--warning, #d97706)", marginTop: 6 }}>
+							{t("encoderSettings.reasonSoftwareSize", {
+								size: `${geometry.width}×${geometry.height}`,
+								block: "8",
+							})}
+						</div>
+					) : null}
 					{selectedLacksFormat ? (
 						<div style={{ ...sub, color: "var(--warning, #d97706)", marginTop: 6 }}>
 							{t("encoderSettings.codecUnavailable", {

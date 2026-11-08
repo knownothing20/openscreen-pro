@@ -473,6 +473,7 @@
 		"codecUnavailable": "此设备没有 {{codec}} 编码器。",
 		"reasonSoftwareAdapter": "软件适配器 —— 可以合成画面，但没有硬件编码器。",
 		"reasonNoVendorEncoder": "当前构建没有该厂商的 {{codec}} 编码器。",
-		"reasonNoSoftwareEncoder": "当前构建没有软件 {{codec}} 编码器。"
+		"reasonNoSoftwareEncoder": "当前构建没有软件 {{codec}} 编码器。",
+		"reasonSoftwareSize": "软件编码要求宽高都是 {{block}} 的倍数 —— 本次导出为 {{size}}。"
 	}
 }

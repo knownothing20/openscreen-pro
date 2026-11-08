@@ -473,6 +473,7 @@
 		"codecUnavailable": "Toto zařízení nemá kodér {{codec}}.",
 		"reasonSoftwareAdapter": "Softwarový adaptér – umí skládat, ale nemá hardwarový kodér.",
 		"reasonNoVendorEncoder": "Toto sestavení nemá kodér {{codec}} pro tohoto výrobce.",
-		"reasonNoSoftwareEncoder": "Toto sestavení nemá softwarový kodér {{codec}}."
+		"reasonNoSoftwareEncoder": "Toto sestavení nemá softwarový kodér {{codec}}.",
+		"reasonSoftwareSize": "Softwarové kódování vyžaduje, aby obě strany byly násobkem {{block}} px — tento export je {{size}}."
 	}
 }

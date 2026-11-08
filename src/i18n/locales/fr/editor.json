@@ -473,6 +473,7 @@
 		"codecUnavailable": "Cet appareil n'a pas d'encodeur {{codec}}.",
 		"reasonSoftwareAdapter": "Adaptateur logiciel — il peut composer, mais n'a pas d'encodeur matériel.",
 		"reasonNoVendorEncoder": "Cette version n'a pas d'encodeur {{codec}} pour ce fabricant.",
-		"reasonNoSoftwareEncoder": "Cette version n'a pas d'encodeur {{codec}} logiciel."
+		"reasonNoSoftwareEncoder": "Cette version n'a pas d'encodeur {{codec}} logiciel.",
+		"reasonSoftwareSize": "L'encodage logiciel exige que les deux côtés soient un multiple de {{block}} px — cet export fait {{size}}."
 	}
 }
