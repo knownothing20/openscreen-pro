@@ -24,3 +24,7 @@ features = ["Win32_Foundation"]
 
 [build-dependencies]
 napi-build = "2"
+
+[features]
+# Forwarded so the addon can be built with the fault hook for an acceptance run. Off by default.
+encoder-test-hooks = ["openscreen-compositor/encoder-test-hooks"]

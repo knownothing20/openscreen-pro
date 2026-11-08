@@ -19,6 +19,11 @@ windows = { version = "0.58", features = ["Win32_Graphics_Direct3D", "Win32_Grap
 
 [features]
 default = ["segmentation"]
+# Enables the initialization-stage fault hook used to prove the encoder fallback path on real
+# hardware. OFF by default and therefore absent from every shipped binary: a normal install has no
+# code path that a stray environment variable could reach into and change encoding behaviour.
+# Build the addon with `--features encoder-test-hooks` for the acceptance run only.
+encoder-test-hooks = []
 # Segmentation IA de la webcam via ONNX Runtime (EP CPU).
 #
 # Activée par défaut, ce qui ne coûte rien au build : `ort` est lié en `load-dynamic`, donc

@@ -1412,40 +1412,27 @@ pub(crate) fn plan_candidates(
         .collect()
 }
 
-/// Drop the encoders a test asked to fail, exactly as a real `avcodec_open2` refusal would.
+/// Initialization-stage fault injection, compiled only into a test addon.
 ///
-/// `OPENSCREEN_TEST_FAIL_ENCODER=h264_nvenc,h264_amf` is how the fallback path is exercised on a
-/// machine where those encoders actually work: without it, "Auto falls back to the next candidate"
-/// and "Manual refuses instead of falling back" could only be tested by breaking a driver.
-pub(crate) fn without_injected_failures<T>(
-    candidates: Vec<(T, AVPixelFormat::Type)>,
-    forced_failures: &std::collections::HashSet<String>,
-) -> (Vec<(T, AVPixelFormat::Type)>, Vec<String>)
-where
-    T: AsRef<str>,
-{
-    let mut kept = Vec::new();
-    let mut dropped = Vec::new();
-    for candidate in candidates {
-        if forced_failures.contains(candidate.0.as_ref()) {
-            dropped.push(format!("{}: injected failure", candidate.0.as_ref()));
-            continue;
-        }
-        kept.push(candidate);
-    }
-    (kept, dropped)
+/// The earlier hook filtered candidates BEFORE anything opened, which proves the planner picks the
+/// next name but says nothing about what happens when a driver refuses `avcodec_open2`. This one
+/// runs exactly where the real failure would: candidate chosen, context allocated, parameters set,
+/// about to initialize. What it returns travels the same path a driver refusal does — through
+/// `try_open`'s error, into the candidate loop's `refused` list, and onwards to the next candidate
+/// (Auto) or to a hard failure (Manual, CPU).
+///
+/// Gated behind the `encoder-test-hooks` Cargo feature, which is OFF in every shipped build: there
+/// is no environment variable a normal install can set to change how it encodes.
+#[cfg(feature = "encoder-test-hooks")]
+pub(crate) fn injected_open_failure(encoder: &str) -> Option<String> {
+    let raw = std::env::var("OPENSCREEN_TEST_FAIL_OPEN").ok()?;
+    let requested = raw.split(',').map(str::trim).any(|name| name == encoder);
+    requested.then(|| format!("injected initialization failure for {encoder}"))
 }
 
-fn forced_failures() -> std::collections::HashSet<String> {
-    std::env::var("OPENSCREEN_TEST_FAIL_ENCODER")
-        .ok()
-        .map(|raw| {
-            raw.split(',')
-                .map(|name| name.trim().to_string())
-                .filter(|name| !name.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
+#[cfg(not(feature = "encoder-test-hooks"))]
+pub(crate) fn injected_open_failure(_encoder: &str) -> Option<String> {
+    None
 }
 
 /// Give one quality target to three encoders that do not share a vocabulary.
@@ -1457,7 +1444,6 @@ fn forced_failures() -> std::collections::HashSet<String> {
 ///
 /// Deliberately NOT touching presets: `p4` on NVENC and `balanced` on AMF are quality/speed knobs,
 /// and changing them would make "same quality tier" mean something different than it did before.
-/// Only the rate-control method and the target are set, which is what makes the files comparable.
 fn apply_rate_control(ctx: *mut AVCodecContext, encoder: &str, bit_rate: i64) {
     if bit_rate <= 0 || ctx.is_null() {
         return;
@@ -1477,16 +1463,14 @@ fn apply_rate_control(ctx: *mut AVCodecContext, encoder: &str, bit_rate: i64) {
         }
     };
     match encoder {
-        // VBR against the tier's budget. Deliberately no `maxrate == bitrate`: measured on the
-        // test timeline, that cap dropped NVENC from 6.8 Mbit/s to 5.5 for no visible gain, and
-        // the budget is a budget, not a floor.
+        // VBR against the tier's budget. No `maxrate == bitrate`: measured, that cap dropped NVENC
+        // from 6.8 to 5.5 Mbit/s for no visible gain — a budget is a budget, not a floor.
         "h264_nvenc" | "hevc_nvenc" => {
             set("rc", 1);
             set("bitrate", bit_rate);
         }
-        // `vbr_peak` (2) is the AMF rate-control method that reads a target at all; its default is
-        // `cqp`, a constant-quantiser mode with no bitrate notion. AMF has no `bitrate` AVOption —
-        // it reads `ctx.bit_rate`, which is already set — so only the mode is chosen here.
+        // `vbr_peak` (2) is the AMF method that reads a target at all; its default is `cqp`. AMF has
+        // no `bitrate` AVOption — it reads `ctx.bit_rate`, already set — so only the mode is chosen.
         "h264_amf" | "hevc_amf" => {
             set("rc", 2);
         }
@@ -1495,8 +1479,7 @@ fn apply_rate_control(ctx: *mut AVCodecContext, encoder: &str, bit_rate: i64) {
             set("rc_mode", 2);
             set("bitrate", bit_rate);
         }
-        // QSV and `*_mf` already honour `ctx.bit_rate`: adding knobs nobody has measured here
-        // would be guesswork dressed as configuration.
+        // QSV and `*_mf` already honour `ctx.bit_rate`.
         _ => {}
     }
 }
@@ -1559,8 +1542,8 @@ impl VideoEncoder {
             .map(|(name, _)| *name)
             .filter(|name| !allowed.iter().any(|(kept, _)| kept == name))
             .collect();
-        let (attempts, mut refused) = without_injected_failures(allowed, &forced_failures());
-        for (name, pix_fmt) in attempts {
+        let mut refused: Vec<String> = Vec::new();
+        for (name, pix_fmt) in allowed {
             if forced.as_deref().is_some_and(|forced| forced != name) {
                 continue;
             }
@@ -1672,6 +1655,12 @@ impl VideoEncoder {
             (*ctx).hw_frames_ctx = av_buffer_ref(hw_frames);
         }
         apply_rate_control(ctx, name, bit_rate);
+        // The candidate is chosen, the context exists, the parameters are set — this is the point
+        // a driver refusal would come from, so it is where the test hook fails too.
+        if let Some(reason) = injected_open_failure(name) {
+            avcodec_free_context(&mut ctx);
+            bail!("{reason}");
+        }
         if let Err(error) = averr(avcodec_open2(ctx, enc, ptr::null_mut()), "avcodec_open2(enc)") {
             avcodec_free_context(&mut ctx);
             return Err(error);
@@ -3203,22 +3192,19 @@ mod encoder_plan_tests {
     }
 
     #[test]
-    fn auto_still_offers_the_next_candidate_when_one_is_simulated_as_failing() {
-        let failing: HashSet<String> = ["h264_amf".to_string()].into_iter().collect();
-        let (kept, dropped) = without_injected_failures(plan_candidates(&ExportCodec::H264, EncoderChoice::Auto), &failing);
-        let kept: Vec<&str> = kept.into_iter().map(|(name, _)| name).collect();
-        assert_eq!(kept, vec!["h264_nvenc", "h264_qsv", "h264_mf", "libopenh264"]);
-        assert_eq!(dropped.len(), 1);
-        assert!(dropped[0].contains("h264_amf"));
+    fn auto_keeps_trying_after_the_first_candidate_is_refused() {
+        // The plan is what the loop walks; a refusal at open must not shorten it, or "falls back to
+        // the next encoder" would be a property of the planner rather than of the failure path.
+        let plan = names(ExportCodec::H264, EncoderChoice::Auto);
+        assert_eq!(plan.first(), Some(&"h264_amf"));
+        assert_eq!(plan.get(1), Some(&"h264_nvenc"), "the next candidate is still in the plan");
     }
 
     #[test]
-    fn manual_has_nothing_left_when_its_encoder_is_simulated_as_failing() {
-        let failing: HashSet<String> = ["h264_nvenc".to_string()].into_iter().collect();
-        let (kept, dropped) =
-            without_injected_failures(plan_candidates(&ExportCodec::H264, EncoderChoice::Vendor(0x10DE)), &failing);
-        assert!(kept.is_empty(), "manual must not fall back to another vendor or to the CPU");
-        assert_eq!(dropped.len(), 1);
+    fn manual_has_exactly_one_candidate_and_no_software_fallback() {
+        let plan = names(ExportCodec::H264, EncoderChoice::Vendor(0x10DE));
+        assert_eq!(plan, vec!["h264_nvenc"]);
+        assert!(!plan.iter().any(|name| EncoderChoice::is_explicit_software(name)));
     }
 
     #[test]
@@ -3230,5 +3216,23 @@ mod encoder_plan_tests {
                 assert!(EncoderChoice::vendor_of(name).is_some(), "{name}");
             }
         }
+    }
+}
+
+/// The hook is only visible where it is compiled in — which is the point: a shipped binary has no
+/// state to reach into. This test therefore exists only in a `encoder-test-hooks` build.
+#[cfg(all(test, feature = "encoder-test-hooks"))]
+mod injected_open_failure_tests {
+    use super::injected_open_failure;
+
+    #[test]
+    fn fails_exactly_the_encoders_named_in_the_environment() {
+        // One test owns this variable: it is process-global, and tests run in parallel.
+        std::env::set_var("OPENSCREEN_TEST_FAIL_OPEN", "h264_nvenc, h264_amf");
+        assert!(injected_open_failure("h264_nvenc").is_some());
+        assert!(injected_open_failure("h264_amf").is_some());
+        assert!(injected_open_failure("libopenh264").is_none());
+        std::env::remove_var("OPENSCREEN_TEST_FAIL_OPEN");
+        assert!(injected_open_failure("h264_nvenc").is_none());
     }
 }
