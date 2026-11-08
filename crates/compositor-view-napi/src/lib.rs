@@ -633,7 +633,29 @@ pub struct GpuInfo {
     pub software: bool,
     /// Encoders this build CONTAINS for the vendor. Compiled in is not "works": only opening one
     /// on this card proves that, which is what the test-encode entry point is for.
+    ///
+    /// Kept as the union for callers that just want "is there anything here"; the two lists below
+    /// are what the settings screen shows, because a card's H.264 support says nothing about its
+    /// HEVC support and merging them is how that confusion starts.
     pub encoders: Vec<String>,
+    pub encoders_h264: Vec<String>,
+    pub encoders_hevc: Vec<String>,
+}
+
+/// What this build can encode with, codec by codec.
+///
+/// Separate from `GpuInfo` because the CPU is not an adapter: the settings screen needs to know
+/// whether "CPU + HEVC" is even offerable, and the only honest source is the candidate list this
+/// binary actually carries.
+#[napi(object)]
+pub struct CodecSupport {
+    /// Every encoder the build contains for the codec, all vendors included.
+    pub h264: Vec<String>,
+    pub hevc: Vec<String>,
+    /// True when at least one of them carries its own implementation (`lib*`). "CPU software
+    /// encoding" is only truthful for those: `*_mf` may resolve to a hardware MFT.
+    pub h264_software: bool,
+    pub hevc_software: bool,
 }
 
 /// TEMPORARY diagnostic: what the PnP display list actually contains on this machine.
@@ -646,6 +668,35 @@ pub fn debug_pnp_adapters() -> Vec<String> {
     #[cfg(not(windows))]
     {
         Vec::new()
+    }
+}
+
+/// What this binary can encode, per codec.
+///
+/// The candidate list is filtered by one `avcodec_find_encoder_by_name` per entry, so this says
+/// "compiled in", not "will open on your card" — the test encode answers that. It exists for the
+/// one question the adapter list cannot answer: whether a CPU pick for HEVC is offerable at all.
+#[napi]
+pub fn codec_support() -> CodecSupport {
+    #[cfg(windows)]
+    {
+        let h264 = pipeline::codec_encoder_names(&pipeline::ExportCodec::H264);
+        let hevc = pipeline::codec_encoder_names(&pipeline::ExportCodec::H265);
+        CodecSupport {
+            h264_software: pipeline::has_software_encoder(&pipeline::ExportCodec::H264),
+            hevc_software: pipeline::has_software_encoder(&pipeline::ExportCodec::H265),
+            h264,
+            hevc,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        CodecSupport {
+            h264: Vec::new(),
+            hevc: Vec::new(),
+            h264_software: false,
+            hevc_software: false,
+        }
     }
 }
 
@@ -672,7 +723,21 @@ pub fn list_gpus() -> Vec<GpuInfo> {
                 luid: format!("{:016x}", adapter.luid),
                 dedicated_vram_mb: (adapter.dedicated_video_memory / (1024 * 1024)) as u32,
                 software: adapter.software,
-                encoders: pipeline::encoder_names_for_vendor(adapter.vendor_id),
+                encoders_h264: pipeline::encoder_names_for(
+                    adapter.vendor_id,
+                    &pipeline::ExportCodec::H264,
+                ),
+                encoders_hevc: pipeline::encoder_names_for(
+                    adapter.vendor_id,
+                    &pipeline::ExportCodec::H265,
+                ),
+                encoders: pipeline::encoder_names_for(adapter.vendor_id, &pipeline::ExportCodec::H264)
+                    .into_iter()
+                    .chain(pipeline::encoder_names_for(
+                        adapter.vendor_id,
+                        &pipeline::ExportCodec::H265,
+                    ))
+                    .collect(),
             })
             .collect()
     }

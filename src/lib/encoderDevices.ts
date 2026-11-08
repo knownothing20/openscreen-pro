@@ -1,4 +1,23 @@
-import type { CompositorGpuInfo } from "@/native/contracts";
+import type { CompositorCodecSupport, CompositorGpuInfo } from "@/native/contracts";
+
+/** The two formats this app produces. `hevc` is what the native layer calls `h265`. */
+export type VideoCodec = "h264" | "hevc";
+
+/** The encoders one card carries for one format. Never the union of both. */
+export function encodersForCodec(gpu: CompositorGpuInfo, codec: VideoCodec): readonly string[] {
+	return codec === "hevc" ? gpu.encodersHevc : gpu.encodersH264;
+}
+
+/** Whether the CPU can encode this format at all — a software encoder must actually exist. */
+export function cpuSupportsCodec(
+	codec: VideoCodec,
+	support: CompositorCodecSupport | null | undefined,
+): boolean {
+	// Without an answer from the native side, do not block the choice: the export will report the
+	// real failure, and a missing addon entry should not make the setting look broken.
+	if (!support) return true;
+	return codec === "hevc" ? support.hevcSoftware : support.h264Software;
+}
 
 /**
  * Turning the adapter list into something a person can choose from, and resolving the choice back
@@ -29,11 +48,20 @@ export interface EncoderDeviceOption {
 	stableId?: string;
 	/** Runtime handle, shown for diagnostics; never persisted. */
 	luid?: string;
+	/** Encoders for the format being shown. */
 	encoders?: string[];
+	/** Both formats, so one row can state what the card does for each. */
+	h264Encoders?: string[];
+	hevcEncoders?: string[];
 	/** False for a software/virtual adapter: listed, explained, not chooseable. */
 	selectable: boolean;
-	/** Why it cannot be chosen, when it cannot. */
-	disabledReason?: string;
+	/**
+	 * Why it cannot be chosen, when it cannot — as an i18n key plus its variables, not prose.
+	 *
+	 * This module has no translator, and a hardcoded English sentence was showing up verbatim in
+	 * every non-English UI (the settings list mixed languages in the same row).
+	 */
+	disabledReason?: { key: string; vars?: Record<string, string> };
 	/** How many raw DXGI entries collapsed into this one (>1 means the driver duplicated it). */
 	duplicates?: number;
 	/** True when the stable id is a model-level key shared with another card. */
@@ -74,14 +102,24 @@ export function deviceIdFor(gpu: CompositorGpuInfo): string {
 	return `id:${gpu.stableId}`;
 }
 
-/** The full list the settings screen renders, in the order it renders it. */
-export function buildDeviceOptions(gpus: readonly CompositorGpuInfo[]): EncoderDeviceOption[] {
+/**
+ * The full list the settings screen renders, for one format.
+ *
+ * Per format, because availability is: a card can carry `h264_nvenc` and no `hevc_nvenc`, and a
+ * list that merges them says "this card encodes HEVC" about a card that cannot.
+ */
+export function buildDeviceOptions(
+	gpus: readonly CompositorGpuInfo[],
+	codec: VideoCodec = "h264",
+	support?: CompositorCodecSupport | null,
+): EncoderDeviceOption[] {
 	const options: EncoderDeviceOption[] = [
 		{ device: "auto", kind: "auto", label: "Auto", selectable: true, encoders: [] },
 	];
 
 	for (const { gpu, duplicates } of groupAdapters(gpus)) {
-		const usable = !gpu.software && gpu.encoders.length > 0;
+		const encoders = [...encodersForCodec(gpu, codec)];
+		const usable = !gpu.software && encoders.length > 0;
 		options.push({
 			device: deviceIdFor(gpu),
 			kind: "gpu",
@@ -89,23 +127,35 @@ export function buildDeviceOptions(gpus: readonly CompositorGpuInfo[]): EncoderD
 			vendor: gpu.vendor,
 			stableId: gpu.stableId,
 			luid: gpu.luid,
-			encoders: gpu.encoders,
+			encoders,
+			h264Encoders: [...gpu.encodersH264],
+			hevcEncoders: [...gpu.encodersHevc],
 			selectable: usable,
 			disabledReason: gpu.software
-				? "Software adapter — it can composite, but it has no hardware encoder."
-				: gpu.encoders.length === 0
-					? "No encoder for this vendor in this build."
+				? { key: "encoderSettings.reasonSoftwareAdapter" }
+				: encoders.length === 0
+					? {
+							key: "encoderSettings.reasonNoVendorEncoder",
+							vars: { codec: codec === "hevc" ? "H.265/HEVC" : "H.264" },
+						}
 					: undefined,
 			duplicates,
 			identityAmbiguous: gpu.identityAmbiguous,
 		});
 	}
 
+	const cpuUsable = cpuSupportsCodec(codec, support);
 	options.push({
 		device: "cpu",
 		kind: "cpu",
 		label: "CPU (software encoding)",
-		selectable: true,
+		selectable: cpuUsable,
+		disabledReason: cpuUsable
+			? undefined
+			: {
+					key: "encoderSettings.reasonNoSoftwareEncoder",
+					vars: { codec: codec === "hevc" ? "H.265/HEVC" : "H.264" },
+				},
 		encoders: [],
 	});
 
@@ -211,10 +261,22 @@ export function describeStoredChoice(
 export function resolveEncoderDevice(
 	stored: string,
 	gpus: readonly CompositorGpuInfo[],
+	codec: VideoCodec = "h264",
+	support?: CompositorCodecSupport | null,
 ): { device: string; label: string; migratedTo?: string } {
 	const resolved = resolveDeviceSelection(stored, gpus);
 	if (resolved.mode === "auto") return { device: "auto", label: resolved.label };
-	if (resolved.mode === "cpu") return { device: "cpu", label: resolved.label };
+	if (resolved.mode === "cpu") {
+		// Not an H.264 fallback: the user asked for a format, and a build with no software encoder
+		// for it cannot produce that format at all.
+		if (!cpuSupportsCodec(codec, support)) {
+			throw new Error(
+				`This build has no software ${codec === "hevc" ? "HEVC" : "H.264"} encoder, so CPU encoding ` +
+					"cannot produce that format. Choose Auto, or a GPU that supports it.",
+			);
+		}
+		return { device: "cpu", label: resolved.label };
+	}
 	if (resolved.problem === "not-found") {
 		throw new Error(
 			`The selected encoder device is not present on this machine (${resolved.stableId ?? stored}). ` +
@@ -229,6 +291,16 @@ export function resolveEncoderDevice(
 	}
 	if (!resolved.luid) {
 		throw new Error("The selected encoder device did not resolve to a usable device.");
+	}
+	// A card without an encoder for the requested format is a real answer ("this card cannot
+	// encode HEVC"), and the export must say so rather than hand the pipeline a vendor it will
+	// then fail on — or, worse, let it use somebody else's encoder.
+	const card = gpus.find((gpu) => gpu.luid === resolved.luid);
+	if (card && encodersForCodec(card, codec).length === 0) {
+		throw new Error(
+			`${card.name} has no ${codec === "hevc" ? "HEVC" : "H.264"} encoder in this build. ` +
+				"Pick another device, or switch the format.",
+		);
 	}
 	return { device: resolved.luid, label: resolved.label, migratedTo: resolved.migratedTo };
 }

@@ -370,7 +370,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder);
 	},
 	getEncoderPrefs: () => ipcRenderer.invoke("get-encoder-prefs"),
-	setEncoderPrefs: (prefs: { device: string }) => ipcRenderer.invoke("set-encoder-prefs", prefs),
+	setEncoderPrefs: (prefs: { device?: string; codec?: "h264" | "hevc" }) =>
+		ipcRenderer.invoke("set-encoder-prefs", prefs),
 	checkExportTarget: (finalPath: string, protectedPaths?: readonly string[]) => {
 		return ipcRenderer.invoke("check-export-target", finalPath, protectedPaths);
 	},

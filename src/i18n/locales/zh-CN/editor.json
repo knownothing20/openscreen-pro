@@ -464,6 +464,15 @@
 		"runtimeLuid": "会话句柄",
 		"driverVersion": "驱动",
 		"ambiguousIdentity": "与另一块卡共用标识",
-		"deviceMissing": "不在本机——设备恢复或改选其他设备前，导出会被拒绝"
+		"deviceMissing": "不在本机——设备恢复或改选其他设备前，导出会被拒绝",
+		"codecTitle": "视频格式",
+		"codecH264": "H.264",
+		"codecH264Hint": "兼容性最好，文件较大。",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "文件体积约为一半，需要支持 HEVC 的播放器。",
+		"codecUnavailable": "此设备没有 {{codec}} 编码器。",
+		"reasonSoftwareAdapter": "软件适配器 —— 可以合成画面，但没有硬件编码器。",
+		"reasonNoVendorEncoder": "当前构建没有该厂商的 {{codec}} 编码器。",
+		"reasonNoSoftwareEncoder": "当前构建没有软件 {{codec}} 编码器。"
 	}
 }

@@ -13,6 +13,12 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/native", () => ({
 	listGpusNative: vi.fn(async () => []),
+	codecSupportNative: vi.fn(async () => ({
+		h264: ["h264_amf"],
+		hevc: ["hevc_amf"],
+		h264Software: true,
+		hevcSoftware: true,
+	})),
 	exportMultiNative: vi.fn(async () => ({ videoDurationS: 12, wallS: 3 })),
 	exportGifNative: vi.fn(async () => ({ videoDurationS: 12, wallS: 3 })),
 	cancelExportNative: vi.fn(async () => ({ accepted: true })),

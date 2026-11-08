@@ -12,6 +12,7 @@ import type {
 	CompositorBackend,
 	CompositorBackendResult,
 	CompositorClipInput,
+	CompositorCodecSupport,
 	CompositorEncoderTestResult,
 	CompositorExportGifParams,
 	CompositorExportGifResult,
@@ -218,6 +219,21 @@ export async function listGpusNative(): Promise<CompositorGpuInfo[]> {
 	return data.gpus;
 }
 
+/** Which encoders this binary carries, per format. Empty where the addon has no entry point. */
+export async function codecSupportNative(): Promise<CompositorCodecSupport> {
+	const data = await requireNativeBridgeData<Partial<CompositorCodecSupport>>({
+		domain: "compositor",
+		action: "codecSupport",
+		payload: {},
+	});
+	return {
+		h264: data.h264 ?? [],
+		hevc: data.hevc ?? [],
+		h264Software: data.h264Software ?? false,
+		hevcSoftware: data.hevcSoftware ?? false,
+	};
+}
+
 /** Encode a short clip through the chosen device and report what actually ran.
  *
  *  This is the only honest way to answer "does this GPU encode": a compiled-in encoder proves
@@ -229,6 +245,8 @@ export function selfTestEncoderNative(request: {
 	height?: number;
 	fps?: number;
 	encoderDevice?: string;
+	/** "h264" | "hevc" — the test runs in the format the user selected. */
+	codec?: "h264" | "hevc";
 }): Promise<CompositorEncoderTestResult> {
 	return requireNativeBridgeData<CompositorEncoderTestResult>({
 		domain: "compositor",

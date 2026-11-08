@@ -230,6 +230,17 @@ export interface CompositorGpuInfo {
 	software: boolean;
 	/** Encoders this build CONTAINS for the vendor — compiled in, not "verified working". */
 	encoders: string[];
+	/** Same, per format. A card that encodes H.264 says nothing about HEVC. */
+	encodersH264: string[];
+	encodersHevc: string[];
+}
+
+/** What this build can encode, format by format. Also answers whether "CPU + HEVC" exists. */
+export interface CompositorCodecSupport {
+	h264: string[];
+	hevc: string[];
+	h264Software: boolean;
+	hevcSoftware: boolean;
 }
 
 /** What an actual test encode proved. Every field is measured, not inferred. */
@@ -946,6 +957,13 @@ export type NativeBridgeRequest =
 	  }
 	| {
 			domain: "compositor";
+			/** Which encoders this binary carries, per format — including the software ones. */
+			action: "codecSupport";
+			payload: Record<string, never>;
+			requestId?: string;
+	  }
+	| {
+			domain: "compositor";
 			/** Encode one short clip through the chosen device, to a temp file main deletes. */
 			action: "selfTestEncoder";
 			payload: {
@@ -954,6 +972,8 @@ export type NativeBridgeRequest =
 				height?: number;
 				fps?: number;
 				encoderDevice?: string;
+				/** "h264" | "hevc". The test encodes in the format the user selected. */
+				codec?: string;
 			};
 			requestId?: string;
 	  }

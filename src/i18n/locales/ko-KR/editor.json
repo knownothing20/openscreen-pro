@@ -464,6 +464,15 @@
 		"runtimeLuid": "세션 핸들",
 		"driverVersion": "드라이버",
 		"ambiguousIdentity": "다른 카드와 식별자 공유",
-		"deviceMissing": "없음 — 장치가 돌아오거나 다른 장치를 선택할 때까지 내보내기가 거부됩니다"
+		"deviceMissing": "없음 — 장치가 돌아오거나 다른 장치를 선택할 때까지 내보내기가 거부됩니다",
+		"codecTitle": "동영상 포맷",
+		"codecH264": "H.264",
+		"codecH264Hint": "어디서나 재생됩니다. 파일이 더 큽니다.",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "파일 크기가 약 절반입니다. HEVC를 지원하는 플레이어가 필요합니다.",
+		"codecUnavailable": "이 장치에는 {{codec}} 인코더가 없습니다.",
+		"reasonSoftwareAdapter": "소프트웨어 어댑터 — 합성은 가능하지만 하드웨어 인코더가 없습니다.",
+		"reasonNoVendorEncoder": "이 빌드에는 이 제조사의 {{codec}} 인코더가 없습니다.",
+		"reasonNoSoftwareEncoder": "이 빌드에는 소프트웨어 {{codec}} 인코더가 없습니다."
 	}
 }

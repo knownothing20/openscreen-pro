@@ -313,8 +313,12 @@ interface Window {
 			error?: string;
 		}>;
 		/** Which GPU (or CPU) exports should encode with. Persisted app-wide. */
-		getEncoderPrefs: () => Promise<{ device: string }>;
-		setEncoderPrefs: (prefs: { device: string }) => Promise<{ device: string }>;
+		/** Which GPU (or CPU) and which video format exports use. Persisted app-wide. */
+		getEncoderPrefs: () => Promise<{ device: string; codec: string }>;
+		setEncoderPrefs: (prefs: {
+			device?: string;
+			codec?: "h264" | "hevc";
+		}) => Promise<{ device: string; codec: string }>;
 		/** Ask before encoding whether a destination is allowed. Writes nothing. */
 		checkExportTarget: (
 			finalPath: string,

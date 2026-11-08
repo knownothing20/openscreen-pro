@@ -21,7 +21,7 @@ import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
-import { resolveEncoderDevice } from "@/lib/encoderDevices";
+import { resolveEncoderDevice, type VideoCodec } from "@/lib/encoderDevices";
 import {
 	type ExportFormat,
 	type ExportProgress,
@@ -36,6 +36,7 @@ import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
 import {
 	cancelExportNative,
 	cancelGifExportNative,
+	codecSupportNative,
 	exportGifNative,
 	exportMultiNative,
 	listGpusNative,
@@ -422,15 +423,28 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			// the encoder opens so the dialog can say which device it is waiting on.
 			const encoderPrefs = await window.electronAPI?.getEncoderPrefs?.().catch(() => null);
 			const gpus = await listGpusNative().catch(() => [] as CompositorGpuInfo[]);
+			const support = await codecSupportNative().catch(() => null);
+			// The format is the stored app-level choice, not a per-project field: the CLI reads the
+			// same value, which is what keeps the two entry points producing the same file.
+			const videoCodec: VideoCodec = encoderPrefs?.codec === "hevc" ? "hevc" : "h264";
 			// Resolves the STORED identity (a PnP id) to this session's LUID, and throws when the
 			// card is gone — a manual choice must stop the export rather than encode elsewhere.
-			const encoderChoice = resolveEncoderDevice(encoderPrefs?.device ?? "auto", gpus);
+			const encoderChoice = resolveEncoderDevice(
+				encoderPrefs?.device ?? "auto",
+				gpus,
+				videoCodec,
+				support,
+			);
 			const encoderDevice = encoderChoice.device;
 			if (encoderChoice.migratedTo) {
 				// A V2.2 LUID that still resolves: upgrade the stored value to the stable id once.
 				void window.electronAPI?.setEncoderPrefs?.({ device: encoderChoice.migratedTo });
 			}
-			setEncoderLine(t("exportDialog.encoderPending", { device: encoderChoice.label }));
+			setEncoderLine(
+				`${t("exportDialog.encoderPending", { device: encoderChoice.label })} · ${
+					videoCodec === "hevc" ? "H.265/HEVC" : "H.264"
+				}`,
+			);
 			try {
 				// The webcam background effect is applied by the compositor from the scene,
 				// so the clip list needs no pre-rendering pass.
@@ -463,10 +477,10 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 									width: outDims?.width,
 									height: outDims?.height,
 									fps,
-									// H.264 only. The native pipeline still encodes H.265, but nothing
-									// offers it: it is software-only on Linux, slower than software on the
-									// measured Macs, and the files half the players cannot open.
-									codec: "h264",
+									// The format the user chose. Asking for HEVC and silently getting
+									// H.264 is the one outcome this must never produce, so the native
+									// side fails instead of falling back.
+									codec: videoCodec === "hevc" ? "h265" : "h264",
 									bitrate: outDims?.bitrate,
 									encoderDevice,
 								},

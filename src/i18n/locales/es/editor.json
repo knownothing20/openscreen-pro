@@ -464,6 +464,15 @@
 		"runtimeLuid": "Identificador de sesión",
 		"driverVersion": "Controlador",
 		"ambiguousIdentity": "identidad compartida con otra tarjeta",
-		"deviceMissing": "no presente: la exportación se negará hasta que vuelva o elijas otro dispositivo"
+		"deviceMissing": "no presente: la exportación se negará hasta que vuelva o elijas otro dispositivo",
+		"codecTitle": "Formato de vídeo",
+		"codecH264": "H.264",
+		"codecH264Hint": "Se reproduce en cualquier sitio. Archivos más grandes.",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "Aproximadamente la mitad de tamaño. Requiere un reproductor compatible con HEVC.",
+		"codecUnavailable": "Este dispositivo no tiene codificador {{codec}}.",
+		"reasonSoftwareAdapter": "Adaptador de software: puede componer, pero no tiene codificador por hardware.",
+		"reasonNoVendorEncoder": "Esta compilación no tiene codificador {{codec}} para este fabricante.",
+		"reasonNoSoftwareEncoder": "Esta compilación no tiene codificador {{codec}} por software."
 	}
 }

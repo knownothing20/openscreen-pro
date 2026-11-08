@@ -464,6 +464,15 @@
 		"runtimeLuid": "Handle relace",
 		"driverVersion": "Ovladač",
 		"ambiguousIdentity": "identita sdílená s jinou kartou",
-		"deviceMissing": "není k dispozici — export odmítne, dokud se nevrátí nebo nevyberete jiné zařízení"
+		"deviceMissing": "není k dispozici — export odmítne, dokud se nevrátí nebo nevyberete jiné zařízení",
+		"codecTitle": "Formát videa",
+		"codecH264": "H.264",
+		"codecH264Hint": "Přehrává se všude. Větší soubory.",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "Přibližně poloviční velikost. Vyžaduje přehrávač s podporou HEVC.",
+		"codecUnavailable": "Toto zařízení nemá kodér {{codec}}.",
+		"reasonSoftwareAdapter": "Softwarový adaptér – umí skládat, ale nemá hardwarový kodér.",
+		"reasonNoVendorEncoder": "Toto sestavení nemá kodér {{codec}} pro tohoto výrobce.",
+		"reasonNoSoftwareEncoder": "Toto sestavení nemá softwarový kodér {{codec}}."
 	}
 }

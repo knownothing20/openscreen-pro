@@ -464,6 +464,15 @@
 		"runtimeLuid": "Session handle",
 		"driverVersion": "Driver",
 		"ambiguousIdentity": "identity shared with another card",
-		"deviceMissing": "not present — the export will refuse until it is back or you pick another device"
+		"deviceMissing": "not present — the export will refuse until it is back or you pick another device",
+		"codecTitle": "Video format",
+		"codecH264": "H.264",
+		"codecH264Hint": "Plays anywhere. Larger files.",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "About half the size. Needs a player that supports HEVC.",
+		"codecUnavailable": "This device has no {{codec}} encoder.",
+		"reasonSoftwareAdapter": "Software adapter — it can composite, but it has no hardware encoder.",
+		"reasonNoVendorEncoder": "No {{codec}} encoder for this vendor in this build.",
+		"reasonNoSoftwareEncoder": "This build has no software {{codec}} encoder."
 	}
 }

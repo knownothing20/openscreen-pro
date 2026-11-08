@@ -16,6 +16,13 @@ export interface CliExportRequest {
 	format: "mp4" | "gif" | null;
 	/** null = use the quality stored in the project. */
 	quality: ExportQuality | null;
+	/**
+	 * MP4 video format. null = use the app-level default (Settings → Video encoding device).
+	 *
+	 * Not a project field: which format to produce is a property of what the user is shipping,
+	 * and the GUI reads the same app setting, so the two entry points cannot disagree.
+	 */
+	codec: "h264" | "hevc" | null;
 	gifFrameRate: GifFrameRate | null;
 	gifSizePreset: GifSizePreset | null;
 	/**

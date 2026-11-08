@@ -89,9 +89,17 @@ export const DEFAULT_STAR_PROMPT: StarPromptPreferences = {
  */
 export interface EncoderPreferences {
 	device: string;
+	/**
+	 * "h264" | "hevc".
+	 *
+	 * Stored next to the device rather than derived from the project: the format is a property of
+	 * what the user is producing (compatibility vs size), not of one timeline. A settings file
+	 * written by V2.2.1 has no `codec` at all and reads as `h264` — the behaviour it already had.
+	 */
+	codec: string;
 }
 
-export const DEFAULT_ENCODER_PREFERENCES: EncoderPreferences = { device: "auto" };
+export const DEFAULT_ENCODER_PREFERENCES: EncoderPreferences = { device: "auto", codec: "h264" };
 
 export interface AppSettingsSnapshot {
 	recording: RecordingPreferences;
@@ -200,17 +208,24 @@ function parseEncoder(raw: RawSettings): EncoderPreferences {
 	const value = raw.lastEncoder;
 	if (!value || typeof value !== "object" || Array.isArray(value))
 		return DEFAULT_ENCODER_PREFERENCES;
-	const device = (value as Record<string, unknown>).device;
-	if (device === "auto" || device === "cpu") return { device };
+	const record = value as Record<string, unknown>;
+	// An unknown format reads as h264: that is what the install already produced, and guessing
+	// "hevc" from a typo would change the output of an export nobody asked to change.
+	const codec = record.codec === "hevc" ? "hevc" : "h264";
+
+	const device = record.device;
+	if (device === "auto" || device === "cpu") return { device, codec };
 	// `id:<PnP instance id>` — the shape that survives reboots. Case is preserved: it IS the
 	// device-tree spelling, and lowercasing it silently stops it matching the adapter list.
-	if (typeof device === "string" && /^id:[\x20-\x7e]{1,256}$/.test(device)) return { device };
+	if (typeof device === "string" && /^id:[\x20-\x7e]{1,256}$/.test(device)) {
+		return { device, codec };
+	}
 	// V2.2 stored a bare LUID. Still readable, still resolvable — the renderer migrates it to the
 	// stable id the first time it resolves.
 	if (typeof device === "string" && /^[0-9a-f]{1,16}$/i.test(device)) {
-		return { device: device.toLowerCase() };
+		return { device: device.toLowerCase(), codec };
 	}
-	return DEFAULT_ENCODER_PREFERENCES;
+	return { ...DEFAULT_ENCODER_PREFERENCES, codec };
 }
 
 function validateRecordingPatch(patch: Partial<RecordingPreferences>): void {
@@ -259,7 +274,7 @@ export class AppSettingsStore {
 	/** Persist the encoder choice. Validated at the source so a bad write is an error here,
 	 *  not a silently-ignored device later. */
 	setEncoderPreferences(prefs: EncoderPreferences): AppSettingsSnapshot {
-		const { device } = prefs;
+		const { device, codec } = prefs;
 		const valid =
 			device === "auto" ||
 			device === "cpu" ||
@@ -267,11 +282,14 @@ export class AppSettingsStore {
 			/^id:[\x20-\x7e]{1,256}$/.test(device) ||
 			/^[0-9a-f]{1,16}$/i.test(device);
 		if (!valid) throw new TypeError(`invalid encoder device: ${device}`);
+		if (codec !== "h264" && codec !== "hevc") {
+			throw new TypeError(`invalid export codec: ${codec}`);
+		}
 		const raw = readRaw(this.userData);
 		// A LUID is hex and case-free; a PnP instance id is not, and lowercasing it would make the
 		// stored value stop matching the adapter it names.
 		const stored = device.startsWith("id:") ? device : device.toLowerCase();
-		atomicWrite(this.userData, { ...raw, lastEncoder: { device: stored } });
+		atomicWrite(this.userData, { ...raw, lastEncoder: { device: stored, codec } });
 		return this.getSnapshot();
 	}
 

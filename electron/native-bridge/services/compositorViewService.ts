@@ -15,6 +15,7 @@ import type {
 import type { GifExportJob } from "../../ipc/gifExportJobs";
 import type {
 	ClipInput,
+	CodecSupport,
 	CompositorBackend,
 	CompositorParamValue,
 	CompositorViewAddon,
@@ -831,6 +832,19 @@ export class CompositorViewService {
 	listGpus(): GpuInfo[] {
 		const addon = this.ensureAddon();
 		return addon?.listGpus?.() ?? [];
+	}
+
+	/** Candidate encoders this binary carries, per format. Empty on a build without the entry. */
+	codecSupport(): CodecSupport {
+		const addon = this.ensureAddon();
+		return (
+			addon?.codecSupport?.() ?? {
+				h264: [],
+				hevc: [],
+				h264Software: false,
+				hevcSoftware: false,
+			}
+		);
 	}
 
 	/** True when this `.node` can stop an MP4 export mid-render. A stale addon predates the

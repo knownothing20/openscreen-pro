@@ -82,6 +82,8 @@ Export options:
   --format <mp4|gif>        Override the format stored in the project
   --quality <medium|good|source>
                             MP4 quality (default: from project)
+  --codec <h264|hevc>       MP4 video format (default: app setting; h265 is accepted as an
+                            alias of hevc). HEVC never falls back to H.264.
   --gif-fps <15|20|25|30>   GIF frame rate (default: from project)
   --gif-size <medium|large|original>
                             GIF size preset (default: from project)
@@ -178,6 +180,7 @@ function parseExport(args: string[], cwd: string): CliCommand {
 		outPath: null,
 		format: null,
 		quality: null,
+		codec: null,
 		gifFrameRate: null,
 		gifSizePreset: null,
 		autoZoom: false,
@@ -211,6 +214,16 @@ function parseExport(args: string[], cwd: string): CliCommand {
 					throw new Error(`--quality must be medium, good or source, got "${value}"`);
 				}
 				request.quality = value;
+				i = next;
+				break;
+			}
+			case "--codec": {
+				const [value, next] = takeValue(args, i, arg);
+				// `h265` is accepted because that is what the native layer calls it and what a
+				// reader of the previous reports will try. One stored spelling: "hevc".
+				if (value === "h264") request.codec = "h264";
+				else if (value === "hevc" || value === "h265") request.codec = "hevc";
+				else throw new Error(`--codec must be h264 or hevc, got "${value}"`);
 				i = next;
 				break;
 			}
@@ -284,6 +297,11 @@ function parseExport(args: string[], cwd: string): CliCommand {
 			throw new Error(`--format ${request.format} conflicts with --out extension ${ext}`);
 		}
 		request.format = extFormat;
+	}
+	// A GIF has no H.264/HEVC encoder at all: silently ignoring --codec would report a format
+	// the file does not have.
+	if (request.codec && request.format === "gif") {
+		throw new Error("--codec is only supported for MP4 exports");
 	}
 	// After --out resolves the format, so `--audio … -o out.gif` is caught too.
 	if (request.audioPath && request.format === "gif") {

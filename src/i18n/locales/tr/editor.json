@@ -464,6 +464,15 @@
 		"runtimeLuid": "Oturum tanıtıcısı",
 		"driverVersion": "Sürücü",
 		"ambiguousIdentity": "kimlik başka bir kartla paylaşılıyor",
-		"deviceMissing": "yok — aygıt geri gelene veya başka bir aygıt seçene kadar dışa aktarma reddeder"
+		"deviceMissing": "yok — aygıt geri gelene veya başka bir aygıt seçene kadar dışa aktarma reddeder",
+		"codecTitle": "Video biçimi",
+		"codecH264": "H.264",
+		"codecH264Hint": "Her yerde oynar. Dosyalar daha büyük.",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "Yaklaşık yarı boyut. HEVC destekli bir oynatıcı gerekir.",
+		"codecUnavailable": "Bu aygıtta {{codec}} kodlayıcısı yok.",
+		"reasonSoftwareAdapter": "Yazılım bağdaştırıcısı — birleştirme yapar ama donanım kodlayıcısı yok.",
+		"reasonNoVendorEncoder": "Bu derlemede bu üretici için {{codec}} kodlayıcısı yok.",
+		"reasonNoSoftwareEncoder": "Bu derlemede yazılım {{codec}} kodlayıcısı yok."
 	}
 }

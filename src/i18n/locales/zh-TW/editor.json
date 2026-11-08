@@ -464,6 +464,15 @@
 		"runtimeLuid": "工作階段代碼",
 		"driverVersion": "驅動程式",
 		"ambiguousIdentity": "與另一張卡共用識別",
-		"deviceMissing": "不在本機——裝置恢復或改選其他裝置前，匯出會被拒絕"
+		"deviceMissing": "不在本機——裝置恢復或改選其他裝置前，匯出會被拒絕",
+		"codecTitle": "影片格式",
+		"codecH264": "H.264",
+		"codecH264Hint": "相容性最好，檔案較大。",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "檔案約為一半，需要支援 HEVC 的播放器。",
+		"codecUnavailable": "此裝置沒有 {{codec}} 編碼器。",
+		"reasonSoftwareAdapter": "軟體介面卡 —— 可以合成畫面，但沒有硬體編碼器。",
+		"reasonNoVendorEncoder": "目前建置沒有該廠商的 {{codec}} 編碼器。",
+		"reasonNoSoftwareEncoder": "目前建置沒有軟體 {{codec}} 編碼器。"
 	}
 }

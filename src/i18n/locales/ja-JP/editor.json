@@ -464,6 +464,15 @@
 		"runtimeLuid": "セッションハンドル",
 		"driverVersion": "ドライバー",
 		"ambiguousIdentity": "別のカードと同一の識別子",
-		"deviceMissing": "見つかりません。デバイスが戻るか別のデバイスを選ぶまで書き出しは拒否されます"
+		"deviceMissing": "見つかりません。デバイスが戻るか別のデバイスを選ぶまで書き出しは拒否されます",
+		"codecTitle": "動画フォーマット",
+		"codecH264": "H.264",
+		"codecH264Hint": "どこでも再生できます。ファイルは大きめ。",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "ファイルサイズは約半分。HEVC 対応プレーヤーが必要です。",
+		"codecUnavailable": "このデバイスには {{codec}} エンコーダーがありません。",
+		"reasonSoftwareAdapter": "ソフトウェアアダプター — 合成はできますが、ハードウェアエンコーダーはありません。",
+		"reasonNoVendorEncoder": "このビルドにはこのベンダーの {{codec}} エンコーダーがありません。",
+		"reasonNoSoftwareEncoder": "このビルドにはソフトウェア {{codec}} エンコーダーがありません。"
 	}
 }

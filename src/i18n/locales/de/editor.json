@@ -464,6 +464,15 @@
 		"runtimeLuid": "Sitzungs-Handle",
 		"driverVersion": "Treiber",
 		"ambiguousIdentity": "Kennung mit einer weiteren Karte geteilt",
-		"deviceMissing": "nicht vorhanden — der Export verweigert, bis sie zurück ist oder Sie ein anderes Gerät wählen"
+		"deviceMissing": "nicht vorhanden — der Export verweigert, bis sie zurück ist oder Sie ein anderes Gerät wählen",
+		"codecTitle": "Videoformat",
+		"codecH264": "H.264",
+		"codecH264Hint": "Läuft überall. Größere Dateien.",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "Etwa halb so groß. Braucht einen Player mit HEVC-Unterstützung.",
+		"codecUnavailable": "Dieses Gerät hat keinen {{codec}}-Encoder.",
+		"reasonSoftwareAdapter": "Software-Adapter — kann komponieren, hat aber keinen Hardware-Encoder.",
+		"reasonNoVendorEncoder": "Dieser Build hat keinen {{codec}}-Encoder für diesen Hersteller.",
+		"reasonNoSoftwareEncoder": "Dieser Build hat keinen Software-{{codec}}-Encoder."
 	}
 }

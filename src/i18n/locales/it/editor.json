@@ -464,6 +464,15 @@
 		"runtimeLuid": "Handle di sessione",
 		"driverVersion": "Versione driver",
 		"ambiguousIdentity": "identità condivisa con un'altra scheda",
-		"deviceMissing": "non presente: l'esportazione si rifiuterà finché non torna o non scegli un altro dispositivo"
+		"deviceMissing": "non presente: l'esportazione si rifiuterà finché non torna o non scegli un altro dispositivo",
+		"codecTitle": "Formato video",
+		"codecH264": "H.264",
+		"codecH264Hint": "Si riproduce ovunque. File più grandi.",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "Circa metà della dimensione. Serve un lettore che supporti HEVC.",
+		"codecUnavailable": "Questo dispositivo non ha un encoder {{codec}}.",
+		"reasonSoftwareAdapter": "Adattatore software: può comporre, ma non ha un encoder hardware.",
+		"reasonNoVendorEncoder": "Questa build non ha un encoder {{codec}} per questo produttore.",
+		"reasonNoSoftwareEncoder": "Questa build non ha un encoder {{codec}} software."
 	}
 }

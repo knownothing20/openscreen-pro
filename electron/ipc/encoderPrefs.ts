@@ -15,10 +15,13 @@ export function registerEncoderPrefsHandlers(): void {
 
 	ipcMain.handle("get-encoder-prefs", () => prefs);
 	ipcMain.handle("set-encoder-prefs", (_, next: Partial<EncoderPreferences>) => {
+		// Each field is optional so the format picker and the device picker can write one without
+		// resending the other — and so a caller that only knows about a device still works.
 		const device = typeof next?.device === "string" ? next.device : prefs.device;
+		const codec = next?.codec === "h264" || next?.codec === "hevc" ? next.codec : prefs.codec;
 		// Persist first: a failed write must leave the published value unchanged, so the UI never
 		// shows a choice that is not on disk.
-		prefs = settings.setEncoderPreferences({ device }).lastEncoder;
+		prefs = settings.setEncoderPreferences({ device, codec }).lastEncoder;
 		return prefs;
 	});
 }

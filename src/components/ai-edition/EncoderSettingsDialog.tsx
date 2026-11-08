@@ -5,10 +5,13 @@ import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import {
 	buildDeviceOptions,
 	type EncoderDeviceOption,
+	encodersForCodec,
 	resolveDeviceSelection,
+	resolveEncoderDevice,
+	type VideoCodec,
 } from "@/lib/encoderDevices";
-import { listGpusNative, selfTestEncoderNative } from "@/native";
-import type { CompositorGpuInfo } from "@/native/contracts";
+import { codecSupportNative, listGpusNative, selfTestEncoderNative } from "@/native";
+import type { CompositorCodecSupport, CompositorGpuInfo } from "@/native/contracts";
 import { buildNativeClipList } from "./ExportDialog";
 import { ModalShell } from "./Modals";
 
@@ -46,7 +49,9 @@ const TEST_SECONDS = 1;
 export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettingsDialogProps) {
 	const t = useScopedT("editor");
 	const [gpus, setGpus] = useState<CompositorGpuInfo[] | null>(null);
+	const [support, setSupport] = useState<CompositorCodecSupport | null>(null);
 	const [device, setDevice] = useState("auto");
+	const [codec, setCodec] = useState<VideoCodec>("h264");
 	const [busy, setBusy] = useState(false);
 	const [test, setTest] = useState<TestResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -55,12 +60,15 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 		setBusy(true);
 		setError(null);
 		try {
-			const [list, prefs] = await Promise.all([
+			const [list, prefs, caps] = await Promise.all([
 				listGpusNative().catch(() => [] as CompositorGpuInfo[]),
-				window.electronAPI?.getEncoderPrefs?.().catch(() => ({ device: "auto" })),
+				window.electronAPI?.getEncoderPrefs?.().catch(() => ({ device: "auto", codec: "h264" })),
+				codecSupportNative().catch(() => null),
 			]);
 			setGpus(list);
+			setSupport(caps);
 			if (prefs?.device) setDevice(prefs.device);
+			setCodec(prefs?.codec === "hevc" ? "hevc" : "h264");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 		} finally {
@@ -79,6 +87,14 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 		await window.electronAPI?.setEncoderPrefs?.({ device: next });
 	};
 
+	const chooseCodec = async (next: VideoCodec) => {
+		setCodec(next);
+		// The previous result belongs to the other format: keeping it on screen would show a
+		// success for an encoder that was never asked to produce this one.
+		setTest(null);
+		await window.electronAPI?.setEncoderPrefs?.({ codec: next });
+	};
+
 	const runTest = async () => {
 		const clips = document ? buildNativeClipList(document).slice(0, 1) : [];
 		if (clips.length === 0) {
@@ -89,6 +105,11 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 		setBusy(true);
 		setTest(null);
 		try {
+			// The stored value is `id:<PnP instance id>`, which the native layer does not accept —
+			// it takes a runtime LUID. Resolving here is what the export path already does; this
+			// button used to skip it, so testing a real card failed with "invalid encoder device"
+			// while exporting with the same card worked.
+			const choice = resolveEncoderDevice(device, gpus ?? [], codec, support);
 			const result = await selfTestEncoderNative({
 				clips: [
 					{
@@ -99,7 +120,10 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 				width: 1280,
 				height: 720,
 				fps: 30,
-				encoderDevice: device,
+				encoderDevice: choice.device,
+				// The test produces the format being configured. Testing H.264 while the user picked
+				// H.265 would report a success the export would never reproduce.
+				codec,
 			});
 			setTest({
 				device,
@@ -119,9 +143,16 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 		}
 	};
 
-	const options = buildDeviceOptions(gpus ?? []);
+	const options = buildDeviceOptions(gpus ?? [], codec, support);
 	// A stored legacy LUID is not an option value, but the card it names is still the selected one.
 	const selectedLuid = resolveDeviceSelection(device, gpus ?? []).luid;
+	// The chosen device may not carry the newly selected format. That is shown, not fixed
+	// silently: switching the user's card because they changed the format is the same class of
+	// bug as switching it because an encoder failed.
+	const selectedCard = gpus?.find((gpu) => gpu.luid === selectedLuid);
+	const selectedLacksFormat =
+		Boolean(selectedCard) &&
+		encodersForCodec(selectedCard as CompositorGpuInfo, codec).length === 0;
 
 	return (
 		<ModalShell
@@ -132,6 +163,31 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 			subtitle={t("encoderSettings.subtitle")}
 		>
 			<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+				<div>
+					<div style={{ ...sub, marginBottom: 6 }}>{t("encoderSettings.codecTitle")}</div>
+					<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+						<FormatButton
+							label={t("encoderSettings.codecH264")}
+							hint={t("encoderSettings.codecH264Hint")}
+							selected={codec === "h264"}
+							onClick={() => void chooseCodec("h264")}
+						/>
+						<FormatButton
+							label={t("encoderSettings.codecHevc")}
+							hint={t("encoderSettings.codecHevcHint")}
+							selected={codec === "hevc"}
+							onClick={() => void chooseCodec("hevc")}
+						/>
+					</div>
+					{selectedLacksFormat ? (
+						<div style={{ ...sub, color: "var(--warning, #d97706)", marginTop: 6 }}>
+							{t("encoderSettings.codecUnavailable", {
+								codec: codec === "hevc" ? "H.265/HEVC" : "H.264",
+							})}
+						</div>
+					) : null}
+				</div>
+
 				<div style={{ display: "flex", gap: 8 }}>
 					<button type="button" onClick={() => void load()} disabled={busy} style={secondaryButton}>
 						<RefreshCw size={14} /> {t("encoderSettings.redetect")}
@@ -158,6 +214,7 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 						<DeviceRow
 							key={option.device}
 							option={option}
+							codec={codec}
 							selected={
 								device === option.device || (Boolean(selectedLuid) && option.luid === selectedLuid)
 							}
@@ -180,14 +237,51 @@ export function EncoderSettingsDialog({ open, onClose, document }: EncoderSettin
 	);
 }
 
+function FormatButton({
+	label,
+	hint,
+	selected,
+	onClick,
+}: {
+	label: string;
+	hint: string;
+	selected: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			role="radio"
+			aria-checked={selected}
+			onClick={onClick}
+			style={{
+				display: "grid",
+				gap: 2,
+				textAlign: "left",
+				padding: "8px 12px",
+				borderRadius: 9,
+				border: `1px solid ${selected ? "var(--accent, #6366f1)" : "var(--border-soft, #2a2a30)"}`,
+				background: selected ? "rgba(99,102,241,0.10)" : "transparent",
+				color: "inherit",
+				cursor: "pointer",
+			}}
+		>
+			<strong style={{ fontSize: 13, fontWeight: 600 }}>{label}</strong>
+			<span style={{ fontSize: 11, color: "var(--text-muted, #a1a1aa)" }}>{hint}</span>
+		</button>
+	);
+}
+
 function DeviceRow({
 	option,
+	codec,
 	selected,
 	test,
 	onSelect,
 	t,
 }: {
 	option: EncoderDeviceOption;
+	codec: VideoCodec;
 	selected: boolean;
 	test: TestResult | null;
 	onSelect: () => void;
@@ -234,10 +328,27 @@ function DeviceRow({
 				{option.kind === "auto" ? <span style={sub}>{t("encoderSettings.autoHint")}</span> : null}
 				{option.kind === "cpu" ? <span style={sub}>{t("encoderSettings.cpuHint")}</span> : null}
 				{option.kind === "gpu" ? (
+					// Both formats on their own line: a card that encodes H.264 is not thereby a
+					// card that encodes HEVC, and one merged line is how that gets believed.
 					<span style={sub}>
-						{option.encoders && option.encoders.length > 0
-							? option.encoders.join(" · ")
-							: t("encoderSettings.noEncoder")}
+						{[
+							["H.264", option.h264Encoders ?? [], "h264"],
+							["H.265", option.hevcEncoders ?? [], "hevc"],
+						].map(([label, list, which]) => (
+							<span
+								key={String(label)}
+								style={{
+									display: "block",
+									fontWeight: codec === which ? 600 : 400,
+									color: codec === which ? "inherit" : "var(--text-muted, #a1a1aa)",
+								}}
+							>
+								{String(label)}:{" "}
+								{(list as string[]).length > 0
+									? (list as string[]).join(" · ")
+									: t("encoderSettings.noEncoder")}
+							</span>
+						))}
 					</span>
 				) : null}
 
@@ -252,7 +363,9 @@ function DeviceRow({
 				) : null}
 
 				{option.disabledReason ? (
-					<span style={{ ...sub, color: "var(--warning, #d97706)" }}>{option.disabledReason}</span>
+					<span style={{ ...sub, color: "var(--warning, #d97706)" }}>
+						{t(option.disabledReason.key, option.disabledReason.vars)}
+					</span>
 				) : null}
 
 				{test ? (

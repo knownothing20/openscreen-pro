@@ -511,6 +511,12 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							if (plan && !isExportRefusal(plan)) await commitExportFile(plan);
 							return createSuccessResponse(requestId, stats);
 						}
+						case "codecSupport": {
+							// "Which encoders does this binary carry, per format" — the one question
+							// the adapter list cannot answer, and the one that decides whether a CPU
+							// HEVC pick is even offerable.
+							return createSuccessResponse(requestId, compositorViewService.codecSupport());
+						}
 						case "listGpus": {
 							// Straight from DXGI, not from ffmpeg's encoder list: the list answers
 							// "what does this machine have", and the encoders column answers "what
@@ -529,6 +535,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								height?: number;
 								fps?: number;
 								encoderDevice?: string;
+								codec?: string;
 							};
 							if (!Array.isArray(payload.clips) || payload.clips.length === 0) {
 								return createErrorResponse(
@@ -551,7 +558,10 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 										width: payload.width,
 										height: payload.height,
 										fps: payload.fps,
-										codec: "h264",
+										// The format being tested is the format selected. A test that
+										// always encoded H.264 would report success for a HEVC
+										// choice it never exercised.
+										codec: payload.codec === "hevc" ? "h265" : "h264",
 										encoderDevice: payload.encoderDevice,
 									},
 									undefined,

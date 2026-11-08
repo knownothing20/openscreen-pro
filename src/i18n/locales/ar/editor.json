@@ -464,6 +464,15 @@
 		"runtimeLuid": "مقبض الجلسة",
 		"driverVersion": "التعريف",
 		"ambiguousIdentity": "المعرّف مشترك مع بطاقة أخرى",
-		"deviceMissing": "غير موجود — سيرفض التصدير حتى يعود أو تختار جهازًا آخر"
+		"deviceMissing": "غير موجود — سيرفض التصدير حتى يعود أو تختار جهازًا آخر",
+		"codecTitle": "تنسيق الفيديو",
+		"codecH264": "H.264",
+		"codecH264Hint": "يُشغَّل في أي مكان. ملفات أكبر.",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "نحو نصف الحجم. يحتاج مشغّلًا يدعم HEVC.",
+		"codecUnavailable": "لا يوجد مُرمِّز {{codec}} على هذا الجهاز.",
+		"reasonSoftwareAdapter": "محوّل برمجي — يمكنه التركيب لكن لا يوجد مُرمِّز عتاد.",
+		"reasonNoVendorEncoder": "لا يوجد مُرمِّز {{codec}} لهذه الشركة المصنّعة في هذا البناء.",
+		"reasonNoSoftwareEncoder": "لا يوجد مُرمِّز {{codec}} برمجي في هذا البناء."
 	}
 }

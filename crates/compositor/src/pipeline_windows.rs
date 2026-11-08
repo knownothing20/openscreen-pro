@@ -1310,6 +1310,7 @@ pub fn run_composited_multi(
 /// VP9 a été essayé via un chemin logiciel (libvpx-vp9) mais retiré : trop lent pour être
 /// utile en pratique, pas la peine de maintenir ce chemin. Choisir VP9 échoue avec un message
 /// clair plutôt que de silencieusement retomber sur H264.
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ExportCodec {
     H264,
     H265,
@@ -1366,29 +1367,59 @@ impl ExportCodec {
     }
 }
 
-/// The encoder names this build actually contains for `vendor`, H.264 and H.265.
+/// The encoders this build contains for one codec and one vendor.
 ///
-/// Answers the first two levels of the question a settings screen asks — "did the OS report this
-/// adapter?" (the caller has the list) and "does this ffmpeg have an encoder for it?" — and
-/// deliberately NOT the last two. Whether the driver will open one on that card is what
-/// `avcodec_open2` decides, which is the test-encode path; claiming it here would be the same
-/// mistake as reading `-encoders` and calling the GPU supported.
-pub fn encoder_names_for_vendor(vendor: u32) -> Vec<String> {
-    let mut names = Vec::new();
-    for codec in [ExportCodec::H264, ExportCodec::H265] {
-        for &(name, _) in codec.candidates() {
-            if crate::encoder_choice::EncoderChoice::vendor_of(name) != Some(vendor) {
-                continue;
-            }
-            let Ok(cname) = std::ffi::CString::new(name) else { continue };
+/// Per codec, not merged: a card that encodes H.264 says nothing about whether it encodes HEVC,
+/// and a settings screen that showed "h264_nvenc, hevc_nvenc" on one line was inviting exactly
+/// that confusion. Same two-level answer as before — "did the OS report this adapter" is the
+/// caller's list, "does this build have an encoder for it" is this function — and deliberately
+/// not the third: whether the driver will OPEN one on that card is `avcodec_open2`'s answer,
+/// which is what the test-encode entry point is for.
+pub fn encoder_names_for(vendor: u32, codec: &ExportCodec) -> Vec<String> {
+    codec
+        .candidates()
+        .iter()
+        .filter(|(name, _)| {
+            crate::encoder_choice::EncoderChoice::vendor_of(name) == Some(vendor)
+        })
+        .filter_map(|(name, _)| {
+            let cname = std::ffi::CString::new(*name).ok()?;
             // Compiled in or not: this is the difference between "we could try" and "there is
             // nothing to try", and it costs one lookup.
-            if !unsafe { avcodec_find_encoder_by_name(cname.as_ptr()) }.is_null() {
-                names.push(name.to_string());
+            if unsafe { avcodec_find_encoder_by_name(cname.as_ptr()) }.is_null() {
+                None
+            } else {
+                Some((*name).to_string())
             }
-        }
-    }
-    names
+        })
+        .collect()
+}
+
+/// The encoders this build contains for one codec, every vendor included.
+///
+/// This is what tells the settings screen whether a CPU pick can even be attempted for that
+/// codec: `libopenh264` existing for H.264 implies nothing about HEVC, and the only honest answer
+/// is the list the build actually carries.
+pub fn codec_encoder_names(codec: &ExportCodec) -> Vec<String> {
+    codec
+        .candidates()
+        .iter()
+        .filter_map(|(name, _)| {
+            let cname = std::ffi::CString::new(*name).ok()?;
+            if unsafe { avcodec_find_encoder_by_name(cname.as_ptr()) }.is_null() {
+                None
+            } else {
+                Some((*name).to_string())
+            }
+        })
+        .collect()
+}
+
+/// True when the build carries at least one encoder that is unambiguously software for `codec`.
+pub fn has_software_encoder(codec: &ExportCodec) -> bool {
+    codec_encoder_names(codec)
+        .iter()
+        .any(|name| crate::encoder_choice::EncoderChoice::is_explicit_software(name))
 }
 
 /// The encoders this run is allowed to try, in order.
@@ -1462,6 +1493,25 @@ fn apply_rate_control(ctx: *mut AVCodecContext, encoder: &str, bit_rate: i64) {
             eprintln!("[pipeline] {encoder}: option {key}={value} refusée (ret={ret})");
         }
     };
+    // libkvazaar exposes exactly ONE AVOption (`kvazaar-params`, a comma-separated key=value
+    // string). `rc_mode=2` and `bitrate=` therefore did nothing at all for it — measured: the
+    // calls returned < 0 and the encoder kept its own defaults. It needs its own vocabulary.
+    let set_str = |key: &str, value: &str| {
+        let (Ok(ckey), Ok(cvalue)) = (CString::new(key), CString::new(value)) else {
+            return;
+        };
+        let ret = unsafe {
+            av_opt_set(
+                ctx as *mut std::ffi::c_void,
+                ckey.as_ptr(),
+                cvalue.as_ptr(),
+                AV_OPT_SEARCH_CHILDREN as i32,
+            )
+        };
+        if ret < 0 {
+            eprintln!("[pipeline] {encoder}: option {key}={value} refusée (ret={ret})");
+        }
+    };
     match encoder {
         // VBR against the tier's budget. No `maxrate == bitrate`: measured, that cap dropped NVENC
         // from 6.8 to 5.5 Mbit/s for no visible gain — a budget is a budget, not a floor.
@@ -1475,12 +1525,38 @@ fn apply_rate_control(ctx: *mut AVCodecContext, encoder: &str, bit_rate: i64) {
             set("rc", 2);
         }
         // openh264's default is quality-driven; `rc_mode` 2 asks for a bitrate target.
-        "libopenh264" | "libkvazaar" => {
+        "libopenh264" => {
             set("rc_mode", 2);
             set("bitrate", bit_rate);
         }
+        // kvazaar wants the whole configuration as one string. `rc-mode=cbr` is the mode that
+        // actually reads a target; its default is constant-QP.
+        "libkvazaar" => {
+            set_str("kvazaar-params", &format!("rc-mode=cbr,bitrate={bit_rate}"));
+        }
         // QSV and `*_mf` already honour `ctx.bit_rate`.
         _ => {}
+    }
+}
+
+/// Mark an HEVC stream as `hvc1` rather than the muxer's default `hev1`.
+///
+/// The two carry the same bitstream and differ in where the parameter sets live: `hvc1` requires
+/// them in `hvcC` only, `hev1` allows them inline. FFmpeg's mov muxer writes `hev1` by default,
+/// which is legal but is the tag Apple's demuxer and several Windows players refuse — measured
+/// here: the default output reports `(hev1 / 0x31766568)`. Since the compositor always provides
+/// SPS/PPS through `extradata`, `hvc1` is both valid and more portable. H.264 is untouched.
+#[cfg(windows)]
+fn apply_output_codec_tag(ostream: *mut AVStream, codec: ExportCodec) {
+    if ostream.is_null() || !matches!(codec, ExportCodec::H265) {
+        return;
+    }
+    unsafe {
+        let par = (*ostream).codecpar;
+        if !par.is_null() {
+            // MKTAG('h','v','c','1') — little-endian on every target ffmpeg supports.
+            (*par).codec_tag = u32::from_le_bytes(*b"hvc1");
+        }
     }
 }
 
@@ -1597,6 +1673,14 @@ impl VideoEncoder {
                 bail!("OPENSCREEN_EXPORT_ENCODER={name} ne nomme aucun candidat de ce codec")
             }
             Some(name) => bail!("OPENSCREEN_EXPORT_ENCODER={name} inutilisable ici : {}", refused[0]),
+            // CPU mode has its own wording: the candidates that were dropped are the HARDWARE
+            // ones, so "other vendor" would be actively misleading about what happened, and
+            // "GPU" would be wrong about what failed.
+            None if matches!(choice, EncoderChoice::Cpu) && !skipped_by_choice.is_empty() => bail!(
+                "no software encoder could be opened: {} (skipped, hardware: {})",
+                refused.join(" ; "),
+                skipped_by_choice.join(", "),
+            ),
             // A pinned adapter that this codec has no encoder for: say which candidates were
             // dropped for being the wrong vendor, so the message answers "why not?".
             None if !skipped_by_choice.is_empty() => bail!(
@@ -1604,8 +1688,10 @@ impl VideoEncoder {
                 refused.join(" ; "),
                 skipped_by_choice.join(", "),
             ),
+            // The last resort, and the one a user is most likely to paste into a bug report.
+            // English like every other message that reaches the UI.
             None => bail!(
-                "aucun encodeur vidéo utilisable sur cette machine : {}",
+                "no usable video encoder for this format on this machine: {}",
                 refused.join(" ; "),
             ),
         }
@@ -1871,6 +1957,8 @@ unsafe fn run_multi_inner(
     }
     averr(avcodec_parameters_from_context((*ostream).codecpar, ectx), "params_from_ctx")?;
     (*ostream).time_base = (*ectx).time_base;
+    // Before the header: the tag is written into the sample entry, so it has to be set here.
+    apply_output_codec_tag(ostream, params.codec);
     // Les deux streams doivent exister avant le header MP4 ; l'AAC reste ouvert pendant le
     // rendu puis reçoit le PCM assemblé à partir des comptes de frames réellement produits.
     let mut audio_encoder = AacEncoder::open(octx)?;
@@ -3207,13 +3295,59 @@ mod encoder_plan_tests {
         assert!(!plan.iter().any(|name| EncoderChoice::is_explicit_software(name)));
     }
 
+    /// H.265 is a separate plan, not a flag on the H.264 one: every entry has to be a real HEVC
+    /// encoder, or a user asking for HEVC would get an H.264 file with the wrong name on it.
+    #[test]
+    fn hevc_has_its_own_candidate_chain() {
+        assert_eq!(
+            names(ExportCodec::H265, EncoderChoice::Auto),
+            vec!["hevc_amf", "hevc_nvenc", "hevc_qsv", "hevc_mf", "libkvazaar"]
+        );
+    }
+
+    #[test]
+    fn no_hevc_candidate_is_an_h264_encoder() {
+        for name in names(ExportCodec::H265, EncoderChoice::Auto) {
+            assert!(name.starts_with("hevc_") || name.starts_with("lib"), "{name}");
+            assert!(!name.contains("h264"), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_pinned_vendor_gets_its_hevc_encoder_only() {
+        assert_eq!(
+            names(ExportCodec::H265, EncoderChoice::Vendor(0x10DE)),
+            vec!["hevc_nvenc"]
+        );
+        assert_eq!(
+            names(ExportCodec::H265, EncoderChoice::Vendor(0x1002)),
+            vec!["hevc_amf"]
+        );
+        assert_eq!(
+            names(ExportCodec::H265, EncoderChoice::Vendor(0x8086)),
+            vec!["hevc_qsv"]
+        );
+        // A card with no HEVC encoder must end up with an empty plan — the failure the caller
+        // reports — rather than being handed the H.264 one.
+        assert!(names(ExportCodec::H265, EncoderChoice::Vendor(0x1414)).is_empty());
+    }
+
+    #[test]
+    fn cpu_hevc_is_only_encoders_that_carry_their_own_implementation() {
+        // `hevc_mf` is absent on purpose: MediaFoundation may resolve to a hardware MFT, and
+        // "CPU" has to mean CPU.
+        assert_eq!(names(ExportCodec::H265, EncoderChoice::Cpu), vec!["libkvazaar"]);
+    }
+
     #[test]
     fn every_hardware_candidate_in_the_plan_declares_its_vendor() {
         // Guards the table in `EncoderChoice::vendor_of` against a future candidate that is
         // hardware but unlabelled — it would silently be excluded from every manual choice.
-        for (name, _) in plan_candidates(&ExportCodec::H264, EncoderChoice::Auto) {
-            if !EncoderChoice::is_software(name) {
-                assert!(EncoderChoice::vendor_of(name).is_some(), "{name}");
+        for codec in [ExportCodec::H264, ExportCodec::H265] {
+            for (name, _) in plan_candidates(&codec, EncoderChoice::Auto) {
+                if !EncoderChoice::is_software(name) {
+                    assert!(EncoderChoice::vendor_of(name).is_some(), "{name}");
+                }
             }
         }
     }

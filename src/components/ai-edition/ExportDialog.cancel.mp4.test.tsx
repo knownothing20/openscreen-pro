@@ -10,6 +10,12 @@ import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/native", () => ({
 	listGpusNative: vi.fn(async () => []),
+	codecSupportNative: vi.fn(async () => ({
+		h264: ["h264_amf"],
+		hevc: ["hevc_amf"],
+		h264Software: true,
+		hevcSoftware: true,
+	})),
 	exportMultiNative: vi.fn(),
 	exportGifNative: vi.fn(),
 	cancelExportNative: vi.fn(async () => ({ accepted: true })),

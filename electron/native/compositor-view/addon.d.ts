@@ -95,6 +95,16 @@ export interface GpuInfo {
 	software: boolean;
 	/** Encoders this build CONTAINS for the vendor — compiled in, not "verified working". */
 	encoders: string[];
+	encodersH264: string[];
+	encodersHevc: string[];
+}
+
+/** What this build can encode, format by format. */
+export interface CodecSupport {
+	h264: string[];
+	hevc: string[];
+	h264Software: boolean;
+	hevcSoftware: boolean;
 }
 
 /** Bilan d'un export GIF natif (slice 1). Mêmes champs que `ExportStats`
@@ -248,6 +258,8 @@ export interface CompositorViewAddon {
 	 *  `onProgress` (frames encoded so far) is optional, throttled to ~10/s. */
 	/** Every display adapter this machine reports. Empty where DXGI is unavailable. */
 	listGpus?(): GpuInfo[];
+	/** Candidate encoders this binary carries, per format. */
+	codecSupport?(): CodecSupport;
 	exportMulti(
 		clips: ClipInput[],
 		outPath: string,

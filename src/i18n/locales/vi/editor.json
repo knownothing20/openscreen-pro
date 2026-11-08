@@ -464,6 +464,15 @@
 		"runtimeLuid": "Mã phiên",
 		"driverVersion": "Trình điều khiển",
 		"ambiguousIdentity": "danh tính dùng chung với card khác",
-		"deviceMissing": "không có — việc xuất sẽ từ chối cho đến khi thiết bị trở lại hoặc bạn chọn thiết bị khác"
+		"deviceMissing": "không có — việc xuất sẽ từ chối cho đến khi thiết bị trở lại hoặc bạn chọn thiết bị khác",
+		"codecTitle": "Định dạng video",
+		"codecH264": "H.264",
+		"codecH264Hint": "Phát được ở mọi nơi. Tệp lớn hơn.",
+		"codecHevc": "H.265 / HEVC",
+		"codecHevcHint": "Khoảng một nửa dung lượng. Cần trình phát hỗ trợ HEVC.",
+		"codecUnavailable": "Thiết bị này không có bộ mã hóa {{codec}}.",
+		"reasonSoftwareAdapter": "Bộ điều hợp phần mềm — có thể tổng hợp nhưng không có bộ mã hóa phần cứng.",
+		"reasonNoVendorEncoder": "Bản dựng này không có bộ mã hóa {{codec}} cho nhà sản xuất này.",
+		"reasonNoSoftwareEncoder": "Bản dựng này không có bộ mã hóa {{codec}} phần mềm."
 	}
 }

@@ -173,14 +173,50 @@ describe("encoder preferences", () => {
 		// list, which is how a saved choice silently turns into "auto".
 		const id = "id:PCI\\VEN_10DE&DEV_2705&SUBSYS_413C1458&REV_A1\\4&25C6DA53&0&0009";
 		const store = new AppSettingsStore(temp());
-		store.setEncoderPreferences({ device: id });
+		store.setEncoderPreferences({ device: id, codec: "h264" });
 		expect(store.getSnapshot().lastEncoder.device).toBe(id);
 	});
 
 	it("normalises a legacy LUID, which is hex and case-free", () => {
 		const store = new AppSettingsStore(temp());
-		store.setEncoderPreferences({ device: "000000000438724D" });
+		store.setEncoderPreferences({ device: "000000000438724D", codec: "h264" });
 		expect(store.getSnapshot().lastEncoder.device).toBe("000000000438724d");
+	});
+
+	it("persists the format next to the device", () => {
+		const store = new AppSettingsStore(temp());
+		store.setEncoderPreferences({ device: "cpu", codec: "hevc" });
+		const snapshot = store.getSnapshot().lastEncoder;
+		expect(snapshot.codec).toBe("hevc");
+		expect(snapshot.device).toBe("cpu");
+	});
+
+	it("rejects a format that is not h264 or hevc", () => {
+		const store = new AppSettingsStore(temp());
+		expect(() => store.setEncoderPreferences({ device: "auto", codec: "av1" })).toThrow(
+			/invalid export codec/,
+		);
+	});
+
+	it("reads a V2.2.1 settings file, which has no codec at all, as h264", () => {
+		// The upgrade case: an install that never saw this version must keep producing exactly
+		// what it produced before, not silently switch formats.
+		const dir = temp();
+		writeFileSync(
+			path.join(dir, "recording-settings.json"),
+			JSON.stringify({ lastEncoder: { device: "cpu" } }),
+		);
+		const snapshot = new AppSettingsStore(dir).getSnapshot().lastEncoder;
+		expect(snapshot).toEqual({ device: "cpu", codec: "h264" });
+	});
+
+	it("reads an unreadable format as h264 rather than the other one", () => {
+		const dir = temp();
+		writeFileSync(
+			path.join(dir, "recording-settings.json"),
+			JSON.stringify({ lastEncoder: { device: "cpu", codec: "H.265" } }),
+		);
+		expect(new AppSettingsStore(dir).getSnapshot().lastEncoder.codec).toBe("h264");
 	});
 
 	it("reads an unreadable value as auto rather than bricking exports", () => {

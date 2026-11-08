@@ -32,6 +32,8 @@ const GPU: CompositorGpuInfo[] = [
 		dedicatedVramMb: 512,
 		software: false,
 		encoders: ["h264_amf", "hevc_amf"],
+		encodersH264: ["h264_amf"],
+		encodersHevc: ["hevc_amf"],
 	},
 	{
 		index: 1,
@@ -45,6 +47,8 @@ const GPU: CompositorGpuInfo[] = [
 		dedicatedVramMb: 16063,
 		software: false,
 		encoders: ["h264_nvenc", "hevc_nvenc"],
+		encodersH264: ["h264_nvenc"],
+		encodersHevc: ["hevc_nvenc"],
 	},
 	{
 		index: 2,
@@ -58,6 +62,8 @@ const GPU: CompositorGpuInfo[] = [
 		dedicatedVramMb: 16063,
 		software: false,
 		encoders: ["h264_nvenc", "hevc_nvenc"],
+		encodersH264: ["h264_nvenc"],
+		encodersHevc: ["hevc_nvenc"],
 	},
 	{
 		index: 3,
@@ -71,6 +77,8 @@ const GPU: CompositorGpuInfo[] = [
 		dedicatedVramMb: 512,
 		software: false,
 		encoders: ["h264_amf", "hevc_amf"],
+		encodersH264: ["h264_amf"],
+		encodersHevc: ["hevc_amf"],
 	},
 	{
 		index: 4,
@@ -84,6 +92,8 @@ const GPU: CompositorGpuInfo[] = [
 		dedicatedVramMb: 0,
 		software: true,
 		encoders: [],
+		encodersH264: [],
+		encodersHevc: [],
 	},
 	{
 		index: 5,
@@ -97,6 +107,8 @@ const GPU: CompositorGpuInfo[] = [
 		dedicatedVramMb: 0,
 		software: true,
 		encoders: [],
+		encodersH264: [],
+		encodersHevc: [],
 	},
 ];
 
@@ -137,7 +149,7 @@ describe("buildDeviceOptions", () => {
 	it("marks a software adapter as shown-but-not-chooseable, with the reason", () => {
 		const warp = options.find((option) => option.label === "Microsoft Basic Render Driver");
 		expect(warp?.selectable).toBe(false);
-		expect(warp?.disabledReason).toMatch(/software adapter/i);
+		expect(warp?.disabledReason?.key).toBe("encoderSettings.reasonSoftwareAdapter");
 	});
 });
 
@@ -239,5 +251,72 @@ describe("resolveEncoderDevice — manual choices fail loudly", () => {
 	it("passes auto and cpu through unchanged", () => {
 		expect(resolveEncoderDevice("auto", GPU).device).toBe("auto");
 		expect(resolveEncoderDevice("cpu", GPU).device).toBe("cpu");
+	});
+});
+
+describe("format awareness — a card that encodes H.264 does not thereby encode HEVC", () => {
+	const support = {
+		h264: ["h264_amf"],
+		hevc: ["hevc_amf"],
+		h264Software: true,
+		hevcSoftware: true,
+	};
+
+	it("lists only the requested format's encoders for a card", () => {
+		const h264 = buildDeviceOptions(GPU, "h264", support).find((o) => o.kind === "gpu");
+		const hevc = buildDeviceOptions(GPU, "hevc", support).find((o) => o.kind === "gpu");
+		expect(h264?.encoders).toEqual(["h264_amf"]);
+		expect(hevc?.encoders).toEqual(["hevc_amf"]);
+		// Both lists travel together so one row can state what the card does for each.
+		expect(h264?.hevcEncoders).toEqual(["hevc_amf"]);
+	});
+
+	it("disables a card that has no encoder for the requested format", () => {
+		const onlyH264: CompositorGpuInfo = {
+			...GPU[1],
+			encoders: ["h264_nvenc"],
+			encodersH264: ["h264_nvenc"],
+			encodersHevc: [],
+		};
+		const hevc = buildDeviceOptions([onlyH264], "hevc", support).find((o) => o.kind === "gpu");
+		expect(hevc?.selectable).toBe(false);
+		expect(hevc?.disabledReason?.vars?.codec).toMatch(/HEVC/);
+		// The same card is perfectly usable for the format it does carry.
+		const h264 = buildDeviceOptions([onlyH264], "h264", support).find((o) => o.kind === "gpu");
+		expect(h264?.selectable).toBe(true);
+	});
+
+	it("refuses a manual pick on a card without that format, instead of using another encoder", () => {
+		const onlyH264: CompositorGpuInfo = {
+			...GPU[1],
+			encoders: ["h264_nvenc"],
+			encodersH264: ["h264_nvenc"],
+			encodersHevc: [],
+		};
+		expect(() => resolveEncoderDevice(`id:${NVIDIA_ID}`, [onlyH264], "hevc", support)).toThrow(
+			/no HEVC encoder/,
+		);
+		expect(resolveEncoderDevice(`id:${NVIDIA_ID}`, [onlyH264], "h264", support).device).toBe(
+			"000000000438724d",
+		);
+	});
+
+	it("refuses CPU HEVC when the build has no software HEVC encoder", () => {
+		const noHevc: typeof support = { ...support, hevcSoftware: false, hevc: [] };
+		expect(() => resolveEncoderDevice("cpu", GPU, "hevc", noHevc)).toThrow(/no software HEVC/);
+		expect(resolveEncoderDevice("cpu", GPU, "h264", support).device).toBe("cpu");
+	});
+
+	it("disables the CPU row only for the format it cannot produce", () => {
+		const noHevc: typeof support = { ...support, hevcSoftware: false, hevc: [] };
+		const hevcCpu = buildDeviceOptions(GPU, "hevc", noHevc).find((o) => o.kind === "cpu");
+		const h264Cpu = buildDeviceOptions(GPU, "h264", noHevc).find((o) => o.kind === "cpu");
+		expect(hevcCpu?.selectable).toBe(false);
+		expect(h264Cpu?.selectable).toBe(true);
+	});
+
+	it("leaves Auto alone: it is a strategy, not a format claim", () => {
+		const auto = buildDeviceOptions(GPU, "hevc", support).find((o) => o.kind === "auto");
+		expect(auto?.selectable).toBe(true);
 	});
 });

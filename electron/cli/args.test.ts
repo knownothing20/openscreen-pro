@@ -240,3 +240,48 @@ describe("parseCliArgs", () => {
 		expect(parse(["--help"])).toMatchObject({ kind: "help" });
 	});
 });
+
+describe("--codec", () => {
+	it("defaults to null so the app-level setting decides", () => {
+		expect(parse(["export", "demo.openscreen"])).toMatchObject({ codec: null });
+	});
+
+	it("accepts h264 and hevc", () => {
+		expect(parse(["export", "demo.openscreen", "--codec", "h264"])).toMatchObject({
+			codec: "h264",
+		});
+		expect(parse(["export", "demo.openscreen", "--codec", "hevc"])).toMatchObject({
+			codec: "hevc",
+		});
+	});
+
+	it("accepts h265 as an alias of hevc", () => {
+		// The native layer and the earlier reports call it h265; one stored spelling keeps the
+		// comparison honest.
+		expect(parse(["export", "demo.openscreen", "--codec", "h265"])).toMatchObject({
+			codec: "hevc",
+		});
+	});
+
+	it("rejects anything else rather than guessing", () => {
+		expect(parse(["export", "demo.openscreen", "--codec", "av1"])).toMatchObject({
+			kind: "error",
+			message: expect.stringMatching(/--codec must be h264 or hevc/),
+		});
+	});
+
+	it("requires a value", () => {
+		expect(parse(["export", "demo.openscreen", "--codec"])).toMatchObject({
+			kind: "error",
+			message: expect.stringMatching(/--codec requires a value/),
+		});
+	});
+
+	it("refuses a codec on a GIF export instead of ignoring it", () => {
+		// A GIF has no video encoder choice at all; accepting the flag would describe the file
+		// as something it is not.
+		expect(
+			parse(["export", "demo.openscreen", "--codec", "hevc", "--format", "gif"]),
+		).toMatchObject({ kind: "error", message: expect.stringMatching(/only supported for MP4/) });
+	});
+});

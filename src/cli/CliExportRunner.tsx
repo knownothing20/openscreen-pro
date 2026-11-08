@@ -34,7 +34,13 @@ import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
 import { calculateMp4ExportSettings } from "@/lib/exporter/mp4ExportSettings";
 import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
 import { mixVoiceoverIntoVideo } from "@/lib/exporter/voiceoverMix";
-import { exportGifNative, exportMultiNative, listGpusNative, nativeBridgeClient } from "@/native";
+import {
+	codecSupportNative,
+	exportGifNative,
+	exportMultiNative,
+	listGpusNative,
+	nativeBridgeClient,
+} from "@/native";
 import type { CompositorClipInput } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
 import { type ExportProject, exportedInputPaths, loadDocumentProject } from "./exportProject";
@@ -355,7 +361,12 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 					// report says "it is fast in the app and slow from the command line".
 					const prefs = await window.electronAPI?.getEncoderPrefs?.().catch(() => null);
 					const gpus = await listGpusNative().catch(() => []);
-					const choice = resolveEncoderDevice(prefs?.device ?? "auto", gpus);
+					const support = await codecSupportNative().catch(() => null);
+					// `--codec` wins over the stored default, and neither can fall back to H.264 on
+					// its own: a format the user asked for that this machine cannot produce is a
+					// failure, not a different file.
+					const codec = request.codec ?? (prefs?.codec === "hevc" ? "hevc" : "h264");
+					const choice = resolveEncoderDevice(prefs?.device ?? "auto", gpus, codec, support);
 					if (choice.migratedTo) {
 						void window.electronAPI?.setEncoderPrefs?.({ device: choice.migratedTo });
 					}
@@ -367,7 +378,7 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 							width: outDims.width,
 							height: outDims.height,
 							fps: MP4_EXPORT_FPS,
-							codec: "h264",
+							codec: codec === "hevc" ? "h265" : "h264",
 							bitrate: outDims.bitrate,
 							encoderDevice: choice.device,
 						},
