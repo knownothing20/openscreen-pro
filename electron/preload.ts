@@ -369,6 +369,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	pickExportSavePath: (fileName: string, exportFolder?: string) => {
 		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder);
 	},
+	inspectMp4: (filePath: string) => ipcRenderer.invoke("inspect-mp4", filePath),
 	getEncoderPrefs: () => ipcRenderer.invoke("get-encoder-prefs"),
 	setEncoderPrefs: (prefs: { device?: string; codec?: "h264" | "hevc" }) =>
 		ipcRenderer.invoke("set-encoder-prefs", prefs),

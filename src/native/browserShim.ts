@@ -150,6 +150,17 @@ function createShimElectronAPI() {
 		openVideoFilePicker: pickVideoFileViaInput,
 		openProjectFile: () => Promise.resolve({ success: false, canceled: true }),
 		pickExportSavePath: () => Promise.resolve({ success: false, canceled: true }),
+		inspectMp4: () =>
+			Promise.resolve({
+				ok: false,
+				reason: "not available outside the desktop app",
+				fileSize: 0,
+				hasFtyp: false,
+				hasMoov: false,
+				bytesRead: 0,
+				truncated: false,
+				boxes: [],
+			}),
 		getEncoderPrefs: () => Promise.resolve({ device: "auto", codec: "h264" }),
 		setEncoderPrefs: () => Promise.resolve({ device: "auto", codec: "h264" }),
 		checkExportTarget: () => Promise.resolve({ success: false }),

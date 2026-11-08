@@ -385,6 +385,23 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 						[...protectedPaths],
 					);
 				},
+				verifyVideo: async (stage) => {
+					// Main walks the box tree; the file stays where it is. This replaced a
+					// `fetch` of the entire export into this window just to look for "moov".
+					const inspection = await window.electronAPI?.inspectMp4?.(stage);
+					if (!inspection) {
+						throw new Error(
+							"Could not check the rendered video: the desktop bridge is unavailable.",
+						);
+					}
+					if (!inspection.ok) {
+						throw new Error(
+							`The rendered video is not a usable MP4 (${inspection.fileSize} bytes): ${
+								inspection.reason ?? "unknown reason"
+							}`,
+						);
+					}
+				},
 				readVideo: async (stage) => {
 					const response = await fetch(toFileUrl(stage));
 					if (!response.ok) {

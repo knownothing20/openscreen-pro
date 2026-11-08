@@ -38,6 +38,7 @@ function fakeBytes(size = 2048): ArrayBuffer {
 
 interface Calls {
 	render: string[];
+	verify: string[];
 	read: string[];
 	mix: number;
 	write: string[];
@@ -46,11 +47,22 @@ interface Calls {
 }
 
 function harness(overrides: Partial<ExportTransactionPorts> = {}) {
-	const calls: Calls = { render: [], read: [], mix: 0, write: [], commit: [], remove: [] };
+	const calls: Calls = {
+		render: [],
+		verify: [],
+		read: [],
+		mix: 0,
+		write: [],
+		commit: [],
+		remove: [],
+	};
 	const bytes = fakeBytes();
 	const ports: ExportTransactionPorts = {
 		render: vi.fn(async (target: string) => {
 			calls.render.push(target);
+		}),
+		verifyVideo: vi.fn(async (stage: string) => {
+			calls.verify.push(stage);
 		}),
 		readVideo: vi.fn(async (from: string) => {
 			calls.read.push(from);
@@ -95,6 +107,33 @@ describe("runTransactionalExport — the final path is only ever committed to", 
 		expect(calls.commit).toEqual([[calls.render[0], FINAL]]);
 		// And the stage is gone afterwards.
 		expect(calls.remove).toContain(calls.render[0]);
+	});
+
+	it("never reads a plain export into the renderer — it asks main for a verdict", async () => {
+		// The defect this round exists for: a 30-minute export used to be fetched into this
+		// window (Blob + ArrayBuffer) just to look for `ftyp` and `moov`. The check is now a path.
+		const { ports, calls } = harness();
+		await runTransactionalExport({
+			finalPath: FINAL,
+			protectedPaths: PROTECTED,
+			audioPath: null,
+			ports,
+		});
+		expect(calls.verify).toEqual([calls.render[0]]);
+		expect(calls.read).toEqual([]);
+	});
+
+	it("still reads the stage when a voiceover has to be remuxed", async () => {
+		// Mixing genuinely needs the packets; that read is inherent, not accidental.
+		const { ports, calls } = harness();
+		await runTransactionalExport({
+			finalPath: FINAL,
+			protectedPaths: PROTECTED,
+			audioPath: VOICE,
+			ports,
+		});
+		expect(calls.verify).toEqual([calls.render[0]]);
+		expect(calls.read).toEqual([calls.render[0]]);
 	});
 
 	it("mixes into a second stage and commits only that one", async () => {
@@ -164,9 +203,16 @@ describe("runTransactionalExport — a failed stage cannot reach the destination
 			audioPath: VOICE,
 		},
 		{
-			name: "the intermediate is not a real MP4",
-			overrides: { readVideo: vi.fn(async () => new Uint8Array([0, 1, 2, 3]).buffer) },
+			name: "main says the rendered stage is not a real MP4",
+			overrides: {
+				verifyVideo: vi.fn(async () => Promise.reject(new Error("no moov box"))),
+			},
 			audioPath: null,
+		},
+		{
+			name: "the mixed stage is not a real MP4",
+			overrides: { mix: vi.fn(async () => new Uint8Array([0, 1, 2, 3]).buffer) },
+			audioPath: VOICE,
 		},
 	];
 

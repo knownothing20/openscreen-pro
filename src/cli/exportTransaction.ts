@@ -92,6 +92,20 @@ function contains(haystack: Uint8Array, needle: number[]): boolean {
 export interface ExportTransactionPorts {
 	/** Native render, straight to the given stage. Never the destination. */
 	render(stage: string, protectedPaths: readonly string[]): Promise<void>;
+	/**
+	 * Structural check on a finished stage, without loading it.
+	 *
+	 * Main walks the MP4 box tree with a file handle and reports a verdict; the file itself never
+	 * crosses the bridge. Before this, the check needed the whole file in the renderer — for a
+	 * 30-minute export that was the entire video, read twice (Blob + ArrayBuffer).
+	 */
+	verifyVideo(stage: string): Promise<void>;
+	/**
+	 * The stage's bytes, for mixing only.
+	 *
+	 * WebCodecs needs the actual packets to remux, so a voiceover export does read the file —
+	 * that one is inherent. A plain export must not call this.
+	 */
 	readVideo(stage: string): Promise<ArrayBuffer>;
 	readVoiceover(audioPath: string): Promise<ArrayBuffer>;
 	mix(video: ArrayBuffer, voiceover: ArrayBuffer): Promise<ArrayBuffer>;
@@ -138,12 +152,15 @@ export async function runTransactionalExport(
 		await ports.preflight?.(finalPath, protectedPaths);
 		stagesToClean.push(stages.render);
 		await ports.render(stages.render, protectedPaths);
-		const rendered = await ports.readVideo(stages.render);
-		requireMp4(rendered, "rendered video");
+		// A verdict from main, not the file. This is the whole point of the round: the bytes are
+		// only pulled across when a mix genuinely needs them.
+		await ports.verifyVideo(stages.render);
 
 		let candidate = stages.render;
 		if (audioPath) {
 			stagesToClean.push(stages.mixed);
+			// Only here, and only because remuxing needs the packets.
+			const rendered = await ports.readVideo(stages.render);
 			// Read the voiceover BEFORE mixing: a missing or unreadable take has to fail the run
 			// while the destination is still untouched, not after a second encode.
 			const voiceover = await ports.readVoiceover(audioPath).catch((error: unknown) => {

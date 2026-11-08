@@ -97,6 +97,7 @@ import {
 import { findMediaLinksByFingerprint, registerMediaLinks } from "../media/mediaLinksRegistry";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
 import { showOpenDialogOver, showSaveDialogOver } from "../messageBox";
+import { inspectMp4 } from "../mp4Inspect";
 import {
 	type LinuxCaptureSourceKind,
 	LinuxNativeCaptureSession,
@@ -4209,6 +4210,26 @@ export function registerIpcHandlers(
 			}
 		},
 	);
+
+	// Structural check on a finished stage, done here so the renderer never receives the file.
+	// The CLI used to fetch the whole MP4 into the renderer to look for `ftyp`/`moov`; a
+	// 30-minute export paid for that in gigabytes. Now it reads box headers (a few dozen bytes)
+	// and reports the verdict.
+	ipcMain.handle("inspect-mp4", async (_, filePath: string) => {
+		if (typeof filePath !== "string" || filePath.length === 0) {
+			return {
+				ok: false,
+				reason: "no path given",
+				fileSize: 0,
+				hasFtyp: false,
+				hasMoov: false,
+				bytesRead: 0,
+				boxes: [],
+				truncated: false,
+			};
+		}
+		return inspectMp4(filePath);
+	});
 
 	// Preflight for a transactional export: is this destination one the run may end up at?
 	// Same rule as the commit, asked before anything is encoded. Nothing is written, so a refusal

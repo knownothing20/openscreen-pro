@@ -313,6 +313,17 @@ interface Window {
 			error?: string;
 		}>;
 		/** Which GPU (or CPU) exports should encode with. Persisted app-wide. */
+		/** Walk an MP4's box tree in main. Reads headers only; the file never crosses the bridge. */
+		inspectMp4: (filePath: string) => Promise<{
+			ok: boolean;
+			reason?: string;
+			fileSize: number;
+			hasFtyp: boolean;
+			hasMoov: boolean;
+			bytesRead: number;
+			truncated: boolean;
+			boxes: Array<{ type: string; offset: number; size: number; extended: boolean }>;
+		}>;
 		/** Which GPU (or CPU) and which video format exports use. Persisted app-wide. */
 		getEncoderPrefs: () => Promise<{ device: string; codec: string }>;
 		setEncoderPrefs: (prefs: {
