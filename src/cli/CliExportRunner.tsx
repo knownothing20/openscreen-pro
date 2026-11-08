@@ -418,12 +418,18 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 				},
 				mix: async (video, voiceover) => {
 					window.electronAPI.cliProgress({ percentage: 100, phase: "mixing-voiceover" });
-					const mixed = await mixVoiceoverIntoVideo(new Blob([video]), {
+					// The render's bytes go in as they are: wrapping them in a Blob so the mixer
+					// can read the Blob back is one full copy of the export for nothing. The
+					// buffer is detached by the audio decode, which is fine — nothing here reads
+					// it again.
+					const mixed = await mixVoiceoverIntoVideo(video, {
 						voiceoverData: voiceover,
 						mode: request.audioMode,
 						offsetSec: request.audioOffsetSec,
 					});
-					return mixed.arrayBuffer();
+					// The muxer's own buffer: nothing is concatenated or copied again on the way
+					// to the IPC that writes it.
+					return mixed;
 				},
 				writeStage: async (stage, bytes, protectedPaths) => {
 					const saved = await window.electronAPI.writeExportToPath(bytes, stage, [

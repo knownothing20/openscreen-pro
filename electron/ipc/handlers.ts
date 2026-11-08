@@ -82,6 +82,11 @@ import {
 	planExportCommit,
 	planExportWrite,
 } from "../exportPathGuard";
+import {
+	activeExportTemps,
+	sweepStaleExportTemps,
+	trackActiveExportTemp,
+} from "../exportTempSweep";
 import { mainT } from "../i18n";
 import { getInstallChannel } from "../install-channel";
 import { RECORDINGS_DIR } from "../main";
@@ -4328,11 +4333,22 @@ export function registerIpcHandlers(
 				if (isExportRefusal(plan)) {
 					return { success: false, message: plan.reason };
 				}
+				// Same sweep as the native export: this path is where a CLI mix writes its
+				// `.mixed-` stage, so a killed mix leaves litter in this same folder.
+				await sweepStaleExportTemps(path.dirname(plan.finalPath), {
+					activePaths: activeExportTemps(),
+				});
+				const releaseTemps = [
+					trackActiveExportTemp(plan.tempPath),
+					trackActiveExportTemp(plan.finalPath),
+				];
 				try {
 					await fs.writeFile(plan.tempPath, Buffer.from(videoData));
 				} catch (error) {
 					await discardExportFile(plan.tempPath);
 					throw error;
+				} finally {
+					for (const release of releaseTemps) release();
 				}
 				await commitExportFile(plan);
 

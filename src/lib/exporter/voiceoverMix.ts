@@ -40,9 +40,15 @@ const VOICEOVER_AUDIO_BITRATE = 192_000;
 async function decodeToBuffer(
 	context: OfflineAudioContext,
 	data: ArrayBuffer,
+	/** The caller is done with `data` and will never read it again. */
+	takeOwnership = false,
 ): Promise<AudioBuffer> {
-	// decodeAudioData detaches the buffer, so hand it a copy.
-	return context.decodeAudioData(data.slice(0));
+	// `decodeAudioData` detaches the buffer it is handed. The video bed is a whole export the
+	// caller has finished with, so passing it through saves a copy of the entire file — 214 MB
+	// on a ten-minute 1080p60 render — that existed only to protect an owner that no longer
+	// needs it. Everything else is copied, because a buffer someone may still read cannot be
+	// asked politely afterwards.
+	return context.decodeAudioData(takeOwnership ? data : data.slice(0));
 }
 
 /** Renders the final audio track: original bed (optional) + offset voiceover. */
@@ -62,7 +68,7 @@ async function renderMixedAudio(
 
 	if (options.mode === "mix" && videoData) {
 		try {
-			const original = await decodeToBuffer(context, videoData);
+			const original = await decodeToBuffer(context, videoData, true);
 			const originalNode = context.createBufferSource();
 			originalNode.buffer = original;
 			const gainNode = context.createGain();
@@ -80,13 +86,21 @@ async function renderMixedAudio(
 }
 
 /**
- * Returns a new MP4 blob with the same video stream and the mixed audio track.
+ * Returns a new MP4 with the same video stream and the mixed audio track.
  * The video packets are copied without re-encoding.
+ *
+ * `source` may be the bytes the caller already holds. Wrapping them in a `Blob` and reading the
+ * blob straight back is one full copy of the export that nothing needs: the caller that mixes a
+ * 214 MB render has those bytes in hand, and the copy exists only because this function used to
+ * insist on a `Blob`. Ownership passes to this call in that case — the buffer may be detached.
+ *
+ * The returned bytes are the muxer's own buffer: no second concatenation, no Blob round trip.
  */
 export async function mixVoiceoverIntoVideo(
-	videoBlob: Blob,
+	source: Blob | ArrayBuffer,
 	options: VoiceoverMixOptions,
-): Promise<Blob> {
+): Promise<ArrayBuffer> {
+	const videoBlob = source instanceof Blob ? source : new Blob([source]);
 	const input = new Input({ source: new BlobSource(videoBlob), formats: ALL_FORMATS });
 	try {
 		const videoTrack = await input.getPrimaryVideoTrack();
@@ -104,8 +118,14 @@ export async function mixVoiceoverIntoVideo(
 		const durationSec = await input.computeDuration();
 
 		// The full-file bytes are only needed to decode the original bed in
-		// "mix" mode; "replace" skips the copy entirely.
-		const videoData = options.mode === "mix" ? await videoBlob.arrayBuffer() : null;
+		// "mix" mode; "replace" skips the read entirely. The Blob above already holds its own
+		// copy, so handing the caller's buffer straight to the decoder costs nothing.
+		const videoData =
+			options.mode === "mix"
+				? source instanceof ArrayBuffer
+					? source
+					: await videoBlob.arrayBuffer()
+				: null;
 		const mixedAudio = await renderMixedAudio(videoData, durationSec, options);
 
 		const target = new BufferTarget();
@@ -140,7 +160,9 @@ export async function mixVoiceoverIntoVideo(
 		if (!buffer) {
 			throw new Error("Voiceover remux produced no output");
 		}
-		return new Blob([buffer], { type: "video/mp4" });
+		// The muxer's own bytes, with no Blob in between: the caller writes them straight to a
+		// stage, and a Blob round trip there was another copy of the entire output.
+		return buffer;
 	} finally {
 		input.dispose();
 	}

@@ -20,6 +20,11 @@ import {
 	isExportRefusal,
 	planExportWrite,
 } from "../exportPathGuard";
+import {
+	activeExportTemps,
+	sweepStaleExportTemps,
+	trackActiveExportTemp,
+} from "../exportTempSweep";
 import { isValidMcpPort } from "../mcp/mcp-settings-store";
 import {
 	type CursorTelemetryLoadResult,
@@ -456,6 +461,24 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							if (plan && isExportRefusal(plan)) {
 								return createErrorResponse(requestId, "INVALID_REQUEST", plan.reason);
 							}
+							const writePlan = plan && !isExportRefusal(plan) ? plan : null;
+							// The one moment these files can be cleared is right here: the directory is
+							// certainly the right one (the user is exporting to it again), nothing has
+							// been written yet, and a pass that fails only logs. It sees nothing but
+							// names this app makes, older than a day, owned by no live process.
+							if (writePlan) {
+								await sweepStaleExportTemps(path.dirname(writePlan.finalPath), {
+									activePaths: activeExportTemps(),
+								});
+							}
+							// Registered until the run settles, so a concurrent export's sweep cannot
+							// mistake this run's stage for litter.
+							const releaseTemps = writePlan
+								? [
+										trackActiveExportTemp(writePlan.tempPath),
+										trackActiveExportTemp(writePlan.finalPath),
+									]
+								: [];
 							// A cancellable export owns one opaque control for its lifetime, keyed by
 							// the id the renderer made up for this run. Without an id (the CLI, an older
 							// renderer) the export simply has no handle, which is the state that existed
@@ -475,7 +498,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							try {
 								stats = await compositorViewService.exportMulti(
 									request.payload.clips,
-									plan ? plan.tempPath : request.payload.outPath,
+									writePlan ? writePlan.tempPath : request.payload.outPath,
 									request.payload.sceneJson,
 									request.payload.params,
 									(frames) => {
@@ -489,7 +512,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								// A half-written temp file is litter, not a result — and the user's
 								// previous export at the target path is still intact, which is the
 								// point of encoding here in the first place.
-								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
+								if (writePlan) await discardExportFile(writePlan.tempPath);
 								// "Stopped because the user asked" is not "failed". The renderer keys its
 								// cancel branch off this code; reporting it as an ordinary error would
 								// show a failure toast for something the user did on purpose.
@@ -499,16 +522,17 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								throw error;
 							} finally {
 								if (exportId) activeExportCancels.delete(exportId);
+								for (const release of releaseTemps) release();
 							}
 							if (!stats) {
-								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
+								if (writePlan) await discardExportFile(writePlan.tempPath);
 								return createErrorResponse(
 									requestId,
 									"UNAVAILABLE",
 									"Native compositor addon not present.",
 								);
 							}
-							if (plan && !isExportRefusal(plan)) await commitExportFile(plan);
+							if (writePlan) await commitExportFile(writePlan);
 							return createSuccessResponse(requestId, stats);
 						}
 						case "codecSupport": {
@@ -617,8 +641,21 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							if (plan && isExportRefusal(plan)) {
 								return createErrorResponse(requestId, "INVALID_REQUEST", plan.reason);
 							}
-							const writePath =
-								plan && !isExportRefusal(plan) ? plan.tempPath : request.payload.outPath;
+							const writePlan = plan && !isExportRefusal(plan) ? plan : null;
+							const writePath = writePlan ? writePlan.tempPath : request.payload.outPath;
+							// Same sweep as the MP4 path: a killed GIF export leaves its own
+							// `.openscreen-gif-<pid>.partial` in the destination folder.
+							if (writePlan) {
+								await sweepStaleExportTemps(path.dirname(writePlan.finalPath), {
+									activePaths: activeExportTemps(),
+								});
+							}
+							const releaseTemps = writePlan
+								? [
+										trackActiveExportTemp(writePlan.tempPath),
+										trackActiveExportTemp(writePlan.finalPath),
+									]
+								: [];
 							const onProgress = (frames: number) => {
 								if (!sender.isDestroyed()) sender.send("export:native-progress", frames, exportId);
 							};
@@ -648,18 +685,20 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							} catch (error) {
 								// Cancellation lands here too, and a cancelled GIF must leave the
 								// previous file alone — which it does, because it was never touched.
-								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
+								if (writePlan) await discardExportFile(writePlan.tempPath);
 								throw error;
+							} finally {
+								for (const release of releaseTemps) release();
 							}
 							if (!stats) {
-								if (plan && !isExportRefusal(plan)) await discardExportFile(plan.tempPath);
+								if (writePlan) await discardExportFile(writePlan.tempPath);
 								return createErrorResponse(
 									requestId,
 									"UNAVAILABLE",
 									"Native compositor addon not present.",
 								);
 							}
-							if (plan && !isExportRefusal(plan)) await commitExportFile(plan);
+							if (writePlan) await commitExportFile(writePlan);
 							return createSuccessResponse(requestId, stats);
 						}
 						case "cancelGifExport": {
