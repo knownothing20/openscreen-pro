@@ -8,7 +8,7 @@
 | 交付哪个安装包 | `release/v261-build/Openscreen.Setup.2.0.0.exe`，160,566,254 B，sha256 `03719c22…`（完整值见 §5） |
 | 208 vs 176 是什么 | **仅测试过期**：`LayerCB` 在 Focus Effect（`397f2c8`）时按设计从 176 长到 208，三个 shader 同步改了，测试没改。运行代码一直是对的 |
 | 本轮改了什么 | 2 个 Rust 文件里的**测试断言与注释**，14 增 5 删；没有运行代码改动 |
-| 是否阻塞内部试用 | **不阻塞**。README 级限制见 §9 |
+| 是否阻塞内部试用 | **不阻塞**。需要提前告知的限制见 §9 |
 | 能否推送 origin | **可以，但未推送**，等授权（§6） |
 
 ---
@@ -43,8 +43,8 @@ sha256    03719c222ae93811e033ff0f64ea635a49247b54429353cf527321e5751c4ab7
 
 1. **addon**：`crates/target/release/compositor_view.dll` 与 `electron/native/bin/win32-x64/compositor_view.node`
    同哈希 `56534cfa…`，mtime 16:06:37 / 16:06:38；最后一次 Rust 源码改动是
-   `pipeline_windows.rs` 的 16:06:04，**构建晚于最后一次源码改动**。这三个文件的内容就是 `6673df2`
-   提交的那一份（提交时间 16:23，是"把已在磁盘上的内容记进历史"）。
+   `pipeline_windows.rs` 的 16:06:04，**构建晚于最后一次源码改动**。这两个二进制就是 `6673df2`
+   那三个 Rust 文件的构建产物（提交时间 16:23，是"把已在磁盘上的内容记进历史"）。
 2. **asar**：包内 `dist-electron/main-CTAWBrJk.js` 与本地 `dist-electron/main-CTAWBrJk.js`
    逐字节相同（sha256 `a4bf48a3…`，3,953,443 B）。本地这份 bundle 构建于 12:04。
 3. **bundle 之后没有源码变化**：`git diff 2ec0e53..HEAD -- src electron` 为空，所以 12:04 的
