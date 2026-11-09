@@ -232,10 +232,11 @@ NSIS `latest.yml` 的 `sha512` base64 为 `7Zfmql2jakdKgq+z3n6zJPRc6eguQ99OhvCS1
 
 ```
 branch            main
-HEAD              报告提交（d9f7141 正文 + 780dc2e 措辞修订），父提交 0ed62bc
+HEAD              本报告相关文档提交的最后一条（`git rev-parse HEAD`）
+                  其链上：0ed62bc（测试修订）→ d9f7141（报告正文）→ 若干措辞/计数修订
 origin/main       1b296da84aeefe13b0386f276d2da5108bdd4ec8
-ahead / behind    截至 780dc2e：33 / 0（开工 30 + 本轮 3 个提交：0ed62bc / d9f7141 / 780dc2e）
-                  以 `git rev-list --count origin/main..HEAD` 为准；之后若再有纯文档提交，数字相应增加
+ahead / behind    以 `git rev-list --count origin/main..HEAD` 为准
+                  开工时 30；本轮 = 1 个源码文件提交 + 若干纯文档提交（全部未推送）
 upstream          fetch: https://github.com/getopenscreen/openscreen.git
                   push : DISABLED-DO-NOT-PUSH-TO-UPSTREAM   ← 仍是禁用状态
 受保护未跟踪文件   docs/local-windows-baseline.md
