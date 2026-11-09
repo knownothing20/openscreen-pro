@@ -245,7 +245,7 @@ upstream          fetch: https://github.com/getopenscreen/openscreen.git
 工作区            **无已跟踪修改**；保留上述未跟踪文件
 ```
 
-**逐项核对 `origin/main..HEAD` 的 33 个提交（不是只看最后一条）：**
+**逐项核对 `origin/main..HEAD` 的每一个提交（不是只看最后一条）：**
 
 - 内容全部属于已实施的 OpenScreen 开发范围：导出事务/取消（V2.1.x）、时间轴多选（V2.1）、GPU 设备选择（V2.2/2.2.1）、
   HEVC（V2.3/2.3.1）、长视频与内存（V2.4/2.5）、磁盘混音与临时文件清理（V2.6）、首帧重试（V2.6.1），以及对应报告。
@@ -255,7 +255,7 @@ upstream          fetch: https://github.com/getopenscreen/openscreen.git
 - 没有发现未知的并发改动；本轮 diff 只有 2 个 Rust 文件，`git diff --check` 干净，无 CRLF 翻转。
 - 历史未被改写：无 squash / rebase / amend / force push；`git add -A` 与 `git clean` 全程未使用。
 
-**判断：可推送 `origin`（31 个提交都是本地独立提交、范围一致）。但本轮不执行推送，等明确授权。**
+**判断：可推送 `origin`（全部提交都是本地独立提交、范围一致）。但本轮不执行推送，等明确授权。**
 `upstream` 的推送地址仍是 `DISABLED-DO-NOT-PUSH-TO-UPSTREAM`，不要改它。
 
 ---
