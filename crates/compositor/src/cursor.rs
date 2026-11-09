@@ -28,6 +28,17 @@ fn smoothstep01(x: f32) -> f32 {
     u * u * (3.0 - 2.0 * u)
 }
 
+/// Which button produced a click. The overlay draws a different ring for each, and
+/// a left click is the only one that used to exist, so it is the default for every
+/// track built before the field did.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ClickKind {
+    #[default]
+    Left,
+    Right,
+    Middle,
+}
+
 #[derive(Clone)]
 pub struct CursorTrack {
     /// (t_secondes, cx, cy) normalisés dans le cadre screen, triés.
@@ -42,6 +53,8 @@ pub struct CursorTrack {
     /// réellement cliqué. `smoothed()` la garde telle quelle, alors que la piste lissée passe
     /// ailleurs à cet instant (cf. `pinned_at`).
     click_points: Vec<(f32, f32)>,
+    /// Bouton de chaque clic, même ordre que `clicks`.
+    click_kinds: Vec<ClickKind>,
     /// CHANGEMENTS de visibilité : `(instant, visible)`, triés. Comme `types`, c'est une
     /// fonction en escalier. Une piste ancienne sans champ `visible` reste visible.
     visibility: Vec<(f32, bool)>,
@@ -139,12 +152,23 @@ impl CursorTrack {
         clicks: Vec<f32>,
         types: Vec<(f32, String)>,
     ) -> CursorTrack {
-        CursorTrack::new_with_visibility(samples, clicks, types, Vec::new())
+        CursorTrack::new_with_kinds(samples, clicks, Vec::new(), types, Vec::new())
     }
 
+    /// The original constructor: clicks with no button information (left).
     pub(crate) fn new_with_visibility(
         samples: Vec<(f32, f32, f32)>,
         clicks: Vec<f32>,
+        types: Vec<(f32, String)>,
+        visibility: Vec<(f32, bool)>,
+    ) -> CursorTrack {
+        CursorTrack::new_with_kinds(samples, clicks, Vec::new(), types, visibility)
+    }
+
+    pub(crate) fn new_with_kinds(
+        samples: Vec<(f32, f32, f32)>,
+        clicks: Vec<f32>,
+        click_kinds: Vec<ClickKind>,
         types: Vec<(f32, String)>,
         visibility: Vec<(f32, bool)>,
     ) -> CursorTrack {
@@ -153,11 +177,16 @@ impl CursorTrack {
             .iter()
             .map(|&tc| sample_at(&samples, tc).unwrap_or((0.0, 0.0)))
             .collect();
+        // A caller that does not know the buttons (older tests, older callers) gets left
+        // clicks: the ring still draws, and it is the shape those clicks had before.
+        let mut click_kinds = click_kinds;
+        click_kinds.resize(clicks.len(), ClickKind::Left);
         CursorTrack {
             samples,
             follow_samples,
             clicks,
             click_points,
+            click_kinds,
             visibility,
             types,
             view_cache: Default::default(),
@@ -194,6 +223,7 @@ impl CursorTrack {
         let arr = v["samples"].as_array().context("samples[]")?;
         let mut samples = Vec::new();
         let mut clicks = Vec::new();
+        let mut click_kinds = Vec::new();
         let mut types: Vec<(f32, String)> = Vec::new();
         let mut visibility_at_offset = true;
         let mut visibility_sample_time = f64::NEG_INFINITY;
@@ -227,8 +257,22 @@ impl CursorTrack {
             if visibility.last().map(|(_, previous)| *previous) != Some(visible) {
                 visibility.push((t, visible));
             }
-            if visible && s["interactionType"].as_str() == Some("click") {
-                clicks.push(t);
+            if visible {
+                match s["interactionType"].as_str() {
+                    Some("click") | Some("double-click") => {
+                        clicks.push(t);
+                        click_kinds.push(ClickKind::Left);
+                    }
+                    Some("right-click") => {
+                        clicks.push(t);
+                        click_kinds.push(ClickKind::Right);
+                    }
+                    Some("middle-click") => {
+                        clicks.push(t);
+                        click_kinds.push(ClickKind::Middle);
+                    }
+                    _ => {}
+                }
             }
             // Seules les TRANSITIONS sont retenues — voir `types`. Le helper
             // macOS rend nil hors texte/pointeur pour que le rendu retombe sur
@@ -251,8 +295,12 @@ impl CursorTrack {
         clicks.sort_by(|a, b| a.partial_cmp(b).unwrap());
         types.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         visibility.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        Ok(CursorTrack::new_with_visibility(
-            samples, clicks, types, visibility,
+        Ok(CursorTrack::new_with_kinds(
+            samples,
+            clicks,
+            click_kinds,
+            types,
+            visibility,
         ))
     }
 
@@ -392,6 +440,22 @@ impl CursorTrack {
         Some((x, y))
     }
 
+    /// Les clics de `(lo, hi]` avec leur position brute ET leur bouton, triés.
+    pub fn clicks_with_kinds(
+        &self,
+        lo: f32,
+        hi: f32,
+    ) -> impl Iterator<Item = (f32, (f32, f32), ClickKind)> + '_ {
+        let a = self.clicks.partition_point(|&tc| tc <= lo);
+        let b = self.clicks.partition_point(|&tc| tc <= hi).max(a);
+        self.clicks[a..b]
+            .iter()
+            .copied()
+            .zip(self.click_points[a..b].iter().copied())
+            .zip(self.click_kinds[a..b].iter().copied())
+            .map(|((t, p), kind)| (t, p, kind))
+    }
+
     /// Les clics de `(lo, hi]` avec leur position brute, triés.
     pub fn clicks_with_points(
         &self,
@@ -460,9 +524,10 @@ impl CursorTrack {
     /// bruts (le bounce est temporel, pas positionnel — ne doit pas suivre le lissage).
     pub fn smoothed(&self, factor: f32) -> CursorTrack {
         if self.samples.len() < 2 || factor <= 0.0 {
-            return CursorTrack::new_with_visibility(
+            return CursorTrack::new_with_kinds(
                 self.samples.clone(),
                 self.clicks.clone(),
+                self.click_kinds.clone(),
                 self.types.clone(),
                 self.visibility.clone(),
             );
@@ -525,9 +590,10 @@ impl CursorTrack {
         // cliqués restent ceux de la piste brute.
         CursorTrack {
             click_points: self.click_points.clone(),
-            ..CursorTrack::new_with_visibility(
+            ..CursorTrack::new_with_kinds(
                 samples,
                 self.clicks.clone(),
+                self.click_kinds.clone(),
                 self.types.clone(),
                 self.visibility.clone(),
             )

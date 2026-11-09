@@ -2987,8 +2987,12 @@ impl Compositor {
                     bounds[3].max(dst[1] + dst[3]),
                 ];
             };
-            let impacts: Vec<LayerBind> =
-                plan.impacts.iter().map(|cb| self.make_bind(cb, None, &dummy)).collect();
+            let impacts: Vec<LayerBind> = plan
+                .ripples
+                .iter()
+                .chain(plan.impacts.iter())
+                .map(|cb| self.make_bind(cb, None, &dummy))
+                .collect();
 
             let sprites = scene_ref
                 .as_ref()

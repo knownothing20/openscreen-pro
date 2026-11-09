@@ -811,6 +811,10 @@ pub struct SceneCursor {
     /// `#[serde(default)]` : l'app omet la clé quand elle est fausse.
     #[serde(default)]
     pub click_impact: bool,
+    /// L'anneau de clic (V2.7.1). Absent = aucun anneau : c'est le cas de tout projet écrit
+    /// avant ce réglage, et de tout utilisateur qui n'a pas activé le retour de clic.
+    #[serde(default)]
+    pub click_ripple: Option<SceneClickRipple>,
     pub clip_to_bounds: bool,
     /// id du thème (jeu de sprites) — informatif ici : le natif consomme `cursor_sprites`.
     pub theme: String,
@@ -825,6 +829,26 @@ pub struct SceneCursor {
     /// `#[serde(default)]` : champ ajouté après coup, absent des JSON de test existants.
     #[serde(default)]
     pub cursor_sprites: std::collections::HashMap<String, SceneCursorSprite>,
+}
+
+/// Un anneau par clic : un quad carré qui s'ouvre et s'efface, dessiné SOUS le curseur.
+///
+/// Les couleurs sont par bouton, en RGBA prémultiplié (le mélange du compositeur l'attend
+/// ainsi). `sizePx` est le côté du quad en pixels de sortie à la fin de l'animation ; le
+/// milieu du quad est le point cliqué, jamais la position lissée du curseur — l'anneau doit
+/// marquer l'endroit où le clic a atterri.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneClickRipple {
+    /// Durée de vie d'un anneau, en millisecondes.
+    pub duration_ms: f32,
+    /// Côté du quad à la fin de l'animation, en pixels de sortie.
+    pub size_px: f32,
+    /// Opacité maximale, 0..1.
+    pub opacity: f32,
+    pub left: [f32; 4],
+    pub right: [f32; 4],
+    pub middle: [f32; 4],
 }
 
 /// Un sprite de curseur : image + point de pivot.

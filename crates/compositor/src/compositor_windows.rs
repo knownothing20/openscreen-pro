@@ -2362,7 +2362,11 @@ impl Compositor {
                     self.ctx.CopySubresourceRegion(&self.ann_copy, 0, 0, 0, 0, &self.rt, 0, None);
                     self.ctx.PSSetShaderResources(5, Some(&[Some(self.ann_copy_srv.clone())]));
                 }
-                // L'impact des clics (mode 16, sans texture), posé sur l'écran SOUS le curseur.
+                // L'anneau du clic (mode 4), puis l'impact (mode 16) : tous deux sans texture,
+                // posés sur l'écran SOUS le curseur.
+                for cb in &plan.ripples {
+                    self.draw_solid(cb);
+                }
                 for cb in &plan.impacts {
                     self.draw_solid(cb);
                 }

@@ -3769,6 +3769,10 @@ pub struct CursorPlan {
     /// L'impact des clics récents sur l'écran (mode 16), à dessiner SOUS le curseur. Vide sans
     /// curseur modélisé, sans clic récent ou à `clickBounce` nul.
     pub impacts: Vec<LayerCB>,
+    /// L'anneau d'un clic récent (mode 4), un par clic, à dessiner SOUS le curseur et sous
+    /// `impacts`. Vide quand le project n'a pas de `clickRipple`, ou quand l'écran est incliné
+    /// (l'anneau est un repère d'écran ; il ne suit pas le plan).
+    pub ripples: Vec<LayerCB>,
     /// Le curseur modélisé est le cristal de Prism Glow : il réfracte l'image déjà composée, le
     /// métrage et ses flous de confidentialité, que le backend lui copie juste avant de le
     /// dessiner. Seuls des pixels floutés passent ainsi à travers le verre.
@@ -4061,6 +4065,35 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
         Vec::new()
     };
 
+    // L'anneau : un par clic encore vivant, centré sur le point BRUT du clic.
+    let ripples = match input.scene.and_then(|s| s.cursor.click_ripple) {
+        Some(r) if r.duration_ms > 0.0 && r.size_px > 0.0 => {
+            let duration_s = (r.duration_ms / 1000.0).max(0.001);
+            input
+                .track
+                .clicks_with_kinds(input.t - duration_s, input.t)
+                .filter_map(|(tc, point, kind)| {
+                    let progress = ((input.t - tc) / duration_s).clamp(0.0, 1.0);
+                    let center = match place(Some(point), g.s_dst)? {
+                        CursorPlacement::Upright { center } => center,
+                        // Sous un écran incliné l'anneau devrait vivre sur le plan : hors
+                        // périmètre de cette version, et un anneau à plat y mentirait.
+                        CursorPlacement::Tilted { .. } => return None,
+                    };
+                    let color = match kind {
+                        crate::cursor::ClickKind::Left => r.left,
+                        crate::cursor::ClickKind::Right => r.right,
+                        crate::cursor::ClickKind::Middle => r.middle,
+                    };
+                    let side = r.size_px * (0.35 + 0.65 * progress);
+                    let fade = (1.0 - progress).powf(1.5) * r.opacity;
+                    click_ripple_cb(center, side, color, fade * alpha, [rw, rh])
+                })
+                .collect()
+        }
+        _ => Vec::new(),
+    };
+
     Some(CursorPlan {
         placement,
         prev_placement,
@@ -4069,6 +4102,7 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
         clip,
         cursor_type: cursor_type.map(str::to_string),
         alpha,
+        ripples,
         model: model_sprite.map(|s| {
             let pointing = pointing_factor([s.hotspot_x, s.hotspot_y]);
             cursor_pose(input.track, input.t, lp.cursor_bounce_scale, pointing)
@@ -4611,6 +4645,35 @@ struct Impact {
 /// `LayerCB` de l'impact (mode 16) centré sur le point du plan de `placement`, carré de demi-côté
 /// `half_px` (px du rect d'écran non incliné, l'unité de la taille du curseur). `None` pour un
 /// placement droit : le curseur modélisé a toujours un plan.
+/// L'anneau d'un clic, en espace SORTIE.
+///
+/// Réutilise le mode 4 — le « dot + ring » dessiné par les maths du shader, celui qui sert de
+/// curseur de secours. Aucun shader n'est donc modifié pour cette fonctionnalité : le quad
+/// grandit, l'anneau grandit avec lui, et l'alpha de `color` fait l'effacement.
+fn click_ripple_cb(
+    center: [f32; 2],
+    side_px: f32,
+    color: [f32; 4],
+    alpha: f32,
+    render_px: [f32; 2],
+) -> Option<LayerCB> {
+    if side_px <= 0.0 || alpha <= 0.0 || render_px[0] <= 0.0 || render_px[1] <= 0.0 {
+        return None;
+    }
+    let w = side_px / render_px[0];
+    let h = side_px / render_px[1];
+    Some(LayerCB {
+        dst: [center[0] - w * 0.5, center[1] - h * 0.5, w, h],
+        src: [0.0, 0.0, 1.0, 1.0],
+        quad_px: [side_px, side_px],
+        radius_px: 0.0,
+        mode: 4.0,
+        color: [color[0], color[1], color[2], color[3] * alpha],
+        fx: [-1.0, -1.0, 3.0, 3.0],
+        ..Default::default()
+    })
+}
+
 fn cursor_impact_cb(
     placement: CursorPlacement,
     half_px: f32,
@@ -9035,5 +9098,101 @@ mod tests {
         let (near, far) = (size("left", 2.0, (0.43, 0.183)), size("left", 2.0, (0.18, 0.183)));
         println!("left ×2 : {:.3} côté proche, {:.3} côté lointain", near / at_focus, far / at_focus);
         assert!(near > 1.04 * at_focus && far < 0.96 * at_focus, "{near} {at_focus} {far}");
+    }
+
+    /// L'anneau de clic (V2.7.1) : un quad du mode 4 qui s'ouvre et s'efface, centré sur le
+    /// point BRUT du clic, et un par bouton.
+    fn ripple_scene(ripple: &str) -> Scene {
+        Scene::from_json(&format!(
+            r##"{{
+            "clips":[{{"screenPath":"/s.mp4","webcamPath":"","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":false}}],
+            "layout":{{"preset":"no-webcam","webcamSize":1,"webcamShape":"rounded","webcamMirror":false,"webcamPosition":null,
+                      "webcamReactiveZoom":false,"screenRect":{{"x":0,"y":0,"width":1,"height":1}}}},
+            "effects":{{"padding":0,"blur":false,"shadow":0,"roundnessFrac":0,"motionBlur":0}},
+            "background":{{"kind":"color","color":"#1e1e2e"}},
+            "zoomRegions":[],
+            "cursor":{{"show":true,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":1,"clipToBounds":false,
+                      "theme":"default"{ripple}}},
+            "cropByClip":[null],
+            "output":{{"width":1920,"height":1080,"fps":60}}
+        }}"##
+        ))
+        .expect("scène pleine page")
+    }
+
+    fn ripple_plan(scene: &Scene, clicks: Vec<(f32, crate::cursor::ClickKind)>, t: f32) -> CursorPlan {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let track = crate::cursor::CursorTrack::new_with_kinds(
+            (0..=150).map(|i| (i as f32 / 30.0, 0.3, 0.6)).collect(),
+            clicks.iter().map(|(tc, _)| *tc).collect(),
+            clicks.iter().map(|(_, kind)| *kind).collect(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let g = slot_plan(scene, Some((0.3, 0.6)));
+        plan_cursor(
+            &g,
+            &CursorPlanInput {
+                render_px: RENDER,
+                u_max: 1.0,
+                v_max: 1080.0 / 1088.0,
+                cfg: &cfg,
+                live: live_params_from_scene(scene),
+                scene: Some(scene),
+                track: Box::leak(Box::new(track)),
+                t,
+            },
+        )
+        .expect("un curseur visible")
+    }
+
+    const RIPPLE: &str = r#","clickRipple":{"durationMs":450,"sizePx":72,"opacity":0.55,
+        "left":[1,1,1,1],"right":[1,0.62,0.2,1],"middle":[0.35,0.7,1,1]}"#;
+
+    #[test]
+    fn a_click_ring_grows_and_fades_from_the_click_point() {
+        let scene = ripple_scene(RIPPLE);
+        let early = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Left)], 1.03);
+        let late = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Left)], 1.40);
+        assert_eq!(early.ripples.len(), 1, "un anneau par clic");
+        assert_eq!(early.ripples[0].mode, 4.0, "le mode dot+ring, pas un mode inventé");
+        let early_side = early.ripples[0].quad_px[0];
+        let late_side = late.ripples[0].quad_px[0];
+        assert!(late_side > early_side * 1.5, "le quad s'ouvre : {early_side} → {late_side}");
+        assert!(
+            late.ripples[0].color[3] < early.ripples[0].color[3] * 0.6,
+            "et s'efface : {} → {}",
+            early.ripples[0].color[3],
+            late.ripples[0].color[3]
+        );
+        // Le centre du quad est le point cliqué, pas le centre de la sortie.
+        let center = early.ripples[0].dst[0] + early.ripples[0].dst[2] * 0.5;
+        assert!((center - 0.3).abs() < 0.02, "centre x {center}");
+    }
+
+    #[test]
+    fn a_click_ring_is_gone_after_its_duration() {
+        let scene = ripple_scene(RIPPLE);
+        let plan = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Left)], 1.60);
+        assert!(plan.ripples.is_empty(), "450 ms passées : plus d'anneau");
+    }
+
+    #[test]
+    fn each_button_gets_its_own_ring_colour() {
+        let scene = ripple_scene(RIPPLE);
+        let left = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Left)], 1.05);
+        let right = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Right)], 1.05);
+        let middle = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Middle)], 1.05);
+        assert_eq!(left.ripples[0].color[0], 1.0);
+        assert_eq!(right.ripples[0].color[1], 0.62);
+        assert_eq!(middle.ripples[0].color[2], 1.0);
+        assert_ne!(right.ripples[0].color, middle.ripples[0].color);
+    }
+
+    #[test]
+    fn no_scene_ripple_means_no_ring() {
+        let scene = ripple_scene("");
+        let plan = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Left)], 1.03);
+        assert!(plan.ripples.is_empty(), "sans réglage, le compositeur ne dessine rien");
     }
 }

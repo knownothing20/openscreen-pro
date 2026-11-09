@@ -2584,10 +2584,10 @@ impl Compositor {
                 if plan.glass {
                     self.snapshot_rt(cmd_buf, false);
                 }
-                // L'impact des clics (mode 16, sans texture), posé sur l'écran SOUS le curseur.
-                if !plan.impacts.is_empty() {
+                // L'anneau du clic (mode 4) puis l'impact (mode 16), posés sous le curseur.
+                if !plan.ripples.is_empty() || !plan.impacts.is_empty() {
                     let e = self.begin_pass(cmd_buf, &self.rt, None, &self.pipeline_main)?;
-                    for cb in &plan.impacts {
+                    for cb in plan.ripples.iter().chain(plan.impacts.iter()) {
                         self.draw_solid(e, cb);
                     }
                     e.end_encoding();

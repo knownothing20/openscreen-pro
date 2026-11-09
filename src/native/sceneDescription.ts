@@ -532,6 +532,22 @@ export interface SceneCursor {
 	/** Each click gives the screen an impact, under every camera (`scene.rs`
 	 *  `SceneCursor::click_impact`). Omitted (not `false`) when off. */
 	clickImpact?: true;
+	/**
+	 * The click ring (`scene.rs` `SceneCursor::click_ripple`). Omitted when the project has no
+	 * click feedback: the compositor then draws no ring at all.
+	 *
+	 * Driven by the existing "click bounce" setting — one control for click feedback, so a
+	 * project cannot end up with a bounce and no ring, or a ring the user cannot turn off.
+	 * Colours are per button; left is white so it reads on light and dark UI alike.
+	 */
+	clickRipple?: {
+		durationMs: number;
+		sizePx: number;
+		opacity: number;
+		left: [number, number, number, number];
+		right: [number, number, number, number];
+		middle: [number, number, number, number];
+	};
 	clipToBounds: boolean;
 	/** Cursor theme id (sprite set). */
 	theme: string;
@@ -1470,6 +1486,18 @@ export function buildSceneDescription(
 			model3d: settings.cursor.model3d,
 			asArrow: settings.cursor.asArrow,
 			...(settings.cursor.clickImpact ? { clickImpact: true as const } : {}),
+			...(settings.cursor.clickBounce > 0
+				? {
+						clickRipple: {
+							durationMs: 450,
+							sizePx: 72,
+							opacity: 0.55,
+							left: [1, 1, 1, 1] as [number, number, number, number],
+							right: [1, 0.62, 0.2, 1] as [number, number, number, number],
+							middle: [0.35, 0.7, 1, 1] as [number, number, number, number],
+						},
+					}
+				: {}),
 			// The "Keep inside frame" option is gone: the cursor always overflows into the
 			// background. The field stays because the compositor's scene requires it.
 			clipToBounds: false,
