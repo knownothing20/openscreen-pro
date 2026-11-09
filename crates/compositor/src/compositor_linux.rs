@@ -67,12 +67,12 @@ fn layer_source(models: bool) -> String {
 /// en parcourant les 18 wallpapers livres) en laissant le jeu actif resident.
 const IMG_CACHE_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 
-/// Taille du buffer uniforme d'un calque : `LayerCB` entier (176 octets), le `struct Layer` de
+/// Taille du buffer uniforme d'un calque : `LayerCB` entier (208 octets), le `struct Layer` de
 /// `layer.wgsl`. `blur.wgsl` n'en lit que les 128 premiers.
 const LAYER_BYTES: u64 = std::mem::size_of::<LayerCB>() as u64;
 
 /// `&LayerCB` -> ses octets. `LayerCB` est `#[repr(C, align(16))]`, son layout EST le buffer
-/// uniforme WGSL (dix vec4 et un vec2 + 2 f32 = 176 octets).
+/// uniforme WGSL (douze vec4 plus un vec2 + 2 f32 = 208 octets).
 fn layer_bytes(cb: &LayerCB) -> &[u8] {
     unsafe { std::slice::from_raw_parts(cb as *const LayerCB as *const u8, LAYER_BYTES as usize) }
 }

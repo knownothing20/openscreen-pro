@@ -27,7 +27,7 @@
 use crate::config::Cfg;
 use crate::scene::{Scene, SceneCrop};
 
-/// Constant buffer d'un calque : **176 octets**, un par draw.
+/// Constant buffer d'un calque : **208 octets**, un par draw.
 ///
 /// C'est le contrat partagé par les trois côtés — `cbuffer Layer` dans `shaders.hlsl`,
 /// `struct Layer` dans `shaders.metal` et `vk_shaders/layer.wgsl`, et ce struct. Ils doivent
@@ -41,7 +41,8 @@ use crate::scene::{Scene, SceneCrop};
 /// donc compatibles ; les unifier évite qu'elles cessent de l'être.
 ///
 /// (Le commentaire d'origine annonçait « 64 octets ». Il n'a jamais été juste : dix champs,
-/// trente-deux `f32`. Les trois derniers, le flou de mouvement de l'écran incliné, en font 176.)
+/// trente-deux `f32`. Les trois derniers, le flou de mouvement de l'écran incliné, en font 176.
+/// Le projecteur du Focus Effect (mode 19) ajoute `focus_a` et `focus_b`, soit 208.)
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Default)]
 pub struct LayerCB {
@@ -7529,10 +7530,16 @@ mod tests {
 
     /// Le contrat cross-backend, verrouillé octet par octet. Un shader qui lit un champ
     /// décalé ne lève rien : il rend faux, en silence.
+    ///
+    /// 208 octets depuis le Focus Effect (mode 19) : `LayerCB` a gagné `focus_a` et `focus_b`,
+    /// et `cbuffer Layer` (`shaders.hlsl`), `struct Layer` (`shaders.metal`) et
+    /// `vk_shaders/layer.wgsl` portent les deux mêmes `float4` en queue. Le bloc est copié
+    /// octet par octet (`upload_cb`), donc la taille ET les deux derniers offsets sont le
+    /// contrat — les omettre laisserait passer un décalage silencieux.
     #[test]
     fn layer_cb_matches_the_shader_constant_buffer() {
         use std::mem::{align_of, offset_of, size_of};
-        assert_eq!(size_of::<LayerCB>(), 176);
+        assert_eq!(size_of::<LayerCB>(), 208);
         assert_eq!(align_of::<LayerCB>(), 16);
         for (name, got, want) in [
             ("dst", offset_of!(LayerCB, dst), 0),
@@ -7548,6 +7555,8 @@ mod tests {
             ("trail_a", offset_of!(LayerCB, trail_a), 128),
             ("trail_b", offset_of!(LayerCB, trail_b), 144),
             ("trail_mb", offset_of!(LayerCB, trail_mb), 160),
+            ("focus_a", offset_of!(LayerCB, focus_a), 176),
+            ("focus_b", offset_of!(LayerCB, focus_b), 192),
         ] {
             assert_eq!(got, want, "offset de `{name}`");
         }
