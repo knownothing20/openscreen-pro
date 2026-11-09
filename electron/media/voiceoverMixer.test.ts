@@ -598,7 +598,154 @@ describe.skipIf(!ffmpeg)("mixVoiceoverToFile — media semantics", () => {
 	});
 });
 
+describe.skipIf(!ffmpeg)("mixVoiceoverToFile — concurrency", () => {
+	const partials = async () => (await fs.readdir(dir)).filter((f) => f.includes(".partial-"));
+
+	it("runs two mixes at once without sharing a child or a partial", async () => {
+		const a = path.join(dir, "parallel-a.mp4");
+		const b = path.join(dir, "parallel-b.mp4");
+		const voice = path.join(dir, "voice-parallel.wav");
+		await makeTone(voice, 880, 1);
+		const [ra, rb] = await Promise.all([
+			mixVoiceoverToFile({
+				renderPath: fixture,
+				voiceoverPath: voice,
+				outPath: a,
+				mode: "mix",
+				offsetSec: 0,
+			}),
+			mixVoiceoverToFile({
+				renderPath: fixture,
+				voiceoverPath: voice,
+				outPath: b,
+				mode: "replace",
+				offsetSec: 0,
+			}),
+		]);
+		expect(ra.hasBed).toBe(true);
+		expect(rb.hasBed).toBe(true);
+		expect((await fs.stat(a)).size).toBeGreaterThan(0);
+		expect((await fs.stat(b)).size).toBeGreaterThan(0);
+		// The two files differ (one has the bed, the other does not), which is what proves the
+		// runs did not share a temporary file.
+		expect(await videoPacketHash(a)).toBe(await videoPacketHash(b));
+		expect((await fs.stat(a)).size).not.toBe((await fs.stat(b)).size);
+		expect(await partials()).toEqual([]);
+	});
+
+	it("cancelling one leaves the other untouched", async () => {
+		const longVoice = path.join(dir, "voice-long-parallel.wav");
+		await makeTone(longVoice, 880, 120);
+		const slow = path.join(dir, "cancel-one-slow.mp4");
+		const fast = path.join(dir, "cancel-one-fast.mp4");
+		const controller = new AbortController();
+		const pendingSlow = mixVoiceoverToFile(
+			{
+				renderPath: fixture,
+				voiceoverPath: longVoice,
+				outPath: slow,
+				mode: "mix",
+				offsetSec: 0,
+			},
+			{ signal: controller.signal },
+		);
+		const pendingFast = mixVoiceoverToFile({
+			renderPath: fixture,
+			voiceoverPath: longVoice,
+			outPath: fast,
+			mode: "mix",
+			offsetSec: 0,
+		});
+		setTimeout(() => controller.abort(), 150);
+		const [slowResult, fastResult] = await Promise.allSettled([pendingSlow, pendingFast]);
+		expect(slowResult.status).toBe("rejected");
+		expect((slowResult as PromiseRejectedResult).reason).toBeInstanceOf(VoiceoverMixCancelled);
+		expect(fastResult.status).toBe("fulfilled");
+		await expect(fs.stat(slow)).rejects.toThrow();
+		expect((await fs.stat(fast)).size).toBeGreaterThan(0);
+		expect(await partials()).toEqual([]);
+	}, 120_000);
+
+	it("two runs aimed at the same output still leave one file and no partial", async () => {
+		// Not a shape the product creates — stage names are unique per run — but the file-level
+		// contract has to hold anyway: the last rename wins and neither partial survives.
+		const shared = path.join(dir, "same-target.mp4");
+		const voice = path.join(dir, "voice-same.wav");
+		await makeTone(voice, 880, 1);
+		const results = await Promise.allSettled([
+			mixVoiceoverToFile({
+				renderPath: fixture,
+				voiceoverPath: voice,
+				outPath: shared,
+				mode: "mix",
+				offsetSec: 0,
+			}),
+			mixVoiceoverToFile({
+				renderPath: fixture,
+				voiceoverPath: voice,
+				outPath: shared,
+				mode: "mix",
+				offsetSec: 0,
+			}),
+		]);
+		expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+		expect((await fs.stat(shared)).size).toBeGreaterThan(0);
+		expect(await partials()).toEqual([]);
+	});
+});
+
 describe.skipIf(!ffmpeg)("mixVoiceoverToFile — cancellation", () => {
+	it("refuses a signal that was already aborted, without touching the disk", async () => {
+		// Found in the final audit: `addEventListener("abort")` never fires for a signal that was
+		// aborted before it was registered, so a cancel that landed in the window between the
+		// caller creating its controller and this function spawning would be ignored — the mix
+		// completed and was committed for a caller that had already asked to stop. Measured:
+		// a pre-aborted signal produced a finished 970,889-byte file in 394 ms.
+		const controller = new AbortController();
+		controller.abort();
+		const out = path.join(dir, "pre-aborted.mp4");
+		const started = Date.now();
+		const error = await mixVoiceoverToFile(
+			{
+				renderPath: fixture,
+				voiceoverPath: path.join(dir, "voice-880.wav"),
+				outPath: out,
+				mode: "mix",
+				offsetSec: 0,
+			},
+			{ signal: controller.signal },
+		).catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(VoiceoverMixCancelled);
+		expect(Date.now() - started).toBeLessThan(100);
+		await expect(fs.stat(out)).rejects.toThrow();
+		expect((await fs.readdir(dir)).filter((f) => f.includes("pre-aborted"))).toEqual([]);
+	});
+
+	it("cancels while it is still probing, before any media is written", async () => {
+		// The other side of the same window: abort lands during the two probe spawns, which run
+		// before the mix exists. Nothing may be left behind, and the caller must hear "cancelled"
+		// rather than a probe error.
+		const longVideo = path.join(dir, "probe-cancel.mp4");
+		await makeVideo(longVideo, { seconds: 30 });
+		const out = path.join(dir, "probe-cancel-out.mp4");
+		const controller = new AbortController();
+		const pending = mixVoiceoverToFile(
+			{
+				renderPath: longVideo,
+				voiceoverPath: path.join(dir, "voice-880.wav"),
+				outPath: out,
+				mode: "mix",
+				offsetSec: 0,
+			},
+			{ signal: controller.signal },
+		);
+		setTimeout(() => controller.abort(), 0);
+		const error = await pending.catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(VoiceoverMixCancelled);
+		await expect(fs.stat(out)).rejects.toThrow();
+		expect((await fs.readdir(dir)).filter((f) => f.includes("probe-cancel-out"))).toEqual([]);
+	}, 60_000);
+
 	it("kills its own child, removes the partial file, and can run again", async () => {
 		const longVideo = path.join(dir, "long.mp4");
 		const longVoice = path.join(dir, "long-voice.wav");

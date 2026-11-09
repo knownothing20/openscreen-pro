@@ -259,6 +259,11 @@ function runChild(
 			}, 3_000).unref?.();
 		};
 		options.signal?.addEventListener("abort", onAbort, { once: true });
+		// `addEventListener` is not retroactive: a signal that was already aborted before this
+		// call would never fire the listener, and the export would run to completion and be
+		// committed for a caller that had already asked to stop. Measured before this line
+		// existed — a pre-aborted signal produced a finished 970,889-byte file in 394 ms.
+		if (options.signal?.aborted) onAbort();
 
 		child.stdout?.on("data", () => {
 			// Media never goes to stdout here (the output is a file), and progress stats are off.
@@ -339,6 +344,9 @@ export async function mixVoiceoverToFile(
 	options: VoiceoverMixOptions = {},
 ): Promise<VoiceoverMixResult> {
 	const startedAt = options.now?.() ?? Date.now();
+	// Before anything is spawned or read: a run that was cancelled before it began must not
+	// touch the disk at all.
+	if (options.signal?.aborted) throw new VoiceoverMixCancelled();
 	const ffmpegPath = options.ffmpegPath ?? resolveFfmpeg();
 	if (!ffmpegPath) {
 		throw new Error(
