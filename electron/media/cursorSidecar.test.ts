@@ -128,6 +128,49 @@ describe("readCursorSidecar", () => {
 });
 
 describe("readCursorRecordingFileAt", () => {
+	it("reads v3 shortcut chords and keeps them out of the sample stream", async () => {
+		const file = path.join(dir, "shortcuts.cursor.json");
+		await fs.writeFile(
+			file,
+			JSON.stringify({
+				version: 3,
+				provider: "native",
+				samples: [{ timeMs: 10, cx: 0.1, cy: 0.2, interactionType: "click", wheelDelta: 120 }],
+				assets: [],
+				shortcuts: [
+					{ timeMs: 500, combo: "Ctrl+S" },
+					{ timeMs: -1, combo: "Ctrl+V" },
+					{ timeMs: 900, combo: "" },
+					{ timeMs: "x", combo: "Ctrl+Z" },
+				],
+			}),
+			"utf-8",
+		);
+
+		const data = await readCursorRecordingFileAt(file);
+
+		expect(data.version).toBe(3);
+		expect(data.samples[0].wheelDelta).toBe(120);
+		// Only the well-formed chord survives; the negative time, the empty label and the
+		// non-numeric time are dropped rather than repaired into something that was never pressed.
+		expect(data.shortcuts).toEqual([{ timeMs: 500, combo: "Ctrl+S" }]);
+	});
+
+	it("reads a v2 sidecar written before shortcuts existed", async () => {
+		const file = path.join(dir, "v2.cursor.json");
+		await fs.writeFile(
+			file,
+			JSON.stringify({ version: 2, provider: "native", samples: [{ timeMs: 5, cx: 0, cy: 0 }] }),
+			"utf-8",
+		);
+
+		const data = await readCursorRecordingFileAt(file);
+
+		expect(data.version).toBe(2);
+		expect(data.shortcuts).toBeUndefined();
+		expect(data.samples).toHaveLength(1);
+	});
+
 	it("accepts a bare array of samples as well as the versioned envelope", async () => {
 		const file = path.join(dir, "bare.cursor.json");
 		await fs.writeFile(file, JSON.stringify([{ timeMs: 1, cx: 0.2, cy: 0.3 }]), "utf-8");

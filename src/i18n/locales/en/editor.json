@@ -122,6 +122,8 @@
 		"editableCursor": "Editable cursor",
 		"editableCursorTip": "On: editable cursor, with restyling and auto-zoom. Off: system cursor, recorded in the video.",
 		"autoZoom": "Auto-zoom after recording",
+		"shortcuts": "Shortcuts",
+		"shortcutsTip": "Show the shortcut chords you press. Ctrl/Alt/Win combinations only — never the text you type.",
 		"hideDesktopIcons": "Hide desktop icons",
 		"hideDesktopIconsHintMac": "Leaves the desktop icons out of screen recordings. They stay on your desktop.",
 		"hideDesktopIconsHintWindows": "Covers the desktop icons while you record. They return when it stops.",

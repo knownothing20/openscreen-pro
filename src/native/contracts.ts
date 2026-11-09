@@ -38,6 +38,8 @@ export interface CursorRecordingSample extends CursorTelemetryPoint {
 	 * CursorTelemetryPoint. The old narrow override ("move" | "click" | "mouseup")
 	 * legitimized coercing every other click kind to "move" at parse time. */
 	interactionType?: "move" | "click" | "double-click" | "right-click" | "middle-click" | "mouseup";
+	/** Raw wheel delta accumulated in this sample's window (Windows: 120 per notch). */
+	wheelDelta?: number;
 }
 
 export interface NativeCursorAsset {
@@ -57,6 +59,21 @@ export interface CursorRecordingData {
 	provider: CursorProviderKind;
 	samples: CursorRecordingSample[];
 	assets: NativeCursorAsset[];
+	/**
+	 * Shortcut chords the user pressed while recording, when capture was enabled.
+	 *
+	 * Display data only: a label ("Ctrl+S") and when it happened. Never the key's
+	 * character, never what was typed, never clipboard content. Absent on every
+	 * sidecar written before this existed, and on every take where the user did not
+	 * turn the option on — which is the default.
+	 */
+	shortcuts?: CursorShortcutEvent[];
+}
+
+/** One recorded shortcut chord, already filtered and labelled (see `shortcuts.ts`). */
+export interface CursorShortcutEvent {
+	timeMs: number;
+	combo: string;
 }
 
 export interface CursorCapabilities {

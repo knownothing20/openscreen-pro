@@ -122,6 +122,8 @@
 		"editableCursor": "Cursore modificabile",
 		"editableCursorTip": "Attivo: cursore modificabile, con cambio di stile e zoom automatico. Disattivo: cursore di sistema, registrato nel video.",
 		"autoZoom": "Zoom automatico dopo la registrazione",
+		"shortcuts": "Scorciatoie",
+		"shortcutsTip": "Mostra le scorciatoie premute. Solo combinazioni Ctrl/Alt/Win, mai il testo digitato.",
 		"hideDesktopIcons": "Nascondi icone della scrivania",
 		"hideDesktopIconsHintMac": "Esclude le icone della scrivania dalle registrazioni dello schermo. Restano sulla tua scrivania.",
 		"hideDesktopIconsHintWindows": "Copre le icone della scrivania durante la registrazione. Tornano alla fine.",

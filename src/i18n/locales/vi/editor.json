@@ -122,6 +122,8 @@
 		"editableCursor": "Con trỏ có thể chỉnh sửa",
 		"editableCursorTip": "Bật: con trỏ có thể chỉnh sửa, có đổi kiểu và thu phóng tự động. Tắt: con trỏ hệ thống, được ghi vào video.",
 		"autoZoom": "Tự động phóng to sau khi ghi",
+		"shortcuts": "Phím tắt",
+		"shortcutsTip": "Hiển thị phím tắt đã nhấn. Chỉ tổ hợp Ctrl/Alt/Win — không bao giờ ghi văn bản đã gõ.",
 		"hideDesktopIcons": "Ẩn biểu tượng màn hình nền",
 		"hideDesktopIconsHintMac": "Loại các biểu tượng màn hình nền khỏi bản ghi màn hình. Chúng vẫn ở trên màn hình nền của bạn.",
 		"hideDesktopIconsHintWindows": "Che các biểu tượng màn hình nền khi ghi. Chúng trở lại khi dừng.",

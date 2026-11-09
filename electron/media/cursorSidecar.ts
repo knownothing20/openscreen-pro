@@ -21,11 +21,12 @@ import type {
 	CursorProviderKind,
 	CursorRecordingData,
 	CursorRecordingSample,
+	CursorShortcutEvent,
 	NativeCursorAsset,
 } from "../../src/native/contracts";
 import { findMediaLinksByFingerprint } from "./mediaLinksRegistry";
 
-export const CURSOR_TELEMETRY_VERSION = 2;
+export const CURSOR_TELEMETRY_VERSION = 3;
 
 /** Where a sidecar was found, or why it was not. `"none"` means we LOOKED and
  * there was nothing — distinct from never having looked, which this module
@@ -75,7 +76,26 @@ export function normalizeCursorSample(sample: unknown): CursorRecordingSample | 
 		visible: typeof point.visible === "boolean" ? point.visible : true,
 		cursorType: typeof point.cursorType === "string" ? point.cursorType : null,
 		interactionType,
+		...(typeof point.wheelDelta === "number" && Number.isFinite(point.wheelDelta)
+			? { wheelDelta: Math.round(point.wheelDelta) }
+			: {}),
 	};
+}
+
+/**
+ * One stored shortcut, or null. A label is display data, so it is kept as written —
+ * but it must be a string short enough to be a chord, and the time must be a real
+ * non-negative number, or the entry is dropped.
+ */
+export function normalizeCursorShortcut(entry: unknown): CursorShortcutEvent | null {
+	if (!entry || typeof entry !== "object") return null;
+	const candidate = entry as Partial<CursorShortcutEvent>;
+	if (typeof candidate.combo !== "string") return null;
+	const combo = candidate.combo.trim();
+	if (!combo || combo.length > 64) return null;
+	if (typeof candidate.timeMs !== "number" || !Number.isFinite(candidate.timeMs)) return null;
+	if (candidate.timeMs < 0) return null;
+	return { timeMs: Math.round(candidate.timeMs), combo };
 }
 
 export function normalizeCursorAsset(
@@ -143,12 +163,19 @@ export async function readCursorRecordingFileAt(
 			.map((asset: unknown) => normalizeCursorAsset(asset))
 			.filter((asset: NativeCursorAsset | null): asset is NativeCursorAsset => Boolean(asset));
 
+		// Shortcuts are display data and survive verbatim; a malformed entry is dropped
+		// rather than repaired, because a label that was never a chord has no safe repair.
+		const shortcuts = (Array.isArray(parsed?.shortcuts) ? parsed.shortcuts : [])
+			.map((entry: unknown) => normalizeCursorShortcut(entry))
+			.filter((entry: CursorShortcutEvent | null): entry is CursorShortcutEvent => Boolean(entry));
+
 		return {
 			version:
 				typeof parsed?.version === "number" && Number.isFinite(parsed.version) ? parsed.version : 1,
 			provider: (parsed?.provider === "native" ? "native" : "none") as CursorProviderKind,
 			samples,
 			assets,
+			...(shortcuts.length > 0 ? { shortcuts } : {}),
 		};
 	} catch (error) {
 		const nodeError = error as NodeJS.ErrnoException;

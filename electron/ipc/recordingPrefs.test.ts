@@ -25,6 +25,7 @@ const defaults: RecordingPrefs = {
 	cursorCaptureMode: "editable-overlay",
 	hideDesktopIcons: false,
 	autoZoomEnabled: true,
+	keyboardShortcutsEnabled: false,
 	markerToastOpacity: DEFAULT_MARKER_TOAST_OPACITY,
 };
 let dir: string;

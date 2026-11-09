@@ -122,6 +122,8 @@
 		"editableCursor": "編集可能なカーソル",
 		"editableCursorTip": "オン：編集可能なカーソル。スタイル変更と自動ズームが使えます。オフ：システムカーソル。動画に録画されます。",
 		"autoZoom": "録画後に自動ズーム",
+		"shortcuts": "ショートカット",
+		"shortcutsTip": "押したショートカットを表示します。Ctrl/Alt/Win の組み合わせのみで、入力した文字は記録しません。",
 		"hideDesktopIcons": "デスクトップアイコンを隠す",
 		"hideDesktopIconsHintMac": "画面収録からデスクトップアイコンを除外します。デスクトップ上には残ります。",
 		"hideDesktopIconsHintWindows": "録画中はデスクトップアイコンを覆います。録画が終わると元に戻ります。",

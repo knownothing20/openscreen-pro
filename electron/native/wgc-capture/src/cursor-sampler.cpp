@@ -19,30 +19,116 @@
 #include <vector>
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Clocks (defined below; the hooks need them)
+// ─────────────────────────────────────────────────────────────────────────────
+static int64_t nowWallMs();
+static int64_t nowMonoMs();
+static void writeJsonLine(const std::string& json);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Global mouse-hook state
 // ─────────────────────────────────────────────────────────────────────────────
 static HHOOK              g_mouseHook    = nullptr;
+static HHOOK              g_keyHook      = nullptr;
 static DWORD              g_mainThreadId = 0;
 static std::atomic<int>   g_leftDownCount{0};
 static std::atomic<int>   g_leftUpCount{0};
+static std::atomic<int>   g_rightDownCount{0};
+static std::atomic<int>   g_rightUpCount{0};
+static std::atomic<int>   g_middleDownCount{0};
+static std::atomic<int>   g_middleUpCount{0};
+static std::atomic<int>   g_wheelDelta{0};
 static std::atomic<bool>  g_stop{false};
 static std::mutex         g_stdoutMtx;
+static bool               g_shortcutCapture = false;
 
 static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0) {
-        if      (wParam == WM_LBUTTONDOWN) g_leftDownCount.fetch_add(1, std::memory_order_relaxed);
-        else if (wParam == WM_LBUTTONUP)   g_leftUpCount.fetch_add(1,   std::memory_order_relaxed);
+        switch (wParam) {
+            case WM_LBUTTONDOWN: g_leftDownCount.fetch_add(1, std::memory_order_relaxed); break;
+            case WM_LBUTTONUP:   g_leftUpCount.fetch_add(1,   std::memory_order_relaxed); break;
+            case WM_RBUTTONDOWN: g_rightDownCount.fetch_add(1, std::memory_order_relaxed); break;
+            case WM_RBUTTONUP:   g_rightUpCount.fetch_add(1,   std::memory_order_relaxed); break;
+            case WM_MBUTTONDOWN: g_middleDownCount.fetch_add(1, std::memory_order_relaxed); break;
+            case WM_MBUTTONUP:   g_middleUpCount.fetch_add(1,   std::memory_order_relaxed); break;
+            case WM_MOUSEWHEEL: {
+                const auto* info = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
+                const int delta = static_cast<short>(HIWORD(info->mouseData));
+                g_wheelDelta.fetch_add(delta, std::memory_order_relaxed);
+                break;
+            }
+            default: break;
+        }
     }
     return CallNextHookEx(g_mouseHook, nCode, wParam, lParam);
+}
+
+// The shortcut channel is opt-in (argv[3] == "--keys") and deliberately narrow:
+// a key is reported only while Ctrl, Alt or Win is held, and only as a virtual-key
+// code — never the character it produced. Typing, IME composition and clipboard
+// content therefore have no path into the stream, and Shift-only combos (i.e. an
+// upper-case letter) are dropped because Shift does not qualify on its own.
+static bool isModifierVk(DWORD vk) {
+    switch (vk) {
+        case VK_SHIFT: case VK_LSHIFT: case VK_RSHIFT:
+        case VK_CONTROL: case VK_LCONTROL: case VK_RCONTROL:
+        case VK_MENU: case VK_LMENU: case VK_RMENU:
+        case VK_LWIN: case VK_RWIN:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode < 0) return CallNextHookEx(g_keyHook, nCode, wParam, lParam);
+    if (wParam != WM_KEYDOWN && wParam != WM_SYSKEYDOWN) {
+        return CallNextHookEx(g_keyHook, nCode, wParam, lParam);
+    }
+    const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
+    const DWORD vk = info->vkCode;
+    if (isModifierVk(vk)) return CallNextHookEx(g_keyHook, nCode, wParam, lParam);
+
+    const bool ctrl  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+    const bool alt   = (GetAsyncKeyState(VK_MENU)    & 0x8000) != 0;
+    const bool shift = (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
+    const bool win   = ((GetAsyncKeyState(VK_LWIN) & 0x8000) != 0) ||
+                       ((GetAsyncKeyState(VK_RWIN) & 0x8000) != 0);
+    if (!ctrl && !alt && !win) return CallNextHookEx(g_keyHook, nCode, wParam, lParam);
+
+    char buf[192];
+    std::snprintf(buf, sizeof(buf),
+        "{\"type\":\"shortcut\",\"timestampMs\":%" PRId64 ",\"monotonicMs\":%" PRId64
+        ",\"vk\":%lu,\"ctrl\":%s,\"alt\":%s,\"shift\":%s,\"win\":%s}",
+        nowWallMs(), nowMonoMs(), static_cast<unsigned long>(vk),
+        ctrl ? "true" : "false", alt ? "true" : "false",
+        shift ? "true" : "false", win ? "true" : "false");
+    writeJsonLine(buf);
+    return CallNextHookEx(g_keyHook, nCode, wParam, lParam);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utilities
 // ─────────────────────────────────────────────────────────────────────────────
-static int64_t nowMs() {
+// Two clocks, on purpose. `timestampMs` stays the system wall clock so older
+// readers keep working, but it can jump (NTP step, manual clock change) and that
+// jump would slide every event against the video. `monotonicMs` is a steady clock
+// measured from process start: it cannot jump, and the app maps it onto the video
+// timeline using the `ready` event's own pair of the two clocks.
+static const std::chrono::steady_clock::time_point g_startSteady =
+    std::chrono::steady_clock::now();
+
+static int64_t nowWallMs() {
     return static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch())
+        .count());
+}
+
+static int64_t nowMonoMs() {
+    return static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - g_startSteady)
         .count());
 }
 
@@ -319,16 +405,22 @@ static void runSamplingLoop(int intervalMs, HWND targetWindow, const CLSID& pngC
     HCURSOR lastCursor = nullptr;
 
     while (!g_stop.load(std::memory_order_relaxed)) {
-        const int downCount = g_leftDownCount.exchange(0, std::memory_order_relaxed);
-        const int upCount   = g_leftUpCount.exchange(0,   std::memory_order_relaxed);
+        const int downCount  = g_leftDownCount.exchange(0, std::memory_order_relaxed);
+        const int upCount    = g_leftUpCount.exchange(0,   std::memory_order_relaxed);
+        const int rDownCount = g_rightDownCount.exchange(0,  std::memory_order_relaxed);
+        const int rUpCount   = g_rightUpCount.exchange(0,    std::memory_order_relaxed);
+        const int mDownCount = g_middleDownCount.exchange(0, std::memory_order_relaxed);
+        const int mUpCount   = g_middleUpCount.exchange(0,   std::memory_order_relaxed);
+        const int wheelDelta = g_wheelDelta.exchange(0,      std::memory_order_relaxed);
 
         CURSORINFO ci{};
         ci.cbSize = sizeof(ci);
         if (!GetCursorInfo(&ci)) {
-            char buf[160];
+            char buf[200];
             std::snprintf(buf, sizeof(buf),
-                "{\"type\":\"error\",\"timestampMs\":%" PRId64 ",\"message\":\"GetCursorInfo failed\"}",
-                nowMs());
+                "{\"type\":\"error\",\"timestampMs\":%" PRId64 ",\"monotonicMs\":%" PRId64
+                ",\"message\":\"GetCursorInfo failed\"}",
+                nowWallMs(), nowMonoMs());
             writeJsonLine(buf);
             std::this_thread::sleep_for(std::chrono::milliseconds(intervalMs));
             continue;
@@ -352,6 +444,8 @@ static void runSamplingLoop(int intervalMs, HWND targetWindow, const CLSID& pngC
         const bool  leftDown    = (ks & 0x8000) != 0;
         const bool  leftPressed = downCount > 0 || (ks & 0x0001) != 0;
         const bool  leftReleased = upCount > 0;
+        const bool  rightDown   = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+        const bool  middleDown  = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
 
         // Asset — only when the cursor handle changes
         std::string assetJson;
@@ -382,9 +476,10 @@ static void runSamplingLoop(int intervalMs, HWND targetWindow, const CLSID& pngC
 
         // Emit sample JSON
         std::string out;
-        out.reserve(256);
+        out.reserve(384);
         out += "{\"type\":\"sample\"";
-        out += ",\"timestampMs\":";        out += std::to_string(nowMs());
+        out += ",\"timestampMs\":";        out += std::to_string(nowWallMs());
+        out += ",\"monotonicMs\":";        out += std::to_string(nowMonoMs());
         out += ",\"x\":";                  out += std::to_string(ci.ptScreenPos.x);
         out += ",\"y\":";                  out += std::to_string(ci.ptScreenPos.y);
         out += ",\"visible\":";            out += visible      ? "true" : "false";
@@ -393,6 +488,13 @@ static void runSamplingLoop(int intervalMs, HWND targetWindow, const CLSID& pngC
         out += ",\"leftButtonDown\":";     out += leftDown     ? "true" : "false";
         out += ",\"leftButtonPressed\":";  out += leftPressed  ? "true" : "false";
         out += ",\"leftButtonReleased\":"; out += leftReleased ? "true" : "false";
+        out += ",\"rightButtonDown\":";    out += rightDown    ? "true" : "false";
+        out += ",\"rightButtonPressed\":"; out += rDownCount > 0 ? "true" : "false";
+        out += ",\"rightButtonReleased\":"; out += rUpCount > 0 ? "true" : "false";
+        out += ",\"middleButtonDown\":";   out += middleDown   ? "true" : "false";
+        out += ",\"middleButtonPressed\":"; out += mDownCount > 0 ? "true" : "false";
+        out += ",\"middleButtonReleased\":"; out += mUpCount > 0 ? "true" : "false";
+        out += ",\"wheelDelta\":";         out += std::to_string(wheelDelta);
         out += ",\"bounds\":";             out += boundsJson;
         out += ",\"asset\":";              out += assetJson.empty() ? "null" : assetJson;
         out += "}";
@@ -450,6 +552,9 @@ int main(int argc, char* argv[]) {
             } catch (...) {}
         }
     }
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--keys") g_shortcutCapture = true;
+    }
 
     // Initialize GDI+
     Gdiplus::GdiplusStartupInput gdipInput{};
@@ -474,15 +579,28 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // The keyboard hook exists only when the caller asked for it (`--keys`). A failure to
+    // install it must not take the cursor track down: the sample stream is the contract,
+    // shortcuts are an extra, and the app treats their absence as "not captured".
+    if (g_shortcutCapture) {
+        g_keyHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(nullptr), 0);
+        if (!g_keyHook) std::cerr << "keyboard hook unavailable" << std::endl;
+    }
+
     // Prime GetAsyncKeyState so the first poll doesn't return stale "since-last-call" bits
     GetAsyncKeyState(VK_LBUTTON);
+    GetAsyncKeyState(VK_RBUTTON);
+    GetAsyncKeyState(VK_MBUTTON);
 
-    // Signal readiness
+    // Signal readiness. Both clocks are reported in one record so the app can anchor the
+    // steady clock to the video start without ever trusting a wall-clock delta.
     g_mainThreadId = GetCurrentThreadId();
     {
-        char buf[80];
+        char buf[160];
         std::snprintf(buf, sizeof(buf),
-            "{\"type\":\"ready\",\"timestampMs\":%" PRId64 "}", nowMs());
+            "{\"type\":\"ready\",\"timestampMs\":%" PRId64 ",\"monotonicMs\":%" PRId64
+            ",\"shortcuts\":%s}",
+            nowWallMs(), nowMonoMs(), g_keyHook ? "true" : "false");
         writeJsonLine(buf);
     }
 
@@ -498,6 +616,7 @@ int main(int argc, char* argv[]) {
 
     g_stop.store(true, std::memory_order_relaxed);
     if (sampler.joinable()) sampler.join();
+    if (g_keyHook) UnhookWindowsHookEx(g_keyHook);
     UnhookWindowsHookEx(g_mouseHook);
     Gdiplus::GdiplusShutdown(gdipToken);
     return 0;

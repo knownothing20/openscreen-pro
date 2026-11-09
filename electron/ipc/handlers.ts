@@ -687,6 +687,8 @@ export interface RecordingPrefs {
 	hideDesktopIcons: boolean;
 	/** Whether a fresh take gets automatic zooms on import. Persisted; defaults on. */
 	autoZoomEnabled: boolean;
+	/** Whether the take records shortcut chords (display data only). Defaults off. */
+	keyboardShortcutsEnabled: boolean;
 	/** How opaque the HUD's transient notices are, 0.2–1. See `app-settings.ts`. */
 	markerToastOpacity: number;
 }
@@ -702,8 +704,16 @@ const defaultRecordingPrefs: RecordingPrefs = {
 	cursorCaptureMode: "editable-overlay",
 	hideDesktopIcons: false,
 	autoZoomEnabled: true,
+	keyboardShortcutsEnabled: false,
 	markerToastOpacity: DEFAULT_MARKER_TOAST_OPACITY,
 };
+/**
+ * The published recording preferences, for the paths that are not inside the IPC
+ * registration (the cursor session starts from a module-level function).
+ * Kept in step by `registerRecordingPrefsHandlers`'s onChange, and seeded from
+ * disk at registration — reading it before that would answer with the defaults.
+ */
+let recordingPrefsSnapshot: RecordingPrefs = { ...defaultRecordingPrefs };
 
 // Cached source from the user's pick. Used by setDisplayMediaRequestHandler in main.ts for cursor-free capture.
 export function getSelectedDesktopSource(): DesktopCapturerSource | null {
@@ -1323,6 +1333,7 @@ async function startCursorRecording(recordingId?: number) {
 		platform: process.platform,
 		sampleIntervalMs: CURSOR_SAMPLE_INTERVAL_MS,
 		sourceId: getSelectedSourceId(),
+		captureShortcuts: recordingPrefsSnapshot.keyboardShortcutsEnabled === true,
 		startTimeMs:
 			typeof recordingId === "number" && Number.isFinite(recordingId) ? recordingId : undefined,
 	});
@@ -2321,11 +2332,13 @@ export function registerIpcHandlers(
 
 	registerEncoderPrefsHandlers();
 
+	recordingPrefsSnapshot = appSettings.getSnapshot().recording;
 	registerRecordingPrefsHandlers(
 		defaultRecordingPrefs,
 		getMainWindow,
 		() => BrowserWindow.getAllWindows(),
 		(previous, next) => {
+			recordingPrefsSnapshot = next;
 			// Apple's picker bakes the exclusions into the filter it hands back, so a pick made
 			// before "Hide desktop icons" changed would still record the desktop the old way.
 			// Dropping it makes the HUD ask for a new pick instead of ignoring the toggle.

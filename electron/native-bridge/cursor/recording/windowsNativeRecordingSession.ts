@@ -7,9 +7,11 @@ import { parseWindowHandleFromSourceId } from "../../../../src/lib/nativeWindows
 import type {
 	CursorRecordingData,
 	CursorRecordingSample,
+	CursorShortcutEvent,
 	NativeCursorAsset,
 } from "../../../../src/native/contracts";
 import { toHelperRect } from "../../helperCoordinates";
+import { ShortcutCollector } from "../shortcuts";
 import type { CursorRecordingSession } from "./session";
 import type {
 	WindowsCursorEvent,
@@ -42,6 +44,9 @@ function findCursorSamplerPath(): string | null {
 }
 
 const READY_TIMEOUT_MS = 5_000;
+/** Two presses of the same button this close in time and space are one double-click. */
+const DOUBLE_CLICK_WINDOW_MS = 450;
+const DOUBLE_CLICK_DISTANCE = 0.03;
 
 interface NormalizedSample {
 	sample: CursorRecordingSample;
@@ -51,6 +56,7 @@ interface NormalizedSample {
 export class WindowsNativeRecordingSession implements CursorRecordingSession {
 	private assets = new Map<string, NativeCursorAsset>();
 	private samples: CursorRecordingSample[] = [];
+	private shortcuts = new ShortcutCollector();
 	private process: ChildProcessByStdio<null, Readable, Readable> | null = null;
 	private lineBuffer = "";
 	private startTimeMs = 0;
@@ -60,17 +66,41 @@ export class WindowsNativeRecordingSession implements CursorRecordingSession {
 	private sampleCount = 0;
 	private outOfBoundsSampleCount = 0;
 	private previousLeftButtonDown = false;
+	private previousRightButtonDown = false;
+	private previousMiddleButtonDown = false;
+	/**
+	 * The steady-clock origin, from the helper's `ready`. `null` on an older helper
+	 * that only sends wall-clock times — the session then keeps its old mapping and
+	 * loses only the drift protection.
+	 */
+	private originMonotonicMs: number | null = null;
+	private originWallMs = 0;
+	private shortcutChannelAvailable = false;
+	private lastPress: {
+		timeMs: number;
+		cx: number;
+		cy: number;
+		kind: "click" | "right-click" | "middle-click";
+		sample: CursorRecordingSample;
+	} | null = null;
 
 	constructor(private readonly options: WindowsNativeRecordingSessionOptions) {}
 
 	async start(): Promise<void> {
 		this.assets.clear();
 		this.samples = [];
+		this.shortcuts = new ShortcutCollector();
 		this.lineBuffer = "";
 		this.startTimeMs = this.options.startTimeMs ?? Date.now();
 		this.sampleCount = 0;
 		this.outOfBoundsSampleCount = 0;
 		this.previousLeftButtonDown = false;
+		this.previousRightButtonDown = false;
+		this.previousMiddleButtonDown = false;
+		this.originMonotonicMs = null;
+		this.originWallMs = 0;
+		this.shortcutChannelAvailable = false;
+		this.lastPress = null;
 
 		const helperPath = findCursorSamplerPath();
 		if (!helperPath) {
@@ -80,6 +110,7 @@ export class WindowsNativeRecordingSession implements CursorRecordingSession {
 		const windowHandle = parseWindowHandleFromSourceId(this.options.sourceId);
 		const args = [String(this.options.sampleIntervalMs)];
 		if (windowHandle) args.push(windowHandle);
+		if (this.options.captureShortcuts) args.push("--keys");
 
 		const child = spawn(helperPath, args, {
 			stdio: ["ignore", "pipe", "pipe"],
@@ -92,6 +123,7 @@ export class WindowsNativeRecordingSession implements CursorRecordingSession {
 			sampleIntervalMs: this.options.sampleIntervalMs,
 			sourceId: this.options.sourceId ?? null,
 			windowHandle,
+			captureShortcuts: this.options.captureShortcuts === true,
 		});
 
 		child.stdout.setEncoding("utf8");
@@ -138,17 +170,22 @@ export class WindowsNativeRecordingSession implements CursorRecordingSession {
 
 		this.killHelperProcess(child);
 
+		const shortcuts: CursorShortcutEvent[] = this.shortcuts.list();
 		this.logDiagnostic("stop", {
 			sampleCount: this.sampleCount,
 			assetCount: this.assets.size,
 			outOfBoundsSampleCount: this.outOfBoundsSampleCount,
+			shortcutCount: shortcuts.length,
+			shortcutsDropped: this.shortcuts.droppedCount(),
+			shortcutChannelAvailable: this.shortcutChannelAvailable,
 		});
 
 		return {
-			version: 2,
+			version: 3,
 			provider: this.assets.size > 0 ? "native" : "none",
 			samples: this.samples,
 			assets: [...this.assets.values()],
+			...(shortcuts.length > 0 ? { shortcuts } : {}),
 		};
 	}
 
@@ -181,8 +218,20 @@ export class WindowsNativeRecordingSession implements CursorRecordingSession {
 		}
 
 		if (payload.type === "ready") {
-			this.logDiagnostic("ready", { timestampMs: payload.timestampMs });
+			this.originMonotonicMs = typeof payload.monotonicMs === "number" ? payload.monotonicMs : null;
+			this.originWallMs = payload.timestampMs;
+			this.shortcutChannelAvailable = payload.shortcuts === true;
+			this.logDiagnostic("ready", {
+				timestampMs: payload.timestampMs,
+				monotonicMs: payload.monotonicMs ?? null,
+				shortcuts: this.shortcutChannelAvailable,
+			});
 			this.resolveReady();
+			return;
+		}
+
+		if (payload.type === "shortcut") {
+			this.handleShortcut(payload);
 			return;
 		}
 
@@ -225,6 +274,43 @@ export class WindowsNativeRecordingSession implements CursorRecordingSession {
 		}
 	}
 
+	/**
+	 * Milliseconds since this take started, measured on the sampler's steady clock
+	 * when it has one.
+	 *
+	 * `timestampMs` is the wall clock: an NTP step or a manual clock change would
+	 * slide every later event against the video by exactly the jump. `monotonicMs`
+	 * cannot jump. The origin pair comes from `ready`, and the wall-clock delta
+	 * between "session start" and "helper ready" is added once, so the mapping is
+	 * still the take's own — it is not a fixed offset, it is the same instant
+	 * expressed on two clocks.
+	 */
+	private timeFor(payload: { timestampMs: number; monotonicMs?: number }): number {
+		if (typeof payload.monotonicMs === "number" && this.originMonotonicMs !== null) {
+			const readyOffsetMs = this.originWallMs - this.startTimeMs;
+			return Math.max(0, payload.monotonicMs - this.originMonotonicMs + readyOffsetMs);
+		}
+		return Math.max(0, payload.timestampMs - this.startTimeMs);
+	}
+
+	private handleShortcut(payload: Extract<WindowsCursorEvent, { type: "shortcut" }>) {
+		const accepted = this.shortcuts.push(this.timeFor(payload), payload.vk, {
+			ctrl: payload.ctrl === true,
+			alt: payload.alt === true,
+			shift: payload.shift === true,
+			win: payload.win === true,
+		});
+		if (accepted) {
+			this.logDiagnostic("shortcut", {
+				vk: payload.vk,
+				ctrl: payload.ctrl,
+				alt: payload.alt,
+				shift: payload.shift,
+				win: payload.win,
+			});
+		}
+	}
+
 	private normalizeSample(
 		payload: Extract<WindowsCursorEvent, { type: "sample" }>,
 	): NormalizedSample {
@@ -247,13 +333,57 @@ export class WindowsNativeRecordingSession implements CursorRecordingSession {
 		const leftButtonDown = payload.leftButtonDown === true;
 		const leftButtonPressed = payload.leftButtonPressed === true;
 		const leftButtonReleased = payload.leftButtonReleased === true;
-		const interactionType =
+		const rightButtonDown = payload.rightButtonDown === true;
+		const rightButtonPressed = payload.rightButtonPressed === true;
+		const rightButtonReleased = payload.rightButtonReleased === true;
+		const middleButtonDown = payload.middleButtonDown === true;
+		const middleButtonPressed = payload.middleButtonPressed === true;
+		const middleButtonReleased = payload.middleButtonReleased === true;
+
+		// A press is the interaction. The release only closes it (and is recorded as
+		// `mouseup` so the detector can tell a completed click from a held button).
+		const pressedKind: CursorRecordingSample["interactionType"] | null =
 			leftButtonPressed || (leftButtonDown && !this.previousLeftButtonDown)
 				? "click"
-				: leftButtonReleased || (!leftButtonDown && this.previousLeftButtonDown)
-					? "mouseup"
-					: "move";
+				: rightButtonPressed || (rightButtonDown && !this.previousRightButtonDown)
+					? "right-click"
+					: middleButtonPressed || (middleButtonDown && !this.previousMiddleButtonDown)
+						? "middle-click"
+						: null;
+		const released =
+			leftButtonReleased ||
+			(!leftButtonDown && this.previousLeftButtonDown) ||
+			rightButtonReleased ||
+			(!rightButtonDown && this.previousRightButtonDown) ||
+			middleButtonReleased ||
+			(!middleButtonDown && this.previousMiddleButtonDown);
 		this.previousLeftButtonDown = leftButtonDown;
+		this.previousRightButtonDown = rightButtonDown;
+		this.previousMiddleButtonDown = middleButtonDown;
+
+		const timeMs = this.timeFor(payload);
+		let interactionType: CursorRecordingSample["interactionType"] = pressedKind ?? "move";
+		if (pressedKind) {
+			// Two presses of the same button, close in time and in space, are one
+			// double-click: the earlier sample stops being a click of its own so the
+			// auto-zoom planner sees one action instead of two.
+			const previous = this.lastPress;
+			const isDouble =
+				previous !== null &&
+				previous.kind === pressedKind &&
+				timeMs - previous.timeMs <= DOUBLE_CLICK_WINDOW_MS &&
+				Math.hypot(normalizedX - previous.cx, normalizedY - previous.cy) <= DOUBLE_CLICK_DISTANCE;
+			if (isDouble) {
+				previous.sample.interactionType = "move";
+				interactionType = "double-click";
+				this.lastPress = null;
+			}
+		} else if (released) {
+			// The release closes the interaction but does NOT clear `lastPress`: the
+			// second press of a double-click arrives after the first one's release, and
+			// the window is what decides, not the up event.
+			interactionType = "mouseup";
+		}
 
 		if (this.sampleCount === 0 || (!withinBounds && this.outOfBoundsSampleCount === 0)) {
 			this.logDiagnostic("sample", {
@@ -268,18 +398,29 @@ export class WindowsNativeRecordingSession implements CursorRecordingSession {
 			});
 		}
 
-		return {
-			withinBounds,
-			sample: {
-				timeMs: Math.max(0, payload.timestampMs - this.startTimeMs),
+		const sample: CursorRecordingSample = {
+			timeMs,
+			cx: normalizedX,
+			cy: normalizedY,
+			assetId: payload.handle,
+			visible: payload.visible && withinBounds,
+			cursorType: payload.cursorType ?? payload.asset?.cursorType ?? null,
+			interactionType,
+			...(typeof payload.wheelDelta === "number" && payload.wheelDelta !== 0
+				? { wheelDelta: payload.wheelDelta }
+				: {}),
+		};
+		if (pressedKind && sample.interactionType === pressedKind) {
+			this.lastPress = {
+				timeMs,
 				cx: normalizedX,
 				cy: normalizedY,
-				assetId: payload.handle,
-				visible: payload.visible && withinBounds,
-				cursorType: payload.cursorType ?? payload.asset?.cursorType ?? null,
-				interactionType,
-			},
-		};
+				kind: pressedKind,
+				sample,
+			};
+		}
+
+		return { withinBounds, sample };
 	}
 
 	private waitUntilReady() {

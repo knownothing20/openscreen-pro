@@ -31,6 +31,15 @@ export interface RecordingPreferences {
 	 */
 	autoZoomEnabled: boolean;
 	/**
+	 * Record which shortcut chords were pressed, for the editor to display.
+	 *
+	 * OFF by default, and it must stay that way: this is the one capture in the app
+	 * that watches the keyboard. When on, the native sampler receives `--keys` and
+	 * reports virtual-key codes only while Ctrl/Alt/Win is held — never characters,
+	 * never text, never clipboard content (see `native-bridge/cursor/shortcuts.ts`).
+	 */
+	keyboardShortcutsEnabled: boolean;
+	/**
 	 * How opaque the HUD's own transient notices are (the "Marker added" toast), 0.2–1.
 	 * The HUD sits over whatever the user is recording, so a solid card in the corner is
 	 * both in the way and in the shot; this is the knob for how much it intrudes.
@@ -50,6 +59,7 @@ export const DEFAULT_RECORDING_PREFERENCES: RecordingPreferences = {
 	cursorCaptureMode: "editable-overlay",
 	hideDesktopIcons: false,
 	autoZoomEnabled: true,
+	keyboardShortcutsEnabled: false,
 	markerToastOpacity: DEFAULT_MARKER_TOAST_OPACITY,
 };
 
@@ -159,6 +169,10 @@ function parseRecording(raw: RawSettings): RecordingPreferences {
 				: DEFAULT_RECORDING_PREFERENCES.cursorCaptureMode,
 		hideDesktopIcons: bool(raw.hideDesktopIcons, DEFAULT_RECORDING_PREFERENCES.hideDesktopIcons),
 		autoZoomEnabled: bool(raw.autoZoomEnabled, DEFAULT_RECORDING_PREFERENCES.autoZoomEnabled),
+		keyboardShortcutsEnabled: bool(
+			raw.keyboardShortcutsEnabled,
+			DEFAULT_RECORDING_PREFERENCES.keyboardShortcutsEnabled,
+		),
 		markerToastOpacity: clampToastOpacity(raw.markerToastOpacity),
 	};
 }

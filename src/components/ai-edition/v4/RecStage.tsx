@@ -2,6 +2,7 @@ import {
 	Camera,
 	CameraOff,
 	ChevronDown,
+	Keyboard,
 	LayoutGrid,
 	Loader2,
 	MicOff,
@@ -36,6 +37,7 @@ interface RecordingPrefsState {
 	cursorCaptureMode: "editable-overlay" | "system";
 	hideDesktopIcons: boolean;
 	autoZoomEnabled: boolean;
+	keyboardShortcutsEnabled: boolean;
 }
 
 const DEFAULT_PREFS: RecordingPrefsState = {
@@ -49,6 +51,7 @@ const DEFAULT_PREFS: RecordingPrefsState = {
 	cursorCaptureMode: "editable-overlay",
 	hideDesktopIcons: false,
 	autoZoomEnabled: true,
+	keyboardShortcutsEnabled: false,
 };
 
 function normalizedRecordingPrefs(prefs: Partial<RecordingPrefsState>): RecordingPrefsState {
@@ -523,6 +526,32 @@ export function RecStage({
 							>
 								{prefs.autoZoomEnabled ? t("rec.on") : t("rec.off")}
 							</button>
+						</div>
+					) : null}
+
+					{/* Opt-in, Windows-only, and off by default: this is the one capture that
+					    watches the keyboard. It records chord labels for display — never typed
+					    text. See native-bridge/cursor/shortcuts.ts for the filter. */}
+					{platform === "win32" ? (
+						<div className={styles.recRow}>
+							<div id={rowLabelId("keyboardShortcuts")} className={styles.recRowLabel}>
+								<Keyboard size={15} />
+								{t("rec.shortcuts")}
+							</div>
+							<Tooltip content={t("rec.shortcutsTip")} side="top">
+								<button
+									type="button"
+									data-testid="rec-keyboard-shortcuts-button"
+									className={`${styles.recToggleBtn}${prefs.keyboardShortcutsEnabled ? ` ${styles.on}` : ""}`}
+									aria-labelledby={rowLabelId("keyboardShortcuts")}
+									aria-pressed={prefs.keyboardShortcutsEnabled}
+									onClick={() =>
+										updatePrefs({ keyboardShortcutsEnabled: !prefs.keyboardShortcutsEnabled })
+									}
+								>
+									{prefs.keyboardShortcutsEnabled ? t("rec.on") : t("rec.off")}
+								</button>
+							</Tooltip>
 						</div>
 					) : null}
 

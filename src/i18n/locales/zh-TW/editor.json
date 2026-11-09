@@ -122,6 +122,8 @@
 		"editableCursor": "可編輯游標",
 		"editableCursorTip": "開：可編輯游標，可修改樣式並使用自動縮放。關：系統游標，直接錄進影片。",
 		"autoZoom": "錄製後自動縮放",
+		"shortcuts": "快捷鍵",
+		"shortcutsTip": "顯示你按下的組合鍵。只記錄 Ctrl/Alt/Win 組合，絕不記錄輸入的文字。",
 		"hideDesktopIcons": "隱藏桌面圖示",
 		"hideDesktopIconsHintMac": "在螢幕錄製中略去桌面圖示。它們仍會留在你的桌面上。",
 		"hideDesktopIconsHintWindows": "錄製時遮住桌面圖示。停止後會恢復。",

@@ -122,6 +122,8 @@
 		"editableCursor": "Upravitelný kurzor",
 		"editableCursorTip": "Zapnuto: upravitelný kurzor, se změnou stylu a automatickým přiblížením. Vypnuto: systémový kurzor, zaznamenaný ve videu.",
 		"autoZoom": "Automatické přiblížení po nahrávání",
+		"shortcuts": "Zkratky",
+		"shortcutsTip": "Zobrazit stisknuté zkratky. Pouze kombinace Ctrl/Alt/Win — nikdy psaný text.",
 		"hideDesktopIcons": "Skrýt ikony na ploše",
 		"hideDesktopIconsHintMac": "Vynechá ikony na ploše ze záznamů obrazovky. Na ploše vám zůstanou.",
 		"hideDesktopIconsHintWindows": "Zakryje ikony na ploše během nahrávání. Po jeho skončení se vrátí.",

@@ -122,6 +122,8 @@
 		"editableCursor": "Bearbeitbarer Cursor",
 		"editableCursorTip": "An: bearbeitbarer Cursor, mit Stiländerung und Auto-Zoom. Aus: System-Cursor, im Video aufgenommen.",
 		"autoZoom": "Auto-Zoom nach der Aufnahme",
+		"shortcuts": "Tastenkürzel",
+		"shortcutsTip": "Gedrückte Kürzel anzeigen. Nur Ctrl/Alt/Win-Kombinationen — niemals eingegebener Text.",
 		"hideDesktopIcons": "Schreibtischsymbole ausblenden",
 		"hideDesktopIconsHintMac": "Lässt die Schreibtischsymbole in Bildschirmaufnahmen weg. Auf deinem Schreibtisch bleiben sie.",
 		"hideDesktopIconsHintWindows": "Deckt die Schreibtischsymbole während der Aufnahme ab. Danach sind sie wieder da.",

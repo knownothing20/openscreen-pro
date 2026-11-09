@@ -488,3 +488,34 @@ describe("buildAutoZoomSuggestionsForClips", () => {
 		});
 	});
 });
+
+/**
+ * V2.7 records right, middle and double clicks as their own kinds. The planner has
+ * always listed them, but nothing proved the whole chain still rates them as actions —
+ * so this pins each kind to a zoom, one at a time.
+ */
+describe("buildAutoZoomSuggestions: the click kinds V2.7 records", () => {
+	for (const kind of ["right-click", "middle-click", "double-click"] as const) {
+		it(`plans a zoom from a ${kind}`, () => {
+			const suggestions = plan([
+				{ timeMs: 1000, cx: 0.5, cy: 0.5, visible: true, interactionType: "move" },
+				click(2000, 0.3, 0.4, kind),
+				{ timeMs: 2100, cx: 0.3, cy: 0.4, visible: true, interactionType: "mouseup" },
+				{ timeMs: 3000, cx: 0.3, cy: 0.4, visible: true, interactionType: "move" },
+			]);
+			expect(suggestions).toHaveLength(1);
+			expect(suggestions[0].focus).toEqual({ cx: 0.3, cy: 0.4 });
+		});
+	}
+
+	it("treats a double-click as one action, not two zooms", () => {
+		// The session collapses the pair into a single `double-click` sample; even two
+		// click samples this close would merge into one shot, and this stays true either way.
+		const suggestions = plan([
+			click(2000, 0.4, 0.4, "double-click"),
+			{ timeMs: 2100, cx: 0.4, cy: 0.4, visible: true, interactionType: "mouseup" },
+			{ timeMs: 2600, cx: 0.4, cy: 0.4, visible: true, interactionType: "move" },
+		]);
+		expect(suggestions).toHaveLength(1);
+	});
+});

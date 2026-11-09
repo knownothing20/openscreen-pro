@@ -12,6 +12,8 @@ interface CreateCursorRecordingSessionOptions {
 	sampleIntervalMs: number;
 	sourceId?: string | null;
 	startTimeMs?: number;
+	/** Windows only: ask the helper for the shortcut channel. Off unless the user opted in. */
+	captureShortcuts?: boolean;
 }
 
 export function createCursorRecordingSession(
@@ -24,6 +26,7 @@ export function createCursorRecordingSession(
 			sampleIntervalMs: options.sampleIntervalMs,
 			sourceId: options.sourceId,
 			startTimeMs: options.startTimeMs,
+			captureShortcuts: options.captureShortcuts,
 		});
 	}
 

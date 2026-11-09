@@ -122,6 +122,8 @@
 		"editableCursor": "Düzenlenebilir imleç",
 		"editableCursorTip": "Açık: düzenlenebilir imleç, stil değiştirme ve otomatik yakınlaştırma ile. Kapalı: sistem imleci, videoya kaydedilir.",
 		"autoZoom": "Kayıttan sonra otomatik yakınlaştırma",
+		"shortcuts": "Kısayollar",
+		"shortcutsTip": "Basılan kısayolları göster. Yalnızca Ctrl/Alt/Win bileşimleri — yazılan metin asla.",
 		"hideDesktopIcons": "Masaüstü simgelerini gizle",
 		"hideDesktopIconsHintMac": "Masaüstü simgelerini ekran kayıtlarının dışında bırakır. Masaüstünüzde kalırlar.",
 		"hideDesktopIconsHintWindows": "Kayıt sırasında masaüstü simgelerini örter. Kayıt bitince geri gelirler.",

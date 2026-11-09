@@ -111,3 +111,163 @@ describe("WindowsNativeRecordingSession bounds handling", () => {
 		expect(samples[0].cy).toBeCloseTo((500 - 100) / 600, 5);
 	});
 });
+
+/**
+ * The event channel itself: the steady clock, the three buttons, the wheel, and
+ * the shortcut filter as it is wired — a unit test on the filter proves the rule,
+ * not that the session applies it or that `--keys` is ever passed.
+ */
+describe("WindowsNativeRecordingSession event channel", () => {
+	const REAL_PLATFORM = process.platform;
+	const setPlatform = (value: NodeJS.Platform) =>
+		Object.defineProperty(process, "platform", { value, configurable: true });
+
+	beforeEach(() => {
+		setPlatform("win32");
+		process.env.OPENSCREEN_CURSOR_SAMPLER_EXE = __filename;
+		dipToScreenRect.mockReturnValue(PHYSICAL_BOUNDS);
+		vi.spyOn(console, "error").mockImplementation(() => undefined);
+		vi.spyOn(console, "info").mockImplementation(() => undefined);
+	});
+
+	afterEach(() => {
+		setPlatform(REAL_PLATFORM);
+		process.env.OPENSCREEN_CURSOR_SAMPLER_EXE = undefined;
+		spawn.mockReset();
+		dipToScreenRect.mockReset();
+		vi.restoreAllMocks();
+	});
+
+	const start = async (options: { captureShortcuts?: boolean } = {}) => {
+		const { child, stdout } = fakeHelper();
+		spawn.mockReturnValue(child);
+		const session = new WindowsNativeRecordingSession({
+			getDisplayBounds: () => DIP_BOUNDS,
+			maxSamples: 200,
+			sampleIntervalMs: 20,
+			startTimeMs: 9_000,
+			...options,
+		});
+		const started = session.start();
+		// Wall clock 10 000 at steady 5 000: the helper started 1 000 ms after the take.
+		stdout.push(
+			`${JSON.stringify({ type: "ready", timestampMs: 10_000, monotonicMs: 5_000, shortcuts: true })}\n`,
+		);
+		await started;
+		const push = async (event: Record<string, unknown>) => {
+			stdout.push(`${JSON.stringify(event)}\n`);
+			await new Promise((resolve) => setImmediate(resolve));
+		};
+		return { session, push, spawnArgs: spawn.mock.calls.at(-1)?.[1] as string[] };
+	};
+
+	const baseSample = (monotonicMs: number, extra: Record<string, unknown> = {}) => ({
+		type: "sample",
+		timestampMs: 10_000 + (monotonicMs - 5_000),
+		monotonicMs,
+		x: 480,
+		y: 270,
+		visible: true,
+		handle: "0x1",
+		bounds: PHYSICAL_BOUNDS,
+		asset: null,
+		...extra,
+	});
+
+	it("maps the steady clock onto the take instead of trusting the wall clock", async () => {
+		const { session, push } = await start();
+		await push(baseSample(5_500));
+		const [sample] = (await session.stop()).samples;
+		// 500 ms after ready, plus the 1 000 ms between take start and ready.
+		expect(sample.timeMs).toBe(1_500);
+	});
+
+	it("survives a wall-clock jump because the mapping never reads it again", async () => {
+		const { session, push } = await start();
+		// The wall clock jumps forward an hour; the steady clock advances 200 ms.
+		await push({ ...baseSample(5_200), timestampMs: 10_000 + 3_600_000 + 200 });
+		await push({ ...baseSample(5_400), timestampMs: 10_000 + 3_600_000 + 400 });
+		const [first, second] = (await session.stop()).samples;
+		expect(first.timeMs).toBe(1_200);
+		expect(second.timeMs).toBe(1_400);
+	});
+
+	it("records right and middle presses as their own kinds", async () => {
+		const { session, push } = await start();
+		await push(baseSample(5_100, { rightButtonPressed: true, rightButtonDown: true }));
+		await push(baseSample(5_200, { rightButtonDown: false }));
+		await push(baseSample(5_400, { middleButtonPressed: true, middleButtonDown: true }));
+		const samples = (await session.stop()).samples;
+		expect(samples.map((sample) => sample.interactionType)).toEqual([
+			"right-click",
+			"mouseup",
+			"middle-click",
+		]);
+	});
+
+	it("folds a second press close in time and space into one double-click", async () => {
+		const { session, push } = await start();
+		await push(baseSample(5_100, { leftButtonPressed: true, leftButtonDown: true }));
+		await push(baseSample(5_150, { leftButtonDown: false }));
+		await push(baseSample(5_220, { leftButtonPressed: true, leftButtonDown: true }));
+		await push(baseSample(5_270, { leftButtonDown: false }));
+		const kinds = (await session.stop()).samples.map((sample) => sample.interactionType);
+		// One action: the first press is folded away, the second names the double click.
+		expect(kinds).toEqual(["move", "mouseup", "double-click", "mouseup"]);
+	});
+
+	it("keeps two clicks apart as two clicks", async () => {
+		const { session, push } = await start();
+		await push(baseSample(5_100, { leftButtonPressed: true, leftButtonDown: true }));
+		await push(baseSample(5_150, { leftButtonDown: false }));
+		await push(baseSample(6_000, { leftButtonPressed: true, leftButtonDown: true }));
+		const kinds = (await session.stop()).samples.map((sample) => sample.interactionType);
+		expect(kinds).toEqual(["click", "mouseup", "click"]);
+	});
+
+	it("keeps the wheel delta only on the sample that saw it", async () => {
+		const { session, push } = await start();
+		await push(baseSample(5_100, { wheelDelta: 120 }));
+		await push(baseSample(5_200));
+		const samples = (await session.stop()).samples;
+		expect(samples[0].wheelDelta).toBe(120);
+		expect(samples[1].wheelDelta).toBeUndefined();
+	});
+
+	it("asks for the shortcut channel only when the take opted in", async () => {
+		const off = await start();
+		expect(off.spawnArgs).not.toContain("--keys");
+		await off.session.stop();
+
+		const on = await start({ captureShortcuts: true });
+		expect(on.spawnArgs).toContain("--keys");
+		await on.session.stop();
+	});
+
+	it("stores filtered shortcuts, and drops a chord the filter refuses", async () => {
+		const { session, push } = await start({ captureShortcuts: true });
+		await push({
+			type: "shortcut",
+			timestampMs: 10_100,
+			monotonicMs: 5_100,
+			vk: 0x53,
+			ctrl: true,
+			alt: false,
+			shift: false,
+			win: false,
+		});
+		await push({
+			type: "shortcut",
+			timestampMs: 10_150,
+			monotonicMs: 5_150,
+			vk: 0x41,
+			ctrl: false,
+			alt: false,
+			shift: true,
+			win: false,
+		});
+		const data = await session.stop();
+		expect(data.version).toBe(3);
+		expect(data.shortcuts).toEqual([{ timeMs: 1_100, combo: "Ctrl+S" }]);
+	});
+});

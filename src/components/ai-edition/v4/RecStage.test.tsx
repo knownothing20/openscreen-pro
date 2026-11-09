@@ -208,6 +208,7 @@ describe("RecStage controls", () => {
 			micEnabled: false,
 			cursorCaptureMode: "editable-overlay",
 			autoZoomEnabled: true,
+			keyboardShortcutsEnabled: false,
 			markerToastOpacity: 0.72,
 		});
 		renderRecStage();
@@ -242,6 +243,7 @@ describe("RecStage controls", () => {
 			micEnabled: false,
 			cursorCaptureMode: "system",
 			autoZoomEnabled: true,
+			keyboardShortcutsEnabled: false,
 			markerToastOpacity: 0.72,
 		});
 		renderRecStage();
@@ -265,6 +267,7 @@ describe("RecStage controls", () => {
 			micEnabled: false,
 			cursorCaptureMode: "editable-overlay",
 			autoZoomEnabled: true,
+			keyboardShortcutsEnabled: false,
 			markerToastOpacity: 0.72,
 		});
 		const api = window.electronAPI as unknown as Record<string, unknown>;
@@ -298,6 +301,7 @@ describe("RecStage controls", () => {
 			cursorCaptureMode: "editable-overlay",
 			hideDesktopIcons: false,
 			autoZoomEnabled: true,
+			keyboardShortcutsEnabled: false,
 			markerToastOpacity: 0.72,
 		};
 		stubRecordingPrefs();
@@ -510,6 +514,7 @@ describe("RecStage controls", () => {
 			cursorCaptureMode: "editable-overlay",
 			hideDesktopIcons: false,
 			autoZoomEnabled: true,
+			keyboardShortcutsEnabled: false,
 			markerToastOpacity: 0.72,
 		};
 		act(() => {
