@@ -555,6 +555,23 @@ impl Gpu {
     /// back to WARP would defeat the point (the user would be told "your GPU" while the machine
     /// renders on the CPU), so hardware failure with a pinned adapter is an error. Without one,
     /// the historical fallback applies unchanged.
+    /// Whether this device is still usable, and why not when it is not.
+    ///
+    /// A device that has been removed (driver reset, TDR, a driver that lost its adapter) keeps
+    /// answering calls, and every one of them fails — which is exactly what the AMD export
+    /// failures looked like: a healthy probe, then the first real frame refused with a code
+    /// `av_strerror` renders as "Unknown error occurred", while a `0x887A0005` sat in the log
+    /// from the first texture upload. Asking DXGI directly is the difference between "the
+    /// encoder said no" and "the device is gone", and only the second one is worth rebuilding.
+    ///
+    /// `None` means healthy. `Some(hresult)` is the reason DXGI reports, unmodified.
+    pub fn device_removed_reason(&self) -> Option<u32> {
+        match unsafe { self.device.GetDeviceRemovedReason() } {
+            Ok(()) => None,
+            Err(error) => Some(error.code().0 as u32),
+        }
+    }
+
     pub fn create_auto_on(adapter_luid: Option<u64>, debug: bool) -> Result<Gpu> {
         let hw_err = match Gpu::create_backend_on(Backend::Hardware, adapter_luid, debug) {
             Ok(gpu) => return Ok(gpu),

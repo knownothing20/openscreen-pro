@@ -830,9 +830,6 @@ impl Task for ExportMultiTask {
             .as_ref()
             .and_then(|p| p.encoder_device.clone())
             .unwrap_or_else(|| "auto".to_string());
-        let (gpu, choice, adapter) = create_export_gpu(&requested).map_err(Error::from_reason)?;
-        // Per-thread, read by `VideoEncoder::open` below: this export's choice, nothing else's.
-        openscreen_compositor::encoder_choice::set_choice(choice);
         let mut cfg = config::all().pop().expect("au moins une config"); // C8
         cfg.zoom = false;
         cfg.layout_anim = false;
@@ -884,52 +881,86 @@ impl Task for ExportMultiTask {
         // compensation géométrique. En construisant le compositeur à la
         // géométrie de sortie, `blit_resized` devient une identité et les pixels
         // sont rastérisés exactement là où ils seront encodés.
-        let comp = Compositor::new_sized(&gpu, export_params.width, export_params.height)
-            .map_err(|e| Error::from_reason(format!("{e:#}")))?;
-        if let Some(scene) = &scene {
-            comp.set_live_params(live_params_from_scene(scene));
-        }
-        comp.set_scene(scene);
-
         let mut progress = throttled_progress(self.on_progress.take());
         // The pipeline polls this closure once per frame. It is checked against the control
         // AFTER an error too, because "the export was cancelled" and "the export failed" are
         // different outcomes and the caller must not have to guess which one it got.
         let cancel_flag = self.control.clone();
-        let cancel = cancel_flag
-            .as_ref()
-            .map(|control| {
-                let control = control.clone();
-                move || control.is_cancelled()
-            });
-        let outcome = pipeline::run_composited_multi(
-            &self.clips,
-            &self.out_path,
-            &gpu,
-            &comp,
-            &cfg,
-            &export_params,
-            &mut progress,
-            cancel.as_ref().map(|f| f as &dyn Fn() -> bool),
-        );
-        let s = match outcome {
-            Ok(stats) => stats,
-            Err(error) => {
-                // Nothing was recorded, but the CHOICE must not survive into the next export that
-                // reuses this worker thread.
-                openscreen_compositor::encoder_choice::reset();
-                if cancel_flag.map(|c| c.is_cancelled()).unwrap_or(false) {
-                    return Err(Error::from_reason("EXPORT_CANCELLED"));
+        let cancel = cancel_flag.as_ref().map(|control| {
+            let control = control.clone();
+            move || control.is_cancelled()
+        });
+
+        // One rebuild, and only one. A device that DXGI reports as removed cannot be fixed from
+        // inside the export: every D3D11 call on it fails, including the encoder's first frame.
+        // The observed AMD failure looked exactly like this — the probe passed on a fresh
+        // instance, then the first real frame was refused while the log carried a 0x887A0005
+        // from the first texture upload. Rebuilding the device on the SAME adapter and running
+        // the same export again is a different thing from switching encoder, card or format:
+        // nothing is carried over, no frame is written twice, and the output file is discarded
+        // and re-created by `run_composited_multi` itself.
+        let mut attempt: u32 = 0;
+        let (stats, report, adapter) = loop {
+            attempt += 1;
+            let (gpu, choice, adapter) = create_export_gpu(&requested).map_err(Error::from_reason)?;
+            // Per-thread, read by `VideoEncoder::open` below: this export's choice, nothing else's.
+            openscreen_compositor::encoder_choice::set_choice(choice);
+            let comp = Compositor::new_sized(&gpu, export_params.width, export_params.height)
+                .map_err(|e| Error::from_reason(format!("{e:#}")))?;
+            if let Some(scene) = &scene {
+                comp.set_live_params(live_params_from_scene(scene));
+            }
+            comp.set_scene(scene.clone());
+
+            let outcome = pipeline::run_composited_multi(
+                &self.clips,
+                &self.out_path,
+                &gpu,
+                &comp,
+                &cfg,
+                &export_params,
+                &mut progress,
+                cancel.as_ref().map(|f| f as &dyn Fn() -> bool),
+            );
+            match outcome {
+                Ok(stats) => break (stats, openscreen_compositor::encoder_choice::take_report(), adapter),
+                Err(error) => {
+                    // Nothing was recorded, but the CHOICE must not survive into the next export
+                    // that reuses this worker thread.
+                    openscreen_compositor::encoder_choice::reset();
+                    if cancel_flag.as_ref().map(|c| c.is_cancelled()).unwrap_or(false) {
+                        return Err(Error::from_reason("EXPORT_CANCELLED"));
+                    }
+                    let message = format!("{error:#}");
+                    let removed = gpu.device_removed_reason();
+                    let retryable = attempt == 1
+                        && pipeline::is_first_frame_failure(&message)
+                        && pipeline::retry_allows_device_restart(choice)
+                        && (removed.is_some() || pipeline::injected_device_removed());
+                    if retryable {
+                        eprintln!(
+                            "[pipeline] première frame refusée sur {} ({}), appareil D3D11 recréé — nouvelle tentative {}/2, même encodeur, même format",
+                            gpu.adapter.name,
+                            removed.map(|r| format!("0x{r:08X}")).unwrap_or_else(|| "appareil signalé retiré".to_string()),
+                            attempt + 1
+                        );
+                        continue;
+                    }
+                    if let Some(reason) = removed {
+                        eprintln!(
+                            "[pipeline] appareil D3D11 retiré (0x{reason:08X}) sur {}, export abandonné après {attempt} tentative(s)",
+                            gpu.adapter.name
+                        );
+                    }
+                    return Err(Error::from_reason(message));
                 }
-                return Err(Error::from_reason(format!("{error:#}")));
             }
         };
-        let report = openscreen_compositor::encoder_choice::take_report();
         Ok(ExportOutcome {
-            frames: s.frames as u32,
-            wall_s: s.wall_s,
-            fps: s.fps,
-            video_duration_s: s.video_duration_s,
+            frames: stats.frames as u32,
+            wall_s: stats.wall_s,
+            fps: stats.fps,
+            video_duration_s: stats.video_duration_s,
             encoder: report.as_ref().map(|r| r.encoder.clone()),
             zero_copy: report.as_ref().map(|r| r.zero_copy).unwrap_or(false),
             adapter,

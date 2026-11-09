@@ -1482,6 +1482,72 @@ pub(crate) fn injected_first_frame_failure(_encoder: &str) -> Option<String> {
     None
 }
 
+/// Test-only: fail the EXPORT's own first frame, not the probe's.
+///
+/// The probe hook above refuses a candidate ("this encoder cannot encode here"), which is a
+/// different decision from "this export's first submission was refused" — the second one is what
+/// the device rebuild answers. `OPENSCREEN_TEST_FAIL_EXPORT_FIRST_FRAME=1` fails once per process
+/// so a retry can succeed; `=always` fails every attempt, which is how the "give up after one
+/// rebuild" path is proved.
+#[cfg(feature = "encoder-test-hooks")]
+pub fn injected_export_first_frame_failure() -> Option<String> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static USED: AtomicBool = AtomicBool::new(false);
+    let mode = std::env::var("OPENSCREEN_TEST_FAIL_EXPORT_FIRST_FRAME").ok()?;
+    match mode.trim() {
+        "always" => Some("injected export first-frame failure (every attempt)".to_string()),
+        "1" => {
+            if USED.swap(true, Ordering::SeqCst) {
+                None
+            } else {
+                Some("injected export first-frame failure (first attempt)".to_string())
+            }
+        }
+        _ => None,
+    }
+}
+
+#[cfg(not(feature = "encoder-test-hooks"))]
+pub fn injected_export_first_frame_failure() -> Option<String> {
+    None
+}
+
+/// Whether a failure was the export's first submitted frame.
+///
+/// The marker is added by the frame loop itself, so this cannot be satisfied by an encoder name
+/// appearing in an unrelated message.
+pub fn is_first_frame_failure(message: &str) -> bool {
+    message.contains("first_frame:")
+}
+
+/// Whether this request may restart the device after a first-frame failure.
+///
+/// Only where there is no better answer: a manual AMD pick has no alternate candidate, and Auto
+/// keeps its own candidate order either way. A manual NVIDIA pick and a CPU pick keep exactly
+/// the behaviour they had — silence and a failure, or a failure and nothing else.
+pub fn retry_allows_device_restart(choice: EncoderChoice) -> bool {
+    match choice {
+        EncoderChoice::Vendor(vendor) => vendor == 0x1002,
+        EncoderChoice::Auto => true,
+        EncoderChoice::Cpu => false,
+    }
+}
+
+/// Test-only: report the device as removed even though it is healthy.
+///
+/// The retry decision reads DXGI, and a test cannot make a real adapter disappear. This makes
+/// the *same* decision function answer "removed", so what the tests exercise is the production
+/// path with one input substituted — not a parallel branch that only tests run.
+#[cfg(feature = "encoder-test-hooks")]
+pub fn injected_device_removed() -> bool {
+    std::env::var("OPENSCREEN_TEST_DEVICE_REMOVED").is_ok_and(|v| v == "1")
+}
+
+#[cfg(not(feature = "encoder-test-hooks"))]
+pub fn injected_device_removed() -> bool {
+    false
+}
+
 /// Give one quality target to three encoders that do not share a vocabulary.
 ///
 /// `ctx.bit_rate` alone is not a rate-control decision. Measured on the test machine, same timeline
@@ -2087,21 +2153,43 @@ unsafe fn run_multi_inner(
             // `send_composited` (le compositeur relit son NV12 interne vers un AVFrame
             // YUV420P / NV12 et l'encodeur le consomme directement). Pas de hw_frames_ctx,
             // pas de rgb_to_nv12 — c'est exactement le repli WARP que PR #162 a câblé.
-            if software_frames {
-                enc.send_composited(comp, out_w, out_h, frame_index as i64)?;
-                drain_encoder(ectx, octx, ostream, opkt)?;
-            } else {
-                // Hardware path: the composed texture goes straight into an NV12
-                // encoder frame, so nothing ever descends to system memory.
-                let outf = av_frame_alloc();
-                averr(av_hwframe_get_buffer(enc_frames, outf, 0), "hwframe_get_buffer")?;
-                let out_tex = (*outf).data[0] as *mut c_void;
-                let out_slice = (*outf).data[1] as u32;
-                comp.rgb_to_nv12_scaled(out_w, out_h, out_tex, out_slice)?;
-                (*outf).pts = frame_index as i64;
-                enc.send(outf)?;
-                drain_encoder(ectx, octx, ostream, opkt)?;
-                av_frame_free(&mut (outf as *mut _));
+            // Test hook: the same shape as a driver refusal, injected where the export's own
+            // first submission happens (the probe is a separate instance and is not reached here).
+            if frame_index == 0 {
+                if let Some(reason) = injected_export_first_frame_failure() {
+                    return Err(anyhow::anyhow!("first_frame: {reason}"));
+                }
+            }
+            let submitted = (|| -> Result<()> {
+                if software_frames {
+                    enc.send_composited(comp, out_w, out_h, frame_index as i64)?;
+                    drain_encoder(ectx, octx, ostream, opkt)?;
+                } else {
+                    // Hardware path: the composed texture goes straight into an NV12
+                    // encoder frame, so nothing ever descends to system memory.
+                    let outf = av_frame_alloc();
+                    averr(av_hwframe_get_buffer(enc_frames, outf, 0), "hwframe_get_buffer")?;
+                    let out_tex = (*outf).data[0] as *mut c_void;
+                    let out_slice = (*outf).data[1] as u32;
+                    comp.rgb_to_nv12_scaled(out_w, out_h, out_tex, out_slice)?;
+                    (*outf).pts = frame_index as i64;
+                    enc.send(outf)?;
+                    drain_encoder(ectx, octx, ostream, opkt)?;
+                    av_frame_free(&mut (outf as *mut _));
+                }
+                Ok(())
+            })();
+            if let Err(error) = submitted {
+                // Frame 0 is the one a driver refuses when its device is gone: the probe ran on
+                // a fresh instance moments earlier, so a refusal here is this export's first real
+                // submission — nothing has been encoded, nothing has to be discarded. Marking it
+                // is what lets the caller tell it apart from a failure mid-file, where a retry
+                // would mean rewriting frames that already exist.
+                return Err(if frame_index == 0 {
+                    anyhow::anyhow!("first_frame: {error:#}")
+                } else {
+                    error
+                });
             }
             // Cancellation is checked per frame, before the frame is handed on: the export
             // loop is where the time goes, so this is the only place a stop is worth anything.
@@ -2115,15 +2203,11 @@ unsafe fn run_multi_inner(
             // what a cancelled export must not do. This is also why the note said to revisit if a
             // failed export ever became a normal mode of operation; cancelling makes it one.
             if cancel.map(|c| c()).unwrap_or(false) {
-                unsafe {
-                    av_packet_free(&mut (opkt as *mut _));
-                    let mut pb = sn_fmt_get_pb(octx);
-                    if !pb.is_null() {
-                        avio_closep(&mut pb);
-                        sn_fmt_set_pb(octx, ptr::null_mut());
-                    }
-                    avformat_free_context(octx);
-                }
+                // The muxer is NOT closed here any more: every error now leaves through the
+                // `match frames` below, which owns that teardown. Closing in both places was a
+                // double free of `octx` — found by running the GUI cancel against the new
+                // build, where the cancelled export started leaving a 48-byte temp file behind
+                // that the previous build cleaned up.
                 bail!("export cancelled");
             }
             progress(frame_index + 1);
@@ -2154,7 +2238,32 @@ unsafe fn run_multi_inner(
             }
             Ok(())
         },
-    )?;
+    );
+
+    // A failure anywhere in the frame loop used to leave the muxer open: `*_inner` owns raw
+    // pointers with no RAII, and only the cancellation branch closed them. On Windows that
+    // keeps the output file locked, so the caller cannot delete the temp file (EBUSY) and a
+    // retry cannot even rename its own result — measured while building the AMF retry: the
+    // rebuilt attempt encoded fine and then died on `rename ... EBUSY`. Closing here is the
+    // same teardown the success path performs, and it is what makes "retry once" possible at
+    // all, independent of why the first attempt failed.
+    let frames = match frames {
+        Ok(frames) => frames,
+        Err(error) => {
+            unsafe {
+                av_packet_free(&mut (opkt as *mut _));
+                let mut pb = sn_fmt_get_pb(octx);
+                if !pb.is_null() {
+                    avio_closep(&mut pb);
+                    sn_fmt_set_pb(octx, ptr::null_mut());
+                }
+                avformat_free_context(octx);
+            }
+            av_buffer_unref(&mut enc_frames);
+            av_buffer_unref(&mut enc_hwdev);
+            return Err(error);
+        }
+    };
 
     comp.set_cursor_time(None);
     comp.set_timeline_time(None);
@@ -2340,6 +2449,50 @@ mod tests {
             let returned = classify_hardware_prerequisite(Err(error))
                 .expect_err("ordinary failures must remain failures");
             assert_eq!(returned.code(), hresult);
+        }
+    }
+
+    /// The retry gate is three questions, and the tests below pin each one separately so a
+    /// future edit cannot widen the blast radius without saying so.
+    #[test]
+    fn the_first_frame_marker_is_specific() {
+        // The marker the frame loop adds: this is the export's own first submission.
+        assert!(is_first_frame_failure("first_frame: send_frame: -1313558101 (Unknown error)"));
+        // A mid-file failure is not a first-frame failure: retrying it would rewrite frames.
+        assert!(!is_first_frame_failure("send_frame: -1313558101 (Unknown error)"));
+        // The PROBE's refusal wording is deliberately different. A probe failure means "this
+        // candidate cannot encode at all", which is what the candidate loop exists for — it must
+        // not be mistaken for a device that needs rebuilding.
+        assert!(!is_first_frame_failure("h264_amf: first frame failed (send_frame: -1)"));
+        assert!(!is_first_frame_failure(""));
+    }
+
+    #[test]
+    fn only_amd_and_auto_may_restart_the_device() {
+        // Manual AMD: no alternate candidate exists, and the device is the one the user picked.
+        assert!(retry_allows_device_restart(EncoderChoice::Vendor(0x1002)));
+        // Manual NVIDIA: unchanged behaviour — no retry.
+        assert!(!retry_allows_device_restart(EncoderChoice::Vendor(0x10DE)));
+        // Manual Intel is not special-cased either.
+        assert!(!retry_allows_device_restart(EncoderChoice::Vendor(0x8086)));
+        // CPU: nothing hardware to rebuild.
+        assert!(!retry_allows_device_restart(EncoderChoice::Cpu));
+        // Auto keeps its own candidate order after a rebuild, so it may retry.
+        assert!(retry_allows_device_restart(EncoderChoice::Auto));
+    }
+
+    /// The shipped build has no way to claim a device is removed: the hook is compiled out, and
+    /// `injected_device_removed` is a constant `false`. This is the same compile-time gate the
+    /// other fault hooks use, asserted rather than assumed.
+    #[test]
+    fn the_device_removed_hook_is_off_unless_the_test_feature_builds_it() {
+        if cfg!(feature = "encoder-test-hooks") {
+            assert_eq!(
+                injected_device_removed(),
+                std::env::var("OPENSCREEN_TEST_DEVICE_REMOVED").is_ok_and(|v| v == "1")
+            );
+        } else {
+            assert!(!injected_device_removed());
         }
     }
 
