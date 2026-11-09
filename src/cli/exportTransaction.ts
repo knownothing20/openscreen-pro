@@ -99,17 +99,27 @@ export interface ExportTransactionPorts {
 	 * crosses the bridge. Before this, the check needed the whole file in the renderer — for a
 	 * 30-minute export that was the entire video, read twice (Blob + ArrayBuffer).
 	 */
-	verifyVideo(stage: string): Promise<void>;
+	verifyVideo(stage: string, label?: string): Promise<void>;
+	/**
+	 * Mix the voiceover into the rendered stage, file to file.
+	 *
+	 * The desktop path. Neither file crosses this call: main reads both from disk and writes the
+	 * mixed stage itself, so a 30-minute mix costs a renderer nothing. When this port is present
+	 * it is the only mix path used — a failure here fails the export rather than falling back to
+	 * the byte-carrying one below.
+	 */
+	mixFile?(renderStage: string, audioPath: string, mixedStage: string): Promise<void>;
 	/**
 	 * The stage's bytes, for mixing only.
 	 *
-	 * WebCodecs needs the actual packets to remux, so a voiceover export does read the file —
-	 * that one is inherent. A plain export must not call this.
+	 * Kept for a caller with no main process to hand the work to (tests, a future browser
+	 * build). The desktop CLI does not implement these: `readVideo` on a 30-minute render is
+	 * exactly the copy this round removed.
 	 */
-	readVideo(stage: string): Promise<ArrayBuffer>;
-	readVoiceover(audioPath: string): Promise<ArrayBuffer>;
-	mix(video: ArrayBuffer, voiceover: ArrayBuffer): Promise<ArrayBuffer>;
-	writeStage(stage: string, bytes: ArrayBuffer, protectedPaths: readonly string[]): Promise<void>;
+	readVideo?(stage: string): Promise<ArrayBuffer>;
+	readVoiceover?(audioPath: string): Promise<ArrayBuffer>;
+	mix?(video: ArrayBuffer, voiceover: ArrayBuffer): Promise<ArrayBuffer>;
+	writeStage?(stage: string, bytes: ArrayBuffer, protectedPaths: readonly string[]): Promise<void>;
 	commit(stage: string, finalPath: string, protectedPaths: readonly string[]): Promise<void>;
 	/** Best-effort: a stage that is already gone is success. */
 	remove(stage: string): Promise<void>;
@@ -159,18 +169,29 @@ export async function runTransactionalExport(
 		let candidate = stages.render;
 		if (audioPath) {
 			stagesToClean.push(stages.mixed);
-			// Only here, and only because remuxing needs the packets.
-			const rendered = await ports.readVideo(stages.render);
-			// Read the voiceover BEFORE mixing: a missing or unreadable take has to fail the run
-			// while the destination is still untouched, not after a second encode.
-			const voiceover = await ports.readVoiceover(audioPath).catch((error: unknown) => {
-				throw new Error(
-					`Failed to read voiceover file: ${audioPath} — ${error instanceof Error ? error.message : String(error)}`,
-				);
-			});
-			const mixed = await ports.mix(rendered, voiceover);
-			requireMp4(mixed, "mixed video");
-			await ports.writeStage(stages.mixed, mixed, protectedPaths);
+			if (ports.mixFile) {
+				// Nothing about the render enters this process. The mixed stage is checked the same
+				// way the render was — a verdict from main, over a file handle.
+				await ports.mixFile(stages.render, audioPath, stages.mixed);
+				await ports.verifyVideo(stages.mixed, "mixed video");
+			} else {
+				// Only here, and only because remuxing needs the packets.
+				const rendered = await ports.readVideo?.(stages.render);
+				if (!rendered) throw new Error("This export has no way to mix a voiceover.");
+				// Read the voiceover BEFORE mixing: a missing or unreadable take has to fail the run
+				// while the destination is still untouched, not after a second encode.
+				if (!ports.readVoiceover || !ports.mix || !ports.writeStage) {
+					throw new Error("This export has no way to mix a voiceover.");
+				}
+				const voiceover = await ports.readVoiceover(audioPath).catch((error: unknown) => {
+					throw new Error(
+						`Failed to read voiceover file: ${audioPath} — ${error instanceof Error ? error.message : String(error)}`,
+					);
+				});
+				const mixed = await ports.mix(rendered, voiceover);
+				requireMp4(mixed, "mixed video");
+				await ports.writeStage(stages.mixed, mixed, protectedPaths);
+			}
 			candidate = stages.mixed;
 		}
 

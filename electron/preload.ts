@@ -382,6 +382,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	deleteExportStage: (stagePath: string) => {
 		return ipcRenderer.invoke("delete-export-stage", stagePath);
 	},
+	mixVoiceoverToFile: (request: {
+		jobId: string;
+		renderPath: string;
+		voiceoverPath: string;
+		outPath: string;
+		mode: "mix" | "replace";
+		offsetSec: number;
+		originalGain?: number;
+	}) => ipcRenderer.invoke("mix-voiceover-to-file", request),
+	cancelVoiceoverMix: (jobId: string) => ipcRenderer.invoke("cancel-voiceover-mix", jobId),
 	writeExportToPath: (
 		videoData: ArrayBuffer,
 		filePath: string,

@@ -343,6 +343,32 @@ interface Window {
 		) => Promise<{ success: boolean; path?: string; message?: string; error?: string }>;
 		/** Remove one of this app's own export stages. Only names it produced are accepted. */
 		deleteExportStage: (stagePath: string) => Promise<{ success: boolean; message?: string }>;
+		/**
+		 * Mix a voiceover into a rendered stage, on disk, in the main process.
+		 *
+		 * Paths and small parameters only: no media crosses this call in either direction. The
+		 * output path must be one of this app's stage names, so the renderer cannot ask main to
+		 * write an arbitrary file.
+		 */
+		mixVoiceoverToFile: (request: {
+			jobId: string;
+			renderPath: string;
+			voiceoverPath: string;
+			outPath: string;
+			mode: "mix" | "replace";
+			offsetSec: number;
+			originalGain?: number;
+		}) => Promise<{
+			success: boolean;
+			outPath?: string;
+			hasBed?: boolean;
+			ffmpegPath?: string;
+			wallMs?: number;
+			cancelled?: boolean;
+			message?: string;
+		}>;
+		/** Stop one mix by its job id. An unknown id means it has already settled. */
+		cancelVoiceoverMix: (jobId: string) => Promise<{ accepted: boolean }>;
 		writeExportToPath: (
 			videoData: ArrayBuffer,
 			filePath: string,

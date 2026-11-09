@@ -254,6 +254,125 @@ describe("runTransactionalExport — a failed stage cannot reach the destination
 	});
 });
 
+describe("runTransactionalExport — the file-to-file mix (desktop)", () => {
+	/**
+	 * The port the CLI now uses. What matters here is not that the mix happens — that is the
+	 * mixer's own test — but that the transaction around it keeps its promises: the render is
+	 * never read, the mixed stage is verified like any other, and a failure cannot reach the
+	 * destination or fall back to the byte-carrying path.
+	 */
+	function fileHarness() {
+		const seen = {
+			render: [] as string[],
+			mixFile: [] as Array<[string, string, string]>,
+			verify: [] as Array<[string, string | undefined]>,
+			read: [] as string[],
+			mix: 0,
+			commit: [] as Array<[string, string]>,
+			remove: [] as string[],
+		};
+		const ports: ExportTransactionPorts = {
+			render: vi.fn(async (stage: string) => {
+				seen.render.push(stage);
+			}),
+			verifyVideo: vi.fn(async (stage: string, label?: string) => {
+				seen.verify.push([stage, label]);
+			}),
+			mixFile: vi.fn(async (render: string, audio: string, out: string) => {
+				seen.mixFile.push([render, audio, out]);
+			}),
+			// Present but must never be reached: this is the whole claim of the round.
+			readVideo: vi.fn(async (stage: string) => {
+				seen.read.push(stage);
+				return fakeBytes();
+			}),
+			readVoiceover: vi.fn(async () => fakeBytes()),
+			mix: vi.fn(async () => {
+				seen.mix += 1;
+				return fakeBytes();
+			}),
+			writeStage: vi.fn(async () => undefined),
+			commit: vi.fn(async (stage: string, final: string) => {
+				seen.commit.push([stage, final]);
+			}),
+			remove: vi.fn(async (stage: string) => {
+				seen.remove.push(stage);
+			}),
+		};
+		return { ports, seen };
+	}
+
+	it("mixes by path and never pulls the render into the renderer", async () => {
+		const { ports, seen } = fileHarness();
+		await runTransactionalExport({
+			finalPath: FINAL,
+			protectedPaths: PROTECTED,
+			audioPath: VOICE,
+			ports,
+		});
+
+		expect(seen.mixFile).toHaveLength(1);
+		const [render, audio, out] = seen.mixFile[0];
+		expect(render).toBe(seen.render[0]);
+		expect(audio).toBe(VOICE);
+		expect(seen.read).toEqual([]);
+		expect(seen.mix).toBe(0);
+		expect(seen.commit).toEqual([[out, FINAL]]);
+	});
+
+	it("verifies the mixed stage too, and says which stage failed", async () => {
+		const { ports, seen } = fileHarness();
+		await runTransactionalExport({
+			finalPath: FINAL,
+			protectedPaths: PROTECTED,
+			audioPath: VOICE,
+			ports,
+		});
+		expect(seen.verify).toEqual([
+			[seen.render[0], undefined],
+			[seen.mixFile[0][2], "mixed video"],
+		]);
+	});
+
+	it("fails the export when the mix fails, without falling back or committing", async () => {
+		const { ports, seen } = fileHarness();
+		ports.mixFile = vi.fn(async () => {
+			throw new Error("ffmpeg failed (1): Invalid data found");
+		});
+		await expect(
+			runTransactionalExport({
+				finalPath: FINAL,
+				protectedPaths: PROTECTED,
+				audioPath: VOICE,
+				ports,
+			}),
+		).rejects.toThrow(/Invalid data/);
+
+		expect(seen.read).toEqual([]);
+		expect(seen.mix).toBe(0);
+		expect(seen.commit).toEqual([]);
+		// Both stages are cleaned up, including the half-written mixed one.
+		expect(seen.remove).toHaveLength(2);
+	});
+
+	it("refuses to commit a mixed stage that main says is not a usable MP4", async () => {
+		const { ports, seen } = fileHarness();
+		ports.verifyVideo = vi.fn(async (stage: string, label?: string) => {
+			seen.verify.push([stage, label]);
+			if (label === "mixed video") throw new Error("The mixed video is not a usable MP4");
+		});
+		await expect(
+			runTransactionalExport({
+				finalPath: FINAL,
+				protectedPaths: PROTECTED,
+				audioPath: VOICE,
+				ports,
+			}),
+		).rejects.toThrow(/mixed video/);
+		expect(seen.commit).toEqual([]);
+	});
+});
+
 describe("stage names", () => {
 	it("are unique per run, beside the target, and keep the container extension", () => {
 		const a = stagePathsFor(FINAL, "run-a");

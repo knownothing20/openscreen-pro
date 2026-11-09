@@ -11,16 +11,22 @@ import path from "node:path";
  * are gigabytes of litter in the folder the user exports to.
  *
  * The danger is obvious: this deletes files, automatically, in a directory full of the user's
- * own videos. So it is built around three refusals rather than a rule:
+ * own videos. So it is built around refusals rather than a rule:
  *
  *   1. The name must match one of the four shapes this app produces. A file called
  *      `holiday.mp4` is not a candidate no matter how old it is; nor is a `.render-` name with
  *      a token too short to be ours. Extension alone decides nothing.
- *   2. The file must be older than {@link DEFAULT_MAX_AGE_MS}. An export that started a minute
+ *   2. **Only names that carry their writer's pid are eligible at all.** A `.render-`/`.mixed-`
+ *      stage has no pid, and a name is not ownership: another CLI process could own exactly
+ *      that name, a user could have one, and V2.5's sweep would delete either after a day. Those
+ *      are now reported as `unattributable` and left alone. A stage this run created is removed
+ *      by this run's own `finally`, which is the only path with real ownership.
+ *   3. The file must be older than {@link DEFAULT_MAX_AGE_MS}. An export that started a minute
  *      ago leaves exactly such a file, and deleting it would corrupt a live run.
- *   3. When the name carries a pid, that process must be gone. The encoder's own partial file
- *      bakes its pid in, which is the only reliable way to tell "someone is writing this" from
- *      "this was abandoned" without asking every process on the machine.
+ *   4. The pid in the name must be **provably dead**. "Signal 0 threw" is not the same as "the
+ *      process is gone": EPERM means it exists and belongs to someone else, and any other errno
+ *      means the question could not be answered. Both count as alive here — an unanswerable
+ *      ownership question is not permission to delete.
  *
  * Anything uncertain is kept. A leftover file costs disk; a deleted one costs the user's
  * afternoon. And every failure is a log line — the sweep runs at the start of a real export and
@@ -100,14 +106,22 @@ export interface SweepOptions {
 	/** Fixed by tests. */
 	now?: number;
 	maxAgeMs?: number;
-	/** Injected by tests; the real one asks the OS whether the pid exists. */
-	isProcessAlive?: (pid: number) => boolean;
+	/** Injected by tests; the real one asks the OS. */
+	processState?: (pid: number) => ProcessState;
 	warn?: (message: string) => void;
+	/** Where a deliberate skip is recorded. */
+	note?: (message: string) => void;
 }
+
+/** What the OS would say about a pid, including "it cannot say". */
+export type ProcessState = "alive" | "dead" | "unknown";
 
 export interface SweepResult {
 	removed: string[];
-	kept: Array<{ path: string; reason: "active" | "not-expired" | "process-alive" }>;
+	kept: Array<{
+		path: string;
+		reason: "active" | "not-expired" | "process-alive" | "process-unknown" | "unattributable";
+	}>;
 }
 
 /**
@@ -139,14 +153,20 @@ export function activeExportTemps(): string[] {
 	return [...activeTemps.keys()];
 }
 
-/** Is `pid` still a running process? Signal 0 only asks the question, it delivers nothing. */
-function processIsAlive(pid: number): boolean {
+/**
+ * What the OS says about `pid`. Signal 0 only asks the question, it delivers nothing.
+ *
+ * Only ESRCH means "no such process". EPERM means it exists under another account, and anything
+ * else (an unsupported platform, a syscall the sandbox refused) means the answer is unknown —
+ * and unknown is treated as alive by the caller, because the cost of being wrong is a deleted
+ * file.
+ */
+export function probeProcessState(pid: number): ProcessState {
 	try {
 		process.kill(pid, 0);
-		return true;
+		return "alive";
 	} catch (error) {
-		// EPERM means the process exists and belongs to someone else: alive.
-		return (error as NodeJS.ErrnoException).code === "EPERM";
+		return (error as NodeJS.ErrnoException).code === "ESRCH" ? "dead" : "unknown";
 	}
 }
 
@@ -166,8 +186,9 @@ export async function sweepStaleExportTemps(
 ): Promise<SweepResult> {
 	const now = options.now ?? Date.now();
 	const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
-	const alive = options.isProcessAlive ?? processIsAlive;
+	const probe = options.processState ?? probeProcessState;
 	const warn = options.warn ?? ((message: string) => console.warn(message));
+	const note = options.note ?? ((message: string) => console.info(message));
 	const active = new Set<string>();
 	for (const filePath of options.activePaths ?? []) active.add(comparable(filePath));
 
@@ -198,8 +219,19 @@ export async function sweepStaleExportTemps(
 			result.kept.push({ path: filePath, reason: "active" });
 			continue;
 		}
-		if (known.pid !== null && alive(known.pid)) {
+		if (known.pid === null) {
+			// A stage name: no writer to point at, so no proof this app made it. See rule 2 above.
+			result.kept.push({ path: filePath, reason: "unattributable" });
+			note(`[export] leaving an unattributable leftover in place: ${filePath}`);
+			continue;
+		}
+		const state = probe(known.pid);
+		if (state === "alive") {
 			result.kept.push({ path: filePath, reason: "process-alive" });
+			continue;
+		}
+		if (state === "unknown") {
+			result.kept.push({ path: filePath, reason: "process-unknown" });
 			continue;
 		}
 

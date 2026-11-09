@@ -33,7 +33,6 @@ import { resolveEncoderDevice } from "@/lib/encoderDevices";
 import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
 import { calculateMp4ExportSettings } from "@/lib/exporter/mp4ExportSettings";
 import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
-import { mixVoiceoverIntoVideo } from "@/lib/exporter/voiceoverMix";
 import {
 	codecSupportNative,
 	exportGifNative,
@@ -385,7 +384,7 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 						[...protectedPaths],
 					);
 				},
-				verifyVideo: async (stage) => {
+				verifyVideo: async (stage, label = "rendered video") => {
 					// Main walks the box tree; the file stays where it is. This replaced a
 					// `fetch` of the entire export into this window just to look for "moov".
 					const inspection = await window.electronAPI?.inspectMp4?.(stage);
@@ -396,47 +395,34 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 					}
 					if (!inspection.ok) {
 						throw new Error(
-							`The rendered video is not a usable MP4 (${inspection.fileSize} bytes): ${
+							`The ${label} is not a usable MP4 (${inspection.fileSize} bytes): ${
 								inspection.reason ?? "unknown reason"
 							}`,
 						);
 					}
 				},
-				readVideo: async (stage) => {
-					const response = await fetch(toFileUrl(stage));
-					if (!response.ok) {
-						throw new Error(`Failed to read the rendered video for mixing: ${stage}`);
-					}
-					return (await response.blob()).arrayBuffer();
-				},
-				readVoiceover: async (audioPath) => {
-					const response = await fetch(toFileUrl(audioPath));
-					if (!response.ok) {
-						throw new Error(`Failed to read voiceover file: ${audioPath}`);
-					}
-					return response.arrayBuffer();
-				},
-				mix: async (video, voiceover) => {
+				// The desktop mix: three paths go to main, main runs the packaged ffmpeg, and the
+				// render never enters this process. Before this, a 30-minute voiceover export
+				// pulled 619 MB into the renderer, decoded 230 MB of audio bed per pass, and
+				// posted the finished MP4 back over IPC — 4.6 GB of renderer memory for an audio
+				// track. There is deliberately no fallback to that path: a failure here fails the
+				// export, with the destination untouched.
+				mixFile: async (renderStage, audioPath, mixedStage) => {
 					window.electronAPI.cliProgress({ percentage: 100, phase: "mixing-voiceover" });
-					// The render's bytes go in as they are: wrapping them in a Blob so the mixer
-					// can read the Blob back is one full copy of the export for nothing. The
-					// buffer is detached by the audio decode, which is fine — nothing here reads
-					// it again.
-					const mixed = await mixVoiceoverIntoVideo(video, {
-						voiceoverData: voiceover,
+					const jobId = `cli-mix-${Date.now().toString(36)}`;
+					const result = await window.electronAPI?.mixVoiceoverToFile?.({
+						jobId,
+						renderPath: renderStage,
+						voiceoverPath: audioPath,
+						outPath: mixedStage,
 						mode: request.audioMode,
 						offsetSec: request.audioOffsetSec,
 					});
-					// The muxer's own buffer: nothing is concatenated or copied again on the way
-					// to the IPC that writes it.
-					return mixed;
-				},
-				writeStage: async (stage, bytes, protectedPaths) => {
-					const saved = await window.electronAPI.writeExportToPath(bytes, stage, [
-						...protectedPaths,
-					]);
-					if (!saved.success) {
-						throw new Error(saved.message ?? `Failed to write the mixed export: ${stage}`);
+					if (!result) {
+						throw new Error("Could not mix the voiceover: the desktop bridge is unavailable.");
+					}
+					if (!result.success) {
+						throw new Error(result.message ?? "Failed to mix the voiceover into the export.");
 					}
 				},
 				commit: async (stage, finalPath, protectedPaths) => {

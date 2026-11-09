@@ -101,6 +101,7 @@ import {
 } from "../media/cursorSidecar";
 import { findMediaLinksByFingerprint, registerMediaLinks } from "../media/mediaLinksRegistry";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
+import { mixVoiceoverToFile, VoiceoverMixCancelled } from "../media/voiceoverMixer";
 import { showOpenDialogOver, showSaveDialogOver } from "../messageBox";
 import { inspectMp4 } from "../mp4Inspect";
 import {
@@ -1992,6 +1993,14 @@ export async function exportDiagnosticFile(payload: {
 		return { success: false, error: String(error) };
 	}
 }
+
+/**
+ * Mixes in flight, keyed by the id the caller made up for each one.
+ *
+ * One entry per job: cancelling an id can only ever stop the child this run started, so a
+ * stray `cancel-voiceover-mix` cannot take down another export's ffmpeg.
+ */
+const voiceoverMixJobs = new Map<string, AbortController>();
 
 export function registerIpcHandlers(
 	createEditorWindow: () => void,
@@ -4234,6 +4243,95 @@ export function registerIpcHandlers(
 			};
 		}
 		return inspectMp4(filePath);
+	});
+
+	// The voiceover mix, done on disk by the packaged ffmpeg.
+	//
+	// The renderer used to read the whole render, decode the whole audio bed, mix it in an
+	// OfflineAudioContext and post the finished MP4 back — 1.8 GB of renderer memory for a
+	// ten-minute export, 4.6 GB for thirty, to produce one audio track. Here it sends three
+	// paths and four numbers, and receives a verdict.
+	//
+	// The out path is restricted to a name this app produces (`isExportStageName`), the same
+	// guard `delete-export-stage` and `commit-export-file` use. Without it this handler would be
+	// "write an arbitrary MP4 anywhere, as the main process", which is not a capability a
+	// renderer should be able to ask for.
+	ipcMain.handle(
+		"mix-voiceover-to-file",
+		async (
+			_,
+			request: {
+				jobId?: unknown;
+				renderPath?: unknown;
+				voiceoverPath?: unknown;
+				outPath?: unknown;
+				mode?: unknown;
+				offsetSec?: unknown;
+				originalGain?: unknown;
+			},
+		) => {
+			const jobId = typeof request?.jobId === "string" ? request.jobId : null;
+			const { renderPath, voiceoverPath, outPath } = request ?? {};
+			if (
+				typeof renderPath !== "string" ||
+				typeof voiceoverPath !== "string" ||
+				typeof outPath !== "string" ||
+				!path.isAbsolute(renderPath) ||
+				!path.isAbsolute(voiceoverPath) ||
+				!path.isAbsolute(outPath) ||
+				!isExportStageName(path.basename(outPath))
+			) {
+				return { success: false, message: "The mix needs absolute paths and a stage to write." };
+			}
+			if (request.mode !== "mix" && request.mode !== "replace") {
+				return { success: false, message: "The mix mode must be mix or replace." };
+			}
+			const offsetSec = Number(request.offsetSec);
+			if (!Number.isFinite(offsetSec)) {
+				return { success: false, message: "The voiceover offset must be a number." };
+			}
+			const originalGain =
+				typeof request.originalGain === "number" && Number.isFinite(request.originalGain)
+					? request.originalGain
+					: undefined;
+
+			const controller = new AbortController();
+			if (jobId) voiceoverMixJobs.set(jobId, controller);
+			try {
+				const result = await mixVoiceoverToFile(
+					{
+						renderPath: path.normalize(renderPath),
+						voiceoverPath: path.normalize(voiceoverPath),
+						outPath: path.normalize(outPath),
+						mode: request.mode,
+						offsetSec,
+						originalGain,
+					},
+					{ signal: controller.signal },
+				);
+				return { success: true, ...result };
+			} catch (error) {
+				// "Stopped on purpose" is not a failure the UI should dress up as one, and the
+				// caller keys its cancel branch off this flag rather than off the message.
+				if (error instanceof VoiceoverMixCancelled) {
+					return { success: false, cancelled: true, message: error.message };
+				}
+				return {
+					success: false,
+					message: error instanceof Error ? error.message : String(error),
+				};
+			} finally {
+				if (jobId) voiceoverMixJobs.delete(jobId);
+			}
+		},
+	);
+
+	// Stop one mix, by the id its caller chose. An unknown id means it already settled.
+	ipcMain.handle("cancel-voiceover-mix", (_, jobId: string) => {
+		const controller = typeof jobId === "string" ? voiceoverMixJobs.get(jobId) : undefined;
+		if (!controller) return { accepted: false };
+		controller.abort();
+		return { accepted: true };
 	});
 
 	// Preflight for a transactional export: is this destination one the run may end up at?

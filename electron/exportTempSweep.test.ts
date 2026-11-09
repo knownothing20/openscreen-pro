@@ -10,6 +10,11 @@ import { classifyExportTempName, sweepStaleExportTemps } from "./exportTempSweep
  * Every case here is a real name this app produces (see `exportPathGuard.ts` and
  * `planExportWrite`), plus the files it must never touch: the user's export, the footage the
  * project reads, and a file another process is still writing.
+ *
+ * The two cases the 1.2 rule set could not answer are here by name: an old `render-` stage that
+ * belongs to another CLI process, and a user's own MP4 that happens to sit behind a matching
+ * name. Neither carries a pid, so neither can be attributed to this app — and a name is not
+ * ownership. Both must survive, which is why stage names are no longer swept at all.
  */
 
 let dir = "";
@@ -77,24 +82,34 @@ describe("classifyExportTempName — the whitelist", () => {
 });
 
 describe("sweepStaleExportTemps — what it removes", () => {
-	it("removes an expired render stage", async () => {
+	it("leaves an expired render stage alone: a name is not ownership", async () => {
 		await write("demo.render-mw82t9k6-4qhjjaaa.mp4", 2 * DAY);
-		const result = await sweepStaleExportTemps(dir, { now: Date.now() });
-		expect(result.removed).toEqual(["demo.render-mw82t9k6-4qhjjaaa.mp4"]);
-		expect(await names()).toEqual([]);
+		const notes: string[] = [];
+		const result = await sweepStaleExportTemps(dir, {
+			now: Date.now(),
+			note: (message) => notes.push(message),
+		});
+		expect(result.removed).toEqual([]);
+		expect(result.kept).toEqual([
+			{ path: path.join(dir, "demo.render-mw82t9k6-4qhjjaaa.mp4"), reason: "unattributable" },
+		]);
+		expect(notes).toHaveLength(1);
+		expect(notes[0]).toContain("unattributable");
+		expect(await names()).toEqual(["demo.render-mw82t9k6-4qhjjaaa.mp4"]);
 	});
 
-	it("removes an expired mixed stage", async () => {
+	it("leaves an expired mixed stage alone for the same reason", async () => {
 		await write("demo.mixed-mw82t9k6-4qhjjaaa.mp4", 2 * DAY);
 		const result = await sweepStaleExportTemps(dir, { now: Date.now() });
-		expect(result.removed).toEqual(["demo.mixed-mw82t9k6-4qhjjaaa.mp4"]);
+		expect(result.removed).toEqual([]);
+		expect(result.kept.map((k) => k.reason)).toEqual(["unattributable"]);
 	});
 
 	it("removes an encoder partial whose process is gone", async () => {
 		await write("demo.partial-t2w-ffcfe007.mp4", 2 * DAY);
 		const result = await sweepStaleExportTemps(dir, {
 			now: Date.now(),
-			isProcessAlive: () => false,
+			processState: () => "dead",
 		});
 		expect(result.removed).toEqual(["demo.partial-t2w-ffcfe007.mp4"]);
 	});
@@ -116,16 +131,51 @@ describe("sweepStaleExportTemps — what it must keep", () => {
 		await write("demo.partial-t2w-ffcfe007.mp4", 2 * DAY);
 		const result = await sweepStaleExportTemps(dir, {
 			now: Date.now(),
-			isProcessAlive: (pid) => pid === Number.parseInt("t2w", 36),
+			processState: (pid) => (pid === Number.parseInt("t2w", 36) ? "alive" : "dead"),
 		});
 		expect(result.removed).toEqual([]);
 		expect(result.kept.map((k) => k.reason)).toContain("process-alive");
 	});
 
-	it("keeps a file that has not expired", async () => {
-		// Five minutes old: an export that just started looks exactly like this.
-		await write("demo.render-bbbbbbbb.mp4", 5 * 60 * 1000);
+	it("keeps an old stage another CLI process is still using (no pid, no proof)", async () => {
+		// The case V2.5 could not answer: another `openscreen export` in a terminal is writing
+		// `clip.mixed-<token>.mp4` right now. It is old only because that export is long, and the
+		// name carries nothing to attribute it to. Deleting it would corrupt a live run.
+		await write("clip.mixed-9f3a1c2b4d.mp4", 3 * DAY);
 		const result = await sweepStaleExportTemps(dir, { now: Date.now() });
+		expect(result.removed).toEqual([]);
+		expect(await names()).toEqual(["clip.mixed-9f3a1c2b4d.mp4"]);
+	});
+
+	it("keeps a user's ordinary MP4 that happens to match the stage pattern", async () => {
+		// Someone renamed their own file into our naming convention, or a backup tool did. There
+		// is nothing in the name that proves this app wrote it.
+		await write("holiday.render-20240101.mp4", 90 * DAY);
+		const result = await sweepStaleExportTemps(dir, { now: Date.now() });
+		expect(result.removed).toEqual([]);
+		expect(await names()).toEqual(["holiday.render-20240101.mp4"]);
+	});
+
+	it("keeps a partial when the OS cannot say whether its pid is alive", async () => {
+		// EPERM (another account) or an errno this platform does not implement: unknown is not
+		// "dead", because the cost of guessing wrong is someone else's file.
+		await write("demo.partial-t2w-ffcfe007.mp4", 3 * DAY);
+		const result = await sweepStaleExportTemps(dir, {
+			now: Date.now(),
+			processState: () => "unknown",
+		});
+		expect(result.removed).toEqual([]);
+		expect(result.kept.map((k) => k.reason)).toContain("process-unknown");
+	});
+
+	it("keeps a file that has not expired", async () => {
+		// Five minutes old: an export that just started, or one that just crashed, looks exactly
+		// like this. Only a pid-carrying name can reach the age rule at all.
+		await write("demo.partial-t2w-ffcfe007.mp4", 5 * 60 * 1000);
+		const result = await sweepStaleExportTemps(dir, {
+			now: Date.now(),
+			processState: () => "dead",
+		});
 		expect(result.removed).toEqual([]);
 		expect(result.kept.map((k) => k.reason)).toContain("not-expired");
 	});
@@ -167,8 +217,8 @@ describe("sweepStaleExportTemps — what it must keep", () => {
 
 describe("sweepStaleExportTemps — it can never break an export", () => {
 	it("reports a failed delete as a warning and keeps going", async () => {
-		await write("demo.render-eeeeeeee.mp4", 2 * DAY);
-		await write("demo.mixed-ffffffff.mp4", 2 * DAY);
+		await write("demo.partial-t2w-ffcfe007.mp4", 2 * DAY);
+		await write("demo.partial-t2w-aaaaaaaa.mp4", 2 * DAY);
 		const warnings: string[] = [];
 		// The first unlink fails the way a locked file does; the sweep must not throw.
 		const unlink = vi
@@ -176,6 +226,7 @@ describe("sweepStaleExportTemps — it can never break an export", () => {
 			.mockRejectedValueOnce(Object.assign(new Error("EBUSY"), { code: "EBUSY" }));
 		const result = await sweepStaleExportTemps(dir, {
 			now: Date.now(),
+			processState: () => "dead",
 			warn: (message) => warnings.push(message),
 		});
 		unlink.mockRestore();
@@ -198,9 +249,10 @@ describe("sweepStaleExportTemps — it can never break an export", () => {
 	});
 
 	it("is idempotent: a second pass finds nothing and throws nothing", async () => {
-		await write("demo.render-gggggggg.mp4", 2 * DAY);
-		const first = await sweepStaleExportTemps(dir, { now: Date.now() });
-		const second = await sweepStaleExportTemps(dir, { now: Date.now() });
+		await write("demo.partial-t2w-ffcfe007.mp4", 2 * DAY);
+		const options = { now: Date.now(), processState: () => "dead" as const };
+		const first = await sweepStaleExportTemps(dir, options);
+		const second = await sweepStaleExportTemps(dir, options);
 		expect(first.removed).toHaveLength(1);
 		expect(second).toEqual({ removed: [], kept: [] });
 	});

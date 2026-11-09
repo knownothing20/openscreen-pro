@@ -166,6 +166,12 @@ function createShimElectronAPI() {
 		checkExportTarget: () => Promise.resolve({ success: false }),
 		commitExportFile: () => Promise.resolve({ success: false }),
 		deleteExportStage: () => Promise.resolve({ success: false }),
+		// The mix runs in main, against the packaged ffmpeg. In a plain browser there is no
+		// binary and no stage to write, and pretending otherwise is how a fallback to the old
+		// in-memory mixer comes back.
+		mixVoiceoverToFile: () =>
+			Promise.resolve({ success: false, message: "not available outside the desktop app" }),
+		cancelVoiceoverMix: () => Promise.resolve({ accepted: false }),
 		writeExportToPath: (
 			_videoData: ArrayBuffer,
 			_filePath: string,
