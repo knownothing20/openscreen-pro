@@ -4,7 +4,7 @@
 
 | 问题 | 答案 |
 |---|---|
-| 交付哪份源码 | 本地 `main`，产品代码最后提交 `6673df2`；本轮只多一个测试/注释提交 `0ed62bc` |
+| 交付哪份源码 | 本地 `main`，产品代码最后提交 `6673df2`；本轮只多一个测试/注释提交 `0ed62bc`（其余是本报告） |
 | 交付哪个安装包 | `release/v261-build/Openscreen.Setup.2.0.0.exe`，160,566,254 B，sha256 `03719c22…`（完整值见 §5） |
 | 208 vs 176 是什么 | **仅测试过期**：`LayerCB` 在 Focus Effect（`397f2c8`）时按设计从 176 长到 208，三个 shader 同步改了，测试没改。运行代码一直是对的 |
 | 本轮改了什么 | 2 个 Rust 文件里的**测试断言与注释**，14 增 5 删；没有运行代码改动 |
@@ -23,7 +23,7 @@
 HEAD            本报告提交（父提交 0ed62bcffcdc7390c22033d156ba444be28d7bd1）
 产品代码末尾     6673df2bccb874f135d22c5d6d9e8f84bfb3415f   fix(export): rebuild the device once …
 TS 代码末尾      2ec0e531cc5d60e5aac39a490a6d147e59a6b2c1   fix(export): honour a cancel that arrived …
-本轮唯一改动     0ed62bcffcdc7390c22033d156ba444be28d7bd1   test(compositor): assert the 208-byte LayerCB …
+本轮源码改动     0ed62bcffcdc7390c22033d156ba444be28d7bd1   test(compositor): assert the 208-byte LayerCB …
 origin/main     1b296da84aeefe13b0386f276d2da5108bdd4ec8   （0 behind）
 ```
 
@@ -232,9 +232,10 @@ NSIS `latest.yml` 的 `sha512` base64 为 `7Zfmql2jakdKgq+z3n6zJPRc6eguQ99OhvCS1
 
 ```
 branch            main
-HEAD              本报告提交（父 0ed62bc）
+HEAD              报告提交（d9f7141 正文 + 780dc2e 措辞修订），父提交 0ed62bc
 origin/main       1b296da84aeefe13b0386f276d2da5108bdd4ec8
-ahead / behind    开工 30/0 → 本轮 +2（`0ed62bc` 测试修订、本报告）= 32 / 0
+ahead / behind    截至 780dc2e：33 / 0（开工 30 + 本轮 3 个提交：0ed62bc / d9f7141 / 780dc2e）
+                  以 `git rev-list --count origin/main..HEAD` 为准；之后若再有纯文档提交，数字相应增加
 upstream          fetch: https://github.com/getopenscreen/openscreen.git
                   push : DISABLED-DO-NOT-PUSH-TO-UPSTREAM   ← 仍是禁用状态
 受保护未跟踪文件   docs/local-windows-baseline.md
@@ -244,7 +245,7 @@ upstream          fetch: https://github.com/getopenscreen/openscreen.git
 工作区            **无已跟踪修改**；保留上述未跟踪文件
 ```
 
-**逐项核对 `origin/main..HEAD` 的 31 个提交（不是只看最后一条）：**
+**逐项核对 `origin/main..HEAD` 的 33 个提交（不是只看最后一条）：**
 
 - 内容全部属于已实施的 OpenScreen 开发范围：导出事务/取消（V2.1.x）、时间轴多选（V2.1）、GPU 设备选择（V2.2/2.2.1）、
   HEVC（V2.3/2.3.1）、长视频与内存（V2.4/2.5）、磁盘混音与临时文件清理（V2.6）、首帧重试（V2.6.1），以及对应报告。
