@@ -24,9 +24,75 @@ export function cursorStateChanges(
 	return changes;
 }
 
+/**
+ * What a sidecar actually lets the editor change.
+ *
+ * Three separate answers on purpose. The pane used to ask a single question — "does
+ * `cursorStateChanges` name more than zero states?" — and that is really the *shape* question. A
+ * take recorded through a remote session carries usable positions and clicks but never names a
+ * cursor shape (`cursorType` stays null), so the answer came back "no states", `hasCursor` went
+ * false, and the whole pane was hidden on footage where every control would have worked. The
+ * ripple only needs clicks, the trail and halo only need positions; the sprite pickers need
+ * names. See the V2.7.2 report.
+ */
+export interface CursorDataCapabilities {
+	/** At least one sample with a finite, non-negative timestamp and a point inside the frame. */
+	position: boolean;
+	/** At least one click — the only input the ripple settings act on. */
+	clicks: boolean;
+	/** At least one named shape (`cursorType`), which the "pick a shape" list needs. */
+	shapes: boolean;
+}
+
+/** The interactions the compositor draws a ripple for. `move` and `mouseup` are not clicks. */
+const CLICK_INTERACTIONS = new Set(["click", "double-click", "right-click", "middle-click"]);
+
+/**
+ * Read the three answers off the samples.
+ *
+ * A sample counts as a position only when the compositor could actually place it: a timestamp it
+ * can seek to and a point inside the frame. Anything else would be clipped or would land at a
+ * nonsense time, so it must not be what keeps the pane open.
+ */
+export function cursorCapabilitiesOf(
+	samples: ReadonlyArray<{
+		timeMs: number;
+		cx: number;
+		cy: number;
+		cursorType?: string | null;
+		interactionType?: string | null;
+	}>,
+): CursorDataCapabilities {
+	let position = false;
+	let clicks = false;
+	let shapes = false;
+	for (const sample of samples) {
+		if (
+			!position &&
+			Number.isFinite(sample.timeMs) &&
+			sample.timeMs >= 0 &&
+			Number.isFinite(sample.cx) &&
+			Number.isFinite(sample.cy) &&
+			sample.cx >= 0 &&
+			sample.cx <= 1 &&
+			sample.cy >= 0 &&
+			sample.cy <= 1
+		) {
+			position = true;
+		}
+		if (!clicks && sample.interactionType && CLICK_INTERACTIONS.has(sample.interactionType)) {
+			clicks = true;
+		}
+		if (!shapes && typeof sample.cursorType === "string" && sample.cursorType.length > 0) {
+			shapes = true;
+		}
+		if (position && clicks && shapes) break;
+	}
+	return { position, clicks, shapes };
+}
+
 /** The states on screen from `startMs` to `endMs`: the one in force at the start, then every
- *  change up to the end. */
-export function cursorStatesBetween(
+ *  change up to the end. */ export function cursorStatesBetween(
 	changes: readonly CursorStateChange[],
 	startMs: number,
 	endMs: number,
@@ -44,9 +110,9 @@ export function cursorStatesBetween(
 // A recording's cursor file does not change once written: each is read once per session. A
 // recording without one reads as empty, and that answer is kept.
 const changesByPath = new Map<string, Promise<CursorStateChange[]>>();
-// What each of those answered once it did: whether the recording has any cursor data at all. Kept
+// What each of those answered once it did: what the recording's sidecar can actually drive. Kept
 // beside the promises so a hook mounted again renders the answer at once, not a frame later.
-const hasCursorByPath = new Map<string, boolean>();
+const capabilitiesByPath = new Map<string, CursorDataCapabilities>();
 
 function stateChangesOf(videoPath: string): Promise<CursorStateChange[]> {
 	let changes = changesByPath.get(videoPath);
@@ -55,7 +121,7 @@ function stateChangesOf(videoPath: string): Promise<CursorStateChange[]> {
 			.then(() => nativeBridgeClient.cursor.getRecordingData(videoPath))
 			.then((data) => {
 				const read = cursorStateChanges(data.samples);
-				hasCursorByPath.set(videoPath, read.length > 0);
+				capabilitiesByPath.set(videoPath, cursorCapabilitiesOf(data.samples));
 				return read;
 			})
 			// A read that failed (no bridge yet, a file still being written) shows nothing but the
@@ -84,10 +150,24 @@ function clipSourceRanges(document: AxcutDocument | null): Array<[string, number
 	});
 }
 
-/** Whether one of `paths` has cursor data: `null` while some are still unread and none has any. */
+/** Whether one recording's sidecar can drive the pane: a placeable pointer, or a named shape. */
+function drawableAt(videoPath: string): boolean | undefined {
+	const capabilities = capabilitiesByPath.get(videoPath);
+	if (!capabilities) return undefined;
+	return capabilities.position || capabilities.shapes;
+}
+
+/**
+ * Whether one of `paths` has anything the cursor settings can act on: `null` while some are still
+ * unread and none has any.
+ *
+ * `position` is the bar, not `shapes`: a sidecar with usable points and no named cursor type still
+ * moves the pointer, so every setting that paints at that point — ripple, trail, halo, size —
+ * works. Only the shape pickers need names, and they read `capabilitiesByPath` directly.
+ */
 function cursorDataIn(paths: readonly string[]): boolean | null {
-	if (paths.some((path) => hasCursorByPath.get(path))) return true;
-	return paths.every((path) => hasCursorByPath.has(path)) ? false : null;
+	if (paths.some((path) => drawableAt(path) === true)) return true;
+	return paths.every((path) => drawableAt(path) !== undefined) ? false : null;
 }
 
 /**

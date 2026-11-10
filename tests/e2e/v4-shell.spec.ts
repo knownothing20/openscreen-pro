@@ -342,10 +342,15 @@ test.describe("v4 editor shell", () => {
 			);
 		expect(await depth()).toBe(3);
 
+		// Three presets, not all six depths: 1.25×–5× in one row does not fit the 300 px pane.
+		// The window is FIXED — committing a level moves `aria-pressed`, not the row.
+		await expect(levels).toHaveText(["1.5×", "1.8×", "2.2×"]);
+
 		await levels.nth(2).focus(); // 2.2×, depth 4
 		await page.keyboard.press("Space");
 		await expect.poll(depth).toBe(4);
 		await expect(levels.nth(2)).toBeFocused();
+		await expect(levels.nth(2)).toHaveAttribute("aria-pressed", "true");
 
 		// Arrows step from the focused level, not from the selected one: every level is a
 		// Tab stop, so ArrowLeft on the first button has nowhere to go — and must not throw
@@ -357,12 +362,15 @@ test.describe("v4 editor shell", () => {
 		await page.keyboard.press("ArrowRight");
 		await expect.poll(depth).toBe(3);
 		await expect(levels.nth(1)).toBeFocused();
-
 		// Any other level goes through the free field, and then no preset is pressed.
 		const custom = page.getByRole("textbox", { name: "Custom zoom" });
 		await custom.fill("2.5");
 		await custom.press("Enter");
-		await expect(zoomPill(page, "2.50×")).toHaveCount(1);
+		// Scoped to the timeline, and asserted as "at least one": the editor draws the region's
+		// label on both the lane and its overview strip, so counting pills document-wide (or even
+		// per track) says more about how many surfaces exist than about the value being right.
+		const customPill = page.locator('[class*="tlTracks"] [class*="lanePill"]:has-text("2.50×")');
+		await expect(customPill.first()).toBeVisible();
 		await expect(levels.and(page.locator('[aria-pressed="true"]'))).toHaveCount(0);
 	});
 
