@@ -149,20 +149,41 @@ async function seedAndOpen(page: Page, doc: ReturnType<typeof makeDoc> = makeDoc
 	await page.addInitScript((serialized) => {
 		const parsed = JSON.parse(serialized);
 		// The shim keys documents by project id under one blob (see
-		// `createShimBridgeClient` in src/native/browserShim.ts); the shell's mount
-		// effect calls listProjects() → loadProject(first) on launch, so seeding
-		// this is what lands us in a populated editor.
+		// `createShimBridgeClient` in src/native/browserShim.ts).
 		localStorage.setItem(
 			"browser-shim-projects-v2",
 			JSON.stringify({ documents: { [parsed.project.id]: parsed }, order: [parsed.project.id] }),
 		);
 	}, JSON.stringify(doc));
 	await page.goto(EDITOR_URL, { waitUntil: "domcontentloaded" });
-	// listProjects → loadProject are both async. Rendered clip pills are the
-	// first observable proof the seeded document reached the timeline.
+
+	// The editor no longer opens the most recent project on mount — that used to drop people
+	// into a project they had not chosen, so the empty state asks (NewEditorShell's init effect).
+	// Reach the fixture the way a user does: open the picker, then pick it by title.
+	//
+	// The shortcut is handled by a window-level listener that is only attached once the shell has
+	// mounted; pressing it against a half-mounted page is a no-op, and a fixed sleep would be a
+	// guess. `toPass` retries the press until the dialog is really there.
+	const picker = page.getByRole("dialog");
+	await expect(async () => {
+		await page.keyboard.press("Control+o");
+		await expect(picker).toBeVisible({ timeout: 1_500 });
+	}).toPass({ timeout: 15_000 });
+	// Exact title, not a substring: a `hasText` match would also hit a longer project name that
+	// happens to contain this one, and silently open the wrong document.
+	await picker
+		.getByRole("button", { name: new RegExp(`^${escapeForRegExp(doc.project.title)}`) })
+		.click();
+
+	// Rendered clip pills are the first observable proof the document reached the timeline.
 	await expect(page.locator("[data-clip-id]")).toHaveCount(doc.timeline.clips.length, {
 		timeout: 15_000,
 	});
+}
+
+/** The fixture titles are literals, but a title with `.` or `(` must not widen the match. */
+function escapeForRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 test.describe("v4 editor shell", () => {
@@ -294,7 +315,9 @@ test.describe("v4 editor shell", () => {
 		await zoomPill(page, "1.80×").first().click();
 
 		const levels = page.getByRole("group", { name: "Zoom Level" }).getByRole("button");
-		await expect(levels).toHaveCount(4);
+		// A sliding window, not all six depths: the current level plus its immediate neighbours.
+		// Six labels would not fit the 300 px pane — measured at depth 3 here: 1.5× / 1.8× / 2.2×.
+		await expect(levels).toHaveText(["1.5×", "1.8×", "2.2×"]);
 
 		// One row inside the 300px pane, with every label intact: the reason this control
 		// stacks its own label instead of sitting in a `paneRow` like its neighbours.

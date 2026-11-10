@@ -15,6 +15,36 @@ import {
 	stylePresetFileBaseName,
 } from "../lib/ai-edition/stylePresets";
 import { NativeBridgeRequestError, nativeBridgeClient as realClient } from "./client";
+import type { CursorCapabilities, CursorRecordingData } from "./contracts";
+
+/**
+ * Cursor recordings a browser-mode page is told about, keyed by the video path the timeline
+ * plays — or `"default"` when a fixture is meant for whatever clip is on screen.
+ *
+ * This exists because the Cursor pane asks `useHasRecordedCursor()` whether any clip carries a
+ * sidecar, and hides itself when the answer is no: without a recording, the pane is unreachable
+ * in browser mode and its tests cannot run. The real reader lives in the native bridge, which a
+ * plain page does not have.
+ *
+ * It is a TEST fixture channel, not a fake: nothing is invented when the key is absent — the
+ * reader reports "no recording", exactly like a take with the system cursor baked in.
+ */
+const CURSOR_FIXTURE_KEY = "browser-shim-cursor-v1";
+
+function readCursorFixture(videoPath?: string): CursorRecordingData | null {
+	if (typeof localStorage === "undefined") return null;
+	try {
+		const raw = localStorage.getItem(CURSOR_FIXTURE_KEY);
+		if (!raw) return null;
+		const byPath = JSON.parse(raw) as Record<string, CursorRecordingData>;
+		if (!byPath || typeof byPath !== "object") return null;
+		const hit = (videoPath ? byPath[videoPath] : undefined) ?? byPath.default;
+		return hit ?? null;
+	} catch {
+		// A corrupt fixture must fail like a missing one, not crash the editor.
+		return null;
+	}
+}
 
 function detectBrowserMode(): boolean {
 	if (typeof window === "undefined") return false;
@@ -507,7 +537,21 @@ function createShimBridgeClient() {
 		messageCount: s.messages.length,
 	});
 
+	const browserCursorCapabilities: CursorCapabilities = {
+		telemetry: false,
+		systemAssets: false,
+		provider: "native",
+	};
+
 	return {
+		// Mirrors the native cursor domain closely enough for the editor's "does this take have a
+		// cursor?" question. Async like the real bridge, and `null` when no fixture is armed.
+		cursor: {
+			getCapabilities: () => Promise.resolve(browserCursorCapabilities),
+			getRecordingData: (videoPath?: string) => Promise.resolve(readCursorFixture(videoPath)),
+			getTelemetry: (videoPath?: string) =>
+				Promise.resolve(readCursorFixture(videoPath)?.samples ?? []),
+		},
 		aiEdition: {
 			listProjects: () => Promise.resolve(listProjectSummaries()),
 			get: (projectId: string) => {
