@@ -433,6 +433,14 @@
 		"reportBug": "Nahlásit chybu"
 	},
 	"cursor": {
+		"ripple": "Vlna kliknutí",
+		"rippleTip": "Kroužek při každém kliknutí, pod kurzorem",
+		"rippleLeft": "Levé kliknutí",
+		"rippleRight": "Pravé kliknutí",
+		"rippleMiddle": "Prostřední kliknutí",
+		"rippleSize": "Velikost vlny",
+		"rippleDuration": "Trvání vlny",
+		"rippleOpacity": "Krytí vlny",
 		"smoothing": "Vyhlazení",
 		"clickBounce": "Odraz při kliknutí",
 		"model3d": "3D kurzor",

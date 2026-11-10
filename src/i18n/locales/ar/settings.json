@@ -433,6 +433,14 @@
 		"reportBug": "الإبلاغ عن خطأ"
 	},
 	"cursor": {
+		"ripple": "موجة النقر",
+		"rippleTip": "حلقة عند كل نقرة، أسفل المؤشر",
+		"rippleLeft": "نقرة يسرى",
+		"rippleRight": "نقرة يمنى",
+		"rippleMiddle": "نقرة وسطى",
+		"rippleSize": "حجم الموجة",
+		"rippleDuration": "مدة الموجة",
+		"rippleOpacity": "عتامة الموجة",
 		"smoothing": "التنعيم",
 		"clickBounce": "ارتداد النقر",
 		"model3d": "مؤشر ثلاثي الأبعاد",

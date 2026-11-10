@@ -4080,11 +4080,17 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
                         // périmètre de cette version, et un anneau à plat y mentirait.
                         CursorPlacement::Tilted { .. } => return None,
                     };
-                    let color = match kind {
-                        crate::cursor::ClickKind::Left => r.left,
-                        crate::cursor::ClickKind::Right => r.right,
-                        crate::cursor::ClickKind::Middle => r.middle,
+                    // L'interrupteur du bouton AVANT sa couleur : un bouton coupé ne produit aucun
+                    // quad, pas un quad transparent — rien à dessiner vaut mieux qu'un quad vide
+                    // par clic (V2.7.2, les trois interrupteurs).
+                    let (enabled, color) = match kind {
+                        crate::cursor::ClickKind::Left => (r.left_enabled, r.left),
+                        crate::cursor::ClickKind::Right => (r.right_enabled, r.right),
+                        crate::cursor::ClickKind::Middle => (r.middle_enabled, r.middle),
                     };
+                    if !enabled {
+                        return None;
+                    }
                     let side = r.size_px * (0.35 + 0.65 * progress);
                     let fade = (1.0 - progress).powf(1.5) * r.opacity;
                     click_ripple_cb(center, side, color, fade * alpha, [rw, rh])
@@ -9194,5 +9200,35 @@ mod tests {
         let scene = ripple_scene("");
         let plan = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Left)], 1.03);
         assert!(plan.ripples.is_empty(), "sans réglage, le compositeur ne dessine rien");
+    }
+
+    /// Les trois interrupteurs sont ABSENTS du JSON écrit avant V2.7.2 : ils valent donc `true`,
+    /// sans quoi un projet existant perdrait ses anneaux en s'ouvrant.
+    #[test]
+    fn the_buttons_stay_lit_when_the_json_omits_the_switches() {
+        let scene = ripple_scene(RIPPLE);
+        for kind in [
+            crate::cursor::ClickKind::Left,
+            crate::cursor::ClickKind::Right,
+            crate::cursor::ClickKind::Middle,
+        ] {
+            let plan = ripple_plan(&scene, vec![(1.0, kind)], 1.05);
+            assert_eq!(plan.ripples.len(), 1, "{kind:?} doit encore dessiner son anneau");
+        }
+    }
+
+    const RIPPLE_NO_LEFT_NO_MIDDLE: &str = r#","clickRipple":{"durationMs":450,"sizePx":72,
+        "opacity":0.55,"left":[1,1,1,1],"right":[1,0.62,0.2,1],"middle":[0.35,0.7,1,1],
+        "leftEnabled":false,"middleEnabled":false}"#;
+
+    #[test]
+    fn a_switched_off_button_draws_nothing_and_leaves_the_others_alone() {
+        let scene = ripple_scene(RIPPLE_NO_LEFT_NO_MIDDLE);
+        let left = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Left)], 1.05);
+        assert!(left.ripples.is_empty(), "bouton gauche coupé : aucun quad");
+        let middle = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Middle)], 1.05);
+        assert!(middle.ripples.is_empty(), "bouton milieu coupé : aucun quad");
+        let right = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Right)], 1.05);
+        assert_eq!(right.ripples.len(), 1, "le bouton droit reste allumé");
     }
 }

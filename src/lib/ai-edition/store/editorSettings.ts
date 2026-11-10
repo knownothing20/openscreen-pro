@@ -29,6 +29,7 @@ import {
 	type RecordingFrame,
 	readBackgroundBlur,
 	readBounded,
+	readCursorRipple,
 	readRecordingFrame,
 	readWebcamAnchor,
 	readWebcamMask,
@@ -183,6 +184,14 @@ interface LegacyShape {
 	cursorSmoothing?: number;
 	cursorMotionBlur?: number;
 	cursorClickBounce?: number;
+	/**
+	 * The click ripple (V2.7.2). `unknown` on purpose: it is read through `readCursorRipple`,
+	 * which validates every field — an object here goes straight into a shader.
+	 *
+	 * Absent from every project written before it: those keep the pre-V2.7.2 rule, where
+	 * `cursorClickBounce > 0` meant rings at the old hard-coded look.
+	 */
+	cursorClickRipple?: unknown;
 	cursorModel3d?: boolean;
 	/** `unknown`: read through `readCursorAsArrow`, which drops what this build does not know. */
 	cursorAsArrow?: unknown;
@@ -239,6 +248,9 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		),
 		clickImpact: bool(legacy?.cursorClickImpact, DEFAULT_EDITOR_SETTINGS.cursor.clickImpact),
 		autoHide: bool(legacy?.cursorAutoHide, DEFAULT_EDITOR_SETTINGS.cursorAutoHide),
+		// Absent = the project predates the ripple settings: `buildSceneDescription` then keeps
+		// the old rule (`clickBounce > 0`). Present = it drives the ring on its own.
+		ripple: readCursorRipple(legacy?.cursorClickRipple, defaults.cursor.ripple),
 	};
 
 	// The pan is authoritative and the rect's offset is rebuilt from it, so the two cannot
@@ -384,6 +396,9 @@ function nextLegacy(current: LegacyShape | null, patch: EditorSettingsPatch): Le
 		if (c.smoothing !== undefined) next.cursorSmoothing = c.smoothing;
 		if (c.motionBlur !== undefined) next.cursorMotionBlur = c.motionBlur;
 		if (c.clickBounce !== undefined) next.cursorClickBounce = c.clickBounce;
+		// The whole object, replaced whole: a partial merge would let a build that knows fewer
+		// buttons than the writer keep a stale switch for the one it does not know.
+		if (c.ripple !== undefined) next.cursorClickRipple = c.ripple;
 		if (c.model3d !== undefined) next.cursorModel3d = c.model3d;
 		if (c.asArrow !== undefined) {
 			next.cursorAsArrow = c.asArrow;

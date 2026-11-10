@@ -63,7 +63,12 @@ import {
 } from "@/lib/compositeLayout";
 import type { CursorKind } from "@/lib/cursor/cursorThemes";
 import { parseCssGradient, resolveLinearGradientAngle } from "@/lib/exporter/gradientParser";
-import type { FrameTheme, RecordingFrame, WebcamAnchor } from "@/lib/projectDefaults";
+import {
+	type FrameTheme,
+	type RecordingFrame,
+	readCursorRipple,
+	type WebcamAnchor,
+} from "@/lib/projectDefaults";
 import { resolveTextFontFamily } from "@/lib/textFonts";
 import { classifyWallpaper } from "@/lib/wallpaper";
 import type { CompositorClipInput } from "./contracts";
@@ -536,8 +541,10 @@ export interface SceneCursor {
 	 * The click ring (`scene.rs` `SceneCursor::click_ripple`). Omitted when the project has no
 	 * click feedback: the compositor then draws no ring at all.
 	 *
-	 * Driven by the existing "click bounce" setting — one control for click feedback, so a
-	 * project cannot end up with a bounce and no ring, or a ring the user cannot turn off.
+	 * TWO SOURCES. A project written by this build carries its own `cursorClickRipple` settings
+	 * and the master switch decides (so the ring is independent of the click bounce). A project
+	 * from before them has no stored object and keeps the old rule — `clickBounce > 0` means the
+	 * ring, at the look V2.7.1 hard-coded — so its picture does not change when it is opened.
 	 * Colours are per button; left is white so it reads on light and dark UI alike.
 	 */
 	clickRipple?: {
@@ -547,6 +554,10 @@ export interface SceneCursor {
 		left: [number, number, number, number];
 		right: [number, number, number, number];
 		middle: [number, number, number, number];
+		/** Per-button switches (`scene.rs`, serde-default `true`). Omitted = drawn. */
+		leftEnabled?: boolean;
+		rightEnabled?: boolean;
+		middleEnabled?: boolean;
 	};
 	clipToBounds: boolean;
 	/** Cursor theme id (sprite set). */
@@ -961,6 +972,68 @@ function openingStickerIds(
 			return isOpeningStickerPresentAtStart(annotation, outputStartRawSec);
 		})
 		.map((piece) => piece.id);
+}
+
+/**
+ * The click ring for this project, or nothing.
+ *
+ * The stored object wins when it exists: its master switch decides, independently of the click
+ * bounce (a user can keep the bounce and drop the ring, or the reverse), and every button
+ * carries its own switch and colour. A project that predates the object keeps the pre-V2.7.2
+ * rule — `clickBounce > 0` draws the ring, at the look V2.7.1 hard-coded — which is why that
+ * branch stays: upgrading a project must not change a single pixel of it.
+ */
+function sceneClickRipple(
+	settings: ReturnType<typeof getEditorSettings>,
+	document: AxcutDocument,
+): Pick<SceneCursor, "clickRipple"> {
+	if (document.legacyEditor?.cursorClickRipple === undefined) {
+		if (settings.cursor.clickBounce <= 0) return {};
+		// The float values V2.7.1 hard-coded, spelled out rather than derived from
+		// `DEFAULT_CURSOR_RIPPLE`: `0.62` and `0.7` have no exact `#rrggbb` spelling, and
+		// "upgrading changed my ring" is not a difference worth a round-trip through a hex
+		// string. An old project renders the identical quad.
+		return {
+			clickRipple: {
+				durationMs: 450,
+				sizePx: 72,
+				opacity: 0.55,
+				left: [1, 1, 1, 1],
+				right: [1, 0.62, 0.2, 1],
+				middle: [0.35, 0.7, 1, 1],
+			},
+		};
+	}
+	const r = readCursorRipple(settings.cursor.ripple);
+	// The master switch, not the bounce: this is what makes the ring a setting of its own.
+	if (!r.enabled) return {};
+	return {
+		clickRipple: {
+			durationMs: r.durationMs,
+			sizePx: r.sizePx,
+			opacity: r.opacity,
+			left: rippleColour(r.left.color),
+			right: rippleColour(r.right.color),
+			middle: rippleColour(r.middle.color),
+			leftEnabled: r.left.enabled,
+			rightEnabled: r.right.enabled,
+			middleEnabled: r.middle.enabled,
+		},
+	};
+}
+
+const RIPPLE_HEX = /^#[0-9a-f]{6}$/i;
+
+/**
+ * `#rrggbb` → `[r, g, b, 1]` in 0..1, the form the compositor's premultiplied blend expects.
+ * Alpha stays 1 on purpose: the ring's fade is the separate `opacity` scalar. A value that is
+ * not `#rrggbb` plays white — the reader validates, but a hand-built scene must not reach a
+ * shader as `NaN`, which would draw nothing without saying so.
+ */
+function rippleColour(hex: string): [number, number, number, number] {
+	if (!RIPPLE_HEX.test(hex)) return [1, 1, 1, 1];
+	const n = Number.parseInt(hex.slice(1), 16);
+	return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, 1];
 }
 
 export function buildSceneDescription(
@@ -1486,18 +1559,7 @@ export function buildSceneDescription(
 			model3d: settings.cursor.model3d,
 			asArrow: settings.cursor.asArrow,
 			...(settings.cursor.clickImpact ? { clickImpact: true as const } : {}),
-			...(settings.cursor.clickBounce > 0
-				? {
-						clickRipple: {
-							durationMs: 450,
-							sizePx: 72,
-							opacity: 0.55,
-							left: [1, 1, 1, 1] as [number, number, number, number],
-							right: [1, 0.62, 0.2, 1] as [number, number, number, number],
-							middle: [0.35, 0.7, 1, 1] as [number, number, number, number],
-						},
-					}
-				: {}),
+			...sceneClickRipple(settings, document),
 			// The "Keep inside frame" option is gone: the cursor always overflows into the
 			// background. The field stays because the compositor's scene requires it.
 			clipToBounds: false,

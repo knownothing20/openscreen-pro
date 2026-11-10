@@ -433,6 +433,14 @@
 		"reportBug": "Segnala bug"
 	},
 	"cursor": {
+		"ripple": "Onda del clic",
+		"rippleTip": "Un anello a ogni clic, sotto il cursore",
+		"rippleLeft": "Clic sinistro",
+		"rippleRight": "Clic destro",
+		"rippleMiddle": "Clic centrale",
+		"rippleSize": "Dimensione dell'onda",
+		"rippleDuration": "Durata dell'onda",
+		"rippleOpacity": "Opacità dell'onda",
 		"smoothing": "Smussatura",
 		"clickBounce": "Rimbalzo clic",
 		"model3d": "Cursore 3D",

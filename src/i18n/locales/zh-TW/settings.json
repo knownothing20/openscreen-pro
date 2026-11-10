@@ -433,6 +433,14 @@
 		"reportBug": "回報錯誤"
 	},
 	"cursor": {
+		"ripple": "點擊波紋",
+		"rippleTip": "每次點擊在游標下方畫出一圈波紋",
+		"rippleLeft": "左鍵",
+		"rippleRight": "右鍵",
+		"rippleMiddle": "中鍵",
+		"rippleSize": "波紋大小",
+		"rippleDuration": "波紋時長",
+		"rippleOpacity": "波紋不透明度",
 		"smoothing": "平滑",
 		"clickBounce": "點擊彈跳",
 		"model3d": "3D 游標",

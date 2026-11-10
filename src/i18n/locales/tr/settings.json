@@ -433,6 +433,14 @@
 		"reportBug": "Hata Bildir"
 	},
 	"cursor": {
+		"ripple": "Tıklama dalgası",
+		"rippleTip": "Her tıklamada imlecin altında bir halka",
+		"rippleLeft": "Sol tık",
+		"rippleRight": "Sağ tık",
+		"rippleMiddle": "Orta tık",
+		"rippleSize": "Dalga boyutu",
+		"rippleDuration": "Dalga süresi",
+		"rippleOpacity": "Dalga saydamlığı",
 		"smoothing": "Yumuşatma",
 		"clickBounce": "Tıklama Sıçraması",
 		"model3d": "3B imleç",

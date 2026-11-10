@@ -7,7 +7,7 @@ import {
 } from "@/components/video-editor/types";
 import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import { DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
-import { SETTING_BOUNDS } from "@/lib/projectDefaults";
+import { DEFAULT_CURSOR_RIPPLE, SETTING_BOUNDS } from "@/lib/projectDefaults";
 import { ROUNDNESS_SLIDER_MAX_PX } from "@/native/paramUnits";
 import type { AxcutDocument } from "../schema";
 import { axcutSchemaVersion } from "../schema";
@@ -444,5 +444,50 @@ describe("patchEditorSettings", () => {
 		expect(getEditorSettings(tooHigh).webcamBlurIntensity).toBe(1);
 		const negative = { ...baseDoc, legacyEditor: { webcamBlurIntensity: -3 } } as typeof baseDoc;
 		expect(getEditorSettings(negative).webcamBlurIntensity).toBe(0);
+	});
+});
+
+// V2.7.2 — the click ripple lives whole in `legacyEditor.cursorClickRipple`. Absent means the
+// project predates it (and the scene keeps the old `clickBounce > 0` rule); present but malformed
+// must read as a complete, bounded object, never as a half one.
+describe("cursor ripple settings", () => {
+	it("reads the defaults when the project stores none", () => {
+		expect(getEditorSettings(baseDoc).cursor.ripple).toEqual(DEFAULT_CURSOR_RIPPLE);
+	});
+
+	it("round-trips a stored ripple through the patch writer", () => {
+		const ripple = {
+			enabled: true,
+			durationMs: 900,
+			sizePx: 130,
+			opacity: 0.4,
+			left: { enabled: true, color: "#12ab34" },
+			right: { enabled: false, color: "#ff0000" },
+			middle: { enabled: true, color: "#0000ff" },
+		};
+		const doc = patchEditorSettings(baseDoc, { cursor: { ripple } });
+		expect(getEditorSettings(doc).cursor.ripple).toEqual(ripple);
+		// One object under one legacy key: `nextLegacy` replaces it whole.
+		expect((doc.legacyEditor as Record<string, unknown>).cursorClickRipple).toEqual(ripple);
+	});
+
+	it("bounds a hand-edited ripple and falls back on a malformed button", () => {
+		const doc = patchEditorSettings(baseDoc, {
+			cursor: {
+				ripple: {
+					...DEFAULT_CURSOR_RIPPLE,
+					durationMs: 99_999,
+					sizePx: 0,
+					opacity: 5,
+					left: { enabled: true, color: "rgb(1,2,3)" },
+				},
+			},
+		});
+		const ripple = getEditorSettings(doc).cursor.ripple;
+		expect(ripple.durationMs).toBe(SETTING_BOUNDS.rippleDuration[1]);
+		expect(ripple.sizePx).toBe(SETTING_BOUNDS.rippleSize[0]);
+		expect(ripple.opacity).toBe(1);
+		// A colour a shader cannot take leaves the whole button at its default.
+		expect(ripple.left).toEqual(DEFAULT_CURSOR_RIPPLE.left);
 	});
 });

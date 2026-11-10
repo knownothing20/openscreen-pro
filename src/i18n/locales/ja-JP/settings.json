@@ -433,6 +433,14 @@
 		"reportBug": "バグを報告"
 	},
 	"cursor": {
+		"ripple": "クリックの波紋",
+		"rippleTip": "クリックのたびにカーソルの下へ輪を描く",
+		"rippleLeft": "左クリック",
+		"rippleRight": "右クリック",
+		"rippleMiddle": "中クリック",
+		"rippleSize": "波紋のサイズ",
+		"rippleDuration": "波紋の長さ",
+		"rippleOpacity": "波紋の不透明度",
 		"smoothing": "スムージング",
 		"clickBounce": "クリックバウンス",
 		"model3d": "3D カーソル",

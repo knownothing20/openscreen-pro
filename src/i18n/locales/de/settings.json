@@ -433,6 +433,14 @@
 		"reportBug": "Fehler melden"
 	},
 	"cursor": {
+		"ripple": "Klick-Welle",
+		"rippleTip": "Ein Ring bei jedem Klick, unter dem Cursor",
+		"rippleLeft": "Linksklick",
+		"rippleRight": "Rechtsklick",
+		"rippleMiddle": "Mittelklick",
+		"rippleSize": "Wellengröße",
+		"rippleDuration": "Wellendauer",
+		"rippleOpacity": "Wellendeckkraft",
 		"smoothing": "Glättung",
 		"clickBounce": "Klick-Federung",
 		"model3d": "3D-Cursor",

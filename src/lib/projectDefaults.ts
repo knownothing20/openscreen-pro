@@ -187,6 +187,49 @@ export function readWebcamMask(
 	};
 }
 
+/**
+ * The click ripple (V2.7.2): the ring drawn under the cursor on every click.
+ *
+ * One switch per button, because the three are not equally interesting — a left-click is the
+ * beat of a tutorial, a right-click menu often is not. Colours are stored as `#rrggbb` and
+ * converted once, in `buildSceneDescription`; a per-button switch off draws nothing at all,
+ * rather than a transparent quad per click.
+ *
+ * A project that has never written this object reads `undefined`: the scene then keeps the
+ * pre-V2.7.2 rule (`clickBounce > 0` = rings, default look), so an old project's picture does
+ * not change when it is opened by this build.
+ */
+export interface CursorRippleSettings {
+	/** The master switch. Off = no ring at all, whatever the per-button switches say. */
+	enabled: boolean;
+	/** Ring lifetime, in ms. */
+	durationMs: number;
+	/** Side of the quad at the end of the animation, in output pixels. */
+	sizePx: number;
+	/** Peak opacity, 0..1. */
+	opacity: number;
+	left: CursorRippleButton;
+	right: CursorRippleButton;
+	middle: CursorRippleButton;
+}
+
+/** One button's ring: whether it draws, and in which colour (`#rrggbb`). */
+export interface CursorRippleButton {
+	enabled: boolean;
+	color: string;
+}
+
+/** White / orange / blue: the colours V2.7.1 hard-coded, now the defaults a project edits. */
+export const DEFAULT_CURSOR_RIPPLE: CursorRippleSettings = {
+	enabled: true,
+	durationMs: 450,
+	sizePx: 72,
+	opacity: 0.55,
+	left: { enabled: true, color: "#ffffff" },
+	right: { enabled: true, color: "#ff9e33" },
+	middle: { enabled: true, color: "#59b3ff" },
+};
+
 export interface ProjectAppearanceDefaults {
 	wallpaper: string;
 	wallpaperMotion: "none" | "drift" | "aurora" | "waves";
@@ -223,6 +266,7 @@ export interface ProjectAppearanceDefaults {
 		asArrow: CursorKind[];
 		clickImpact: boolean;
 		autoHide: boolean;
+		ripple: CursorRippleSettings;
 	};
 	cursorShow: boolean;
 	cursorAutoHide: boolean;
@@ -272,6 +316,9 @@ export const DEFAULT_PROJECT_APPEARANCE: ProjectAppearanceDefaults = {
 		asArrow: ["text", "grab", "resize", "busy", "crosshair", "not-allowed", "help", "up-arrow"],
 		clickImpact: false,
 		autoHide: false,
+		// The same numbers V2.7.1 hard-coded, so a project that never edits them renders the
+		// identical ring: 450 ms, 72 px, 0.55, white / orange / blue.
+		ripple: DEFAULT_CURSOR_RIPPLE,
 	},
 	cursorShow: true,
 	cursorAutoHide: false,
@@ -305,6 +352,11 @@ export const SETTING_BOUNDS = {
 	cursorMotionBlur: [0, 1],
 	// Past about 4.2 the arrow shrank to nothing on every click.
 	cursorClickBounce: [0, 2],
+	// The click ripple (V2.7.2), in stored units: ms, output pixels, 0..1. 80 ms is the shortest
+	// ring that still reads as a ring; 2000 ms is longer than any tutorial beat.
+	rippleDuration: [80, 2000],
+	rippleSize: [16, 240],
+	rippleOpacity: [0, 1],
 	// 16 is Chromium's `playbackRate` ceiling: past it the preview could not show what the
 	// export rendered.
 	playbackSpeed: [0.25, 16],
@@ -342,4 +394,45 @@ export function readBounded(value: unknown, bound: SettingBound, fallback: numbe
 	return typeof value === "number" && Number.isFinite(value)
 		? clampToBound(value, bound)
 		: fallback;
+}
+
+const RIPPLE_COLOUR = /^#[0-9a-f]{6}$/i;
+
+/** Whether a value is the `#rrggbb` a ripple colour must be. */
+export function isRippleColour(value: unknown): value is string {
+	return typeof value === "string" && RIPPLE_COLOUR.test(value);
+}
+
+/**
+ * The click ripple as stored, validated field by field. Every number lands in its
+ * `SETTING_BOUNDS` range and every colour must be `#rrggbb`: this object travels to the
+ * compositor's scene JSON, so a hand-edited or half-written one must not reach a shader.
+ * A malformed button falls back whole, never half-read — a colour with no switch (or the
+ * reverse) is not a state the UI can render.
+ *
+ * Shared by the editor settings and the style presets, because a preset is another way in.
+ */
+export function readCursorRipple(
+	stored: unknown,
+	fallback: CursorRippleSettings = DEFAULT_CURSOR_RIPPLE,
+): CursorRippleSettings {
+	if (typeof stored !== "object" || stored === null || Array.isArray(stored)) return fallback;
+	const value = stored as Record<string, unknown>;
+	const button = (raw: unknown, def: CursorRippleButton): CursorRippleButton => {
+		if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return def;
+		const b = raw as Record<string, unknown>;
+		return {
+			enabled: typeof b.enabled === "boolean" ? b.enabled : def.enabled,
+			color: isRippleColour(b.color) ? b.color.toLowerCase() : def.color,
+		};
+	};
+	return {
+		enabled: typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
+		durationMs: readBounded(value.durationMs, "rippleDuration", fallback.durationMs),
+		sizePx: readBounded(value.sizePx, "rippleSize", fallback.sizePx),
+		opacity: readBounded(value.opacity, "rippleOpacity", fallback.opacity),
+		left: button(value.left, fallback.left),
+		right: button(value.right, fallback.right),
+		middle: button(value.middle, fallback.middle),
+	};
 }

@@ -119,6 +119,13 @@ export interface ProjectEditorState {
 	cursorSmoothing?: number;
 	cursorMotionBlur?: number;
 	cursorClickBounce?: number;
+	/**
+	 * The click ring (V2.7.2). `unknown` on purpose, like `cursorAsArrow` was: it is validated
+	 * by `readCursorRipple` on the way into the settings, not here. A v2 project that carries
+	 * it must survive this whitelist, or the CLI export would ring at the defaults while the
+	 * GUI shows the project's own colours.
+	 */
+	cursorClickRipple?: unknown;
 	cursorAsArrow?: CursorKind[];
 	/** The one switch before `cursorAsArrow`; `getEditorSettings` reads it as every kind. */
 	cursorAlwaysArrow?: boolean;
@@ -511,6 +518,10 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			: {}),
 		...(isFiniteNumber(editor.cursorClickBounce)
 			? { cursorClickBounce: editor.cursorClickBounce }
+			: {}),
+		// Whole object, untouched: `readCursorRipple` bounds every field at the point of use.
+		...(editor.cursorClickRipple !== undefined
+			? { cursorClickRipple: editor.cursorClickRipple }
 			: {}),
 		...(Array.isArray(editor.cursorAsArrow)
 			? { cursorAsArrow: readCursorAsArrow(editor.cursorAsArrow, undefined, []) }

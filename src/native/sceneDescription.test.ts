@@ -1324,6 +1324,70 @@ describe("buildSceneDescription.settings mapping", () => {
 		expect(cursor.asArrow).toEqual(["pointer", "text"]);
 	});
 
+	// V2.7.2: the ring is a setting of its own, in two flavours. A project that stores the
+	// settings is driven by them; a project that predates them keeps the old rule, unchanged.
+	describe("click ripple", () => {
+		it("keeps the pre-V2.7.2 rule when the project stores no ripple settings", () => {
+			const on = makeDoc({ legacyEditor: { cursorClickBounce: 1 } });
+			expect(buildSceneDescription(on).cursor.clickRipple).toEqual({
+				durationMs: 450,
+				sizePx: 72,
+				opacity: 0.55,
+				left: [1, 1, 1, 1],
+				right: [1, 0.62, 0.2, 1],
+				middle: [0.35, 0.7, 1, 1],
+			});
+			const off = makeDoc({ legacyEditor: { cursorClickBounce: 0 } });
+			expect(buildSceneDescription(off).cursor.clickRipple).toBeUndefined();
+		});
+
+		it("lets the master switch drop the ring while the bounce stays on", () => {
+			const doc = makeDoc({
+				legacyEditor: {
+					cursorClickBounce: 1,
+					cursorClickRipple: {
+						enabled: false,
+						durationMs: 450,
+						sizePx: 72,
+						opacity: 0.55,
+						left: { enabled: true, color: "#ffffff" },
+						right: { enabled: true, color: "#ff9e33" },
+						middle: { enabled: true, color: "#59b3ff" },
+					},
+				},
+			});
+			expect(buildSceneDescription(doc).cursor.clickRipple).toBeUndefined();
+		});
+
+		it("carries the per-button switches, colours and timing through to the scene", () => {
+			const doc = makeDoc({
+				legacyEditor: {
+					cursorClickBounce: 1,
+					cursorClickRipple: {
+						enabled: true,
+						durationMs: 800,
+						sizePx: 120,
+						opacity: 0.4,
+						left: { enabled: true, color: "#12ab34" },
+						right: { enabled: false, color: "#ff0000" },
+						middle: { enabled: true, color: "#0000ff" },
+					},
+				},
+			});
+			expect(buildSceneDescription(doc).cursor.clickRipple).toEqual({
+				durationMs: 800,
+				sizePx: 120,
+				opacity: 0.4,
+				left: [0x12 / 255, 0xab / 255, 0x34 / 255, 1],
+				right: [1, 0, 0, 1],
+				middle: [0, 0, 1, 1],
+				leftEnabled: true,
+				rightEnabled: false,
+				middleEnabled: true,
+			});
+		});
+	});
+
 	// The single switch that came before the kinds: on drew every one of them as the arrow. With
 	// neither, only the hand keeps its own sprite.
 	it("reads the old always-arrow switch as every cursor kind", () => {

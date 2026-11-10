@@ -433,6 +433,14 @@
 		"reportBug": "Сообщить об ошибке"
 	},
 	"cursor": {
+		"ripple": "Волна клика",
+		"rippleTip": "Кольцо при каждом клике, под курсором",
+		"rippleLeft": "Левый клик",
+		"rippleRight": "Правый клик",
+		"rippleMiddle": "Средний клик",
+		"rippleSize": "Размер волны",
+		"rippleDuration": "Длительность волны",
+		"rippleOpacity": "Непрозрачность волны",
 		"smoothing": "Сглаживание",
 		"clickBounce": "Отскок при клике",
 		"model3d": "3D-курсор",

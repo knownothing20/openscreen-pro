@@ -5,7 +5,11 @@ import {
 } from "@/lib/ai-edition/timeline/zoom-scale";
 import type { WebcamLayoutPreset } from "@/lib/compositeLayout";
 import type { CursorKind } from "@/lib/cursor/cursorThemes";
-import { DEFAULT_PROJECT_APPEARANCE, SETTING_BOUNDS } from "@/lib/projectDefaults";
+import {
+	type CursorRippleSettings,
+	DEFAULT_PROJECT_APPEARANCE,
+	SETTING_BOUNDS,
+} from "@/lib/projectDefaults";
 import { clamp01 } from "@/utils/math";
 
 export type { ZoomDepth, ZoomScaleInput };
@@ -297,6 +301,8 @@ export interface CursorVisualSettings {
 	 */
 	clickImpact: boolean;
 	autoHide?: boolean;
+	/** The click ring (`projectDefaults.CursorRippleSettings`): per-button colour and switch. */
+	ripple: CursorRippleSettings;
 }
 
 // The project defaults, under the names the legacy editor reads: one value, not two to keep in sync.

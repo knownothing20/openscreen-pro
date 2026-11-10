@@ -34,6 +34,16 @@ const APPEARANCE: StylePresetAppearance = {
 		model3d: false,
 		asArrow: [],
 		clickImpact: false,
+		// The default ring a preset written before V2.7.2 reads as (see stylePresets.ts).
+		ripple: {
+			enabled: true,
+			durationMs: 450,
+			sizePx: 72,
+			opacity: 0.55,
+			left: { enabled: true, color: "#ffffff" },
+			right: { enabled: true, color: "#ff9e33" },
+			middle: { enabled: true, color: "#59b3ff" },
+		},
 	},
 	cursorShow: true,
 	cursorAutoHide: false,

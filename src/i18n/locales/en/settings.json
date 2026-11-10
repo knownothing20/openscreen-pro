@@ -433,6 +433,14 @@
 		"reportBug": "Report Bug"
 	},
 	"cursor": {
+		"ripple": "Click ripple",
+		"rippleTip": "A ring on each click, drawn under the cursor",
+		"rippleLeft": "Left click",
+		"rippleRight": "Right click",
+		"rippleMiddle": "Middle click",
+		"rippleSize": "Ripple size",
+		"rippleDuration": "Ripple duration",
+		"rippleOpacity": "Ripple opacity",
 		"smoothing": "Smoothing",
 		"clickBounce": "Click bounce",
 		"model3d": "3D cursor",

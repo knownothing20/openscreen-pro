@@ -8,11 +8,15 @@ import {
 	type EditorSettingsSnapshot,
 } from "@/lib/ai-edition/store/editorSettings";
 import type { StylePresetAppearance } from "@/lib/ai-edition/stylePresets";
+import { readCursorRipple } from "@/lib/projectDefaults";
 
 /** Copies the appearance fields out of a settings snapshot — nothing footage-dependent. */
 export function stylePresetAppearanceFromSettings(
 	settings: EditorSettingsSnapshot,
 ): StylePresetAppearance {
+	// Read, not assumed: a snapshot built by a caller that predates the ripple (a test fixture, a
+	// preset service mid-upgrade) has no such field, and the default look is the right answer.
+	const ripple = readCursorRipple(settings.cursor.ripple);
 	return {
 		wallpaper: settings.wallpaper,
 		wallpaperMotion: settings.wallpaperMotion,
@@ -42,6 +46,14 @@ export function stylePresetAppearanceFromSettings(
 			model3d: settings.cursor.model3d,
 			asArrow: [...settings.cursor.asArrow],
 			clickImpact: settings.cursor.clickImpact,
+			// Copied by value like `asArrow`: a preset must not alias the live document's object,
+			// or editing the ring would silently edit the preset it came from.
+			ripple: {
+				...ripple,
+				left: { ...ripple.left },
+				right: { ...ripple.right },
+				middle: { ...ripple.middle },
+			},
 		},
 		cursorShow: settings.cursorShow,
 		cursorAutoHide: settings.cursorAutoHide,

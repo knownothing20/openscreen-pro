@@ -433,6 +433,14 @@
 		"reportBug": "Báo cáo lỗi"
 	},
 	"cursor": {
+		"ripple": "Sóng nhấp",
+		"rippleTip": "Mỗi lần nhấp vẽ một vòng dưới con trỏ",
+		"rippleLeft": "Nhấp trái",
+		"rippleRight": "Nhấp phải",
+		"rippleMiddle": "Nhấp giữa",
+		"rippleSize": "Kích thước sóng",
+		"rippleDuration": "Thời lượng sóng",
+		"rippleOpacity": "Độ mờ sóng",
 		"smoothing": "Làm mượt",
 		"clickBounce": "Nảy khi nhấp",
 		"model3d": "Con trỏ 3D",

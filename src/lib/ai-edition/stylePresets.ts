@@ -32,6 +32,7 @@ import {
 	isFrameTheme,
 	LEGACY_BACKGROUND_BLUR_ON,
 	type RecordingFrame,
+	readCursorRipple,
 	readRecordingFrame,
 	readWebcamMask,
 	type SettingBound,
@@ -341,6 +342,9 @@ export function parseStylePresetAppearance(value: unknown): StylePresetAppearanc
 			// Presets written before the option existed gave clicks no impact.
 			clickImpact:
 				cursor.clickImpact === undefined ? false : readBoolean(cursor, "clickImpact", "cursor."),
+			// Presets written before V2.7.2 carry no ripple: they meant the default look, which
+			// is exactly what a project that never edited the ring plays today.
+			ripple: readCursorRipple(cursor.ripple, DEFAULT_PROJECT_APPEARANCE.cursor.ripple),
 		},
 		cursorShow: readBoolean(value, "cursorShow"),
 		cursorAutoHide: readBoolean(value, "cursorAutoHide"),
@@ -436,6 +440,8 @@ export const LOOK_LEGACY_EDITOR_KEYS = [
 	// A project saved before the kinds could be picked holds its look here instead.
 	"cursorAlwaysArrow",
 	"cursorClickImpact",
+	// The whole ripple object, switches and colours together (V2.7.2).
+	"cursorClickRipple",
 	"cursorShow",
 	"cursorAutoHide",
 	"cursorTheme",
@@ -453,6 +459,7 @@ export function stylePresetLegacyEditor(appearance: StylePresetAppearance): Fiel
 		cursorModel3d: cursor.model3d,
 		cursorAsArrow: cursor.asArrow,
 		cursorClickImpact: cursor.clickImpact,
+		cursorClickRipple: cursor.ripple,
 	};
 }
 

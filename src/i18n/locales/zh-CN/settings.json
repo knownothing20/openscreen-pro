@@ -433,6 +433,14 @@
 		"reportBug": "报告错误"
 	},
 	"cursor": {
+		"ripple": "点击波纹",
+		"rippleTip": "每次点击在光标下方画出一圈波纹",
+		"rippleLeft": "左键",
+		"rippleRight": "右键",
+		"rippleMiddle": "中键",
+		"rippleSize": "波纹大小",
+		"rippleDuration": "波纹时长",
+		"rippleOpacity": "波纹不透明度",
 		"smoothing": "平滑",
 		"clickBounce": "点击弹跳",
 		"model3d": "3D 光标",

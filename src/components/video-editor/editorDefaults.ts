@@ -85,6 +85,7 @@ export const DEFAULT_CURSOR_SETTINGS: CursorVisualSettings & { show: boolean; th
 	asArrow: DEFAULT_PROJECT_APPEARANCE.cursor.asArrow,
 	clickImpact: false,
 	theme: DEFAULT_CURSOR_THEME_ID,
+	ripple: DEFAULT_PROJECT_APPEARANCE.cursor.ripple,
 };
 
 export const DEFAULT_EXPORT_SETTINGS: {

@@ -3956,6 +3956,29 @@ export function CursorPane() {
 		"up-arrow": ts("cursor.typeUpArrow"),
 	};
 
+	// The click ripple (V2.7.2). The whole object is written on every edit: `nextLegacy` stores
+	// it whole, so a partial write would let a stale button survive under a new master switch.
+	const ripple = settings.cursor.ripple;
+	const rippleButtonLabels = {
+		left: ts("cursor.rippleLeft"),
+		right: ts("cursor.rippleRight"),
+		middle: ts("cursor.rippleMiddle"),
+	} as const;
+	const writeRipple = (next: Partial<typeof ripple>, live = false) => {
+		const merged = { ...ripple, ...next };
+		if (live) {
+			setLive({ cursor: { ripple: merged } });
+			return;
+		}
+		void set({ cursor: { ripple: merged } });
+	};
+	const writeRippleButton = (
+		button: "left" | "right" | "middle",
+		next: Partial<(typeof ripple)["left"]>,
+	) => {
+		void set({ cursor: { ripple: { ...ripple, [button]: { ...ripple[button], ...next } } } });
+	};
+
 	return (
 		<Pane
 			title={ts("cursor.title")}
@@ -4177,6 +4200,97 @@ export function CursorPane() {
 						onChange={(v) => void set({ cursor: { clickImpact: v } })}
 					/>
 				</div>
+			) : null}
+			{/* The ring a click draws, under the cursor. Its own master switch: a project can keep
+			    the bounce and drop the ring, which the pre-V2.7.2 rule could not express. */}
+			{settings.cursorShow ? (
+				<>
+					<div className={styles.paneRow}>
+						<span className={styles.label}>{ts("cursor.ripple")}</span>
+						<Toggle
+							ariaLabel={ts("cursor.ripple")}
+							tooltip={ts("cursor.rippleTip")}
+							checked={ripple.enabled}
+							disabled={!hasDocument}
+							onChange={(enabled) => writeRipple({ enabled })}
+						/>
+					</div>
+					{ripple.enabled ? (
+						<>
+							{(["left", "right", "middle"] as const).map((button) => (
+								<div className={styles.paneRow} key={button}>
+									<span className={styles.label}>{rippleButtonLabels[button]}</span>
+									<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+										<ColorField
+											label={rippleButtonLabels[button]}
+											value={ripple[button].color}
+											swatch={ripple[button].color}
+											disabled={!hasDocument || !ripple[button].enabled}
+											// Only a complete `#rrggbb` goes out: ColorField also emits `#abc`
+											// mid-typing, which comes back normalised and replaces the draft.
+											onChange={(hex) => {
+												if (FULL_HEX.test(hex)) {
+													writeRippleButton(button, { color: hex.toLowerCase() });
+												}
+											}}
+											onCommit={() => void commit()}
+										/>
+										<Toggle
+											ariaLabel={rippleButtonLabels[button]}
+											checked={ripple[button].enabled}
+											disabled={!hasDocument}
+											onChange={(enabled) => writeRippleButton(button, { enabled })}
+										/>
+									</div>
+								</div>
+							))}
+							<div className={styles.sliderGrid}>
+								<SliderCell
+									label={ts("cursor.rippleSize")}
+									value={ripple.sizePx}
+									min={SETTING_BOUNDS.rippleSize[0]}
+									max={SETTING_BOUNDS.rippleSize[1]}
+									step={1}
+									suffix="px"
+									defaultValue={DEFAULT_EDITOR_SETTINGS.cursor.ripple.sizePx}
+									disabled={!hasDocument}
+									onChange={(sizePx) => {
+										writeRipple({ sizePx }, true);
+									}}
+									onCommit={() => void commit()}
+								/>
+								<SliderCell
+									label={ts("cursor.rippleDuration")}
+									value={ripple.durationMs}
+									min={SETTING_BOUNDS.rippleDuration[0]}
+									max={SETTING_BOUNDS.rippleDuration[1]}
+									step={10}
+									suffix="ms"
+									defaultValue={DEFAULT_EDITOR_SETTINGS.cursor.ripple.durationMs}
+									disabled={!hasDocument}
+									onChange={(durationMs) => {
+										writeRipple({ durationMs }, true);
+									}}
+									onCommit={() => void commit()}
+								/>
+								<SliderCell
+									label={ts("cursor.rippleOpacity")}
+									value={Math.round(ripple.opacity * 100)}
+									min={SETTING_BOUNDS.rippleOpacity[0] * 100}
+									max={SETTING_BOUNDS.rippleOpacity[1] * 100}
+									step={1}
+									suffix="%"
+									defaultValue={Math.round(DEFAULT_EDITOR_SETTINGS.cursor.ripple.opacity * 100)}
+									disabled={!hasDocument}
+									onChange={(v) => {
+										writeRipple({ opacity: v / 100 }, true);
+									}}
+									onCommit={() => void commit()}
+								/>
+							</div>
+						</>
+					) : null}
+				</>
 			) : null}
 		</Pane>
 	);

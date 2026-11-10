@@ -849,6 +849,21 @@ pub struct SceneClickRipple {
     pub left: [f32; 4],
     pub right: [f32; 4],
     pub middle: [f32; 4],
+    /// Un anneau par bouton, chacun son interrupteur (V2.7.2). `#[serde(default = …)]` → `true` :
+    /// tout JSON écrit avant ce réglage — et tout projet dont le clic est actif — continue de
+    /// dessiner les trois boutons. Une couleur sans son interrupteur ne change donc rien.
+    #[serde(default = "ripple_button_enabled")]
+    pub left_enabled: bool,
+    #[serde(default = "ripple_button_enabled")]
+    pub right_enabled: bool,
+    #[serde(default = "ripple_button_enabled")]
+    pub middle_enabled: bool,
+}
+
+/// Le défaut des trois interrupteurs : allumés. Hors de la struct pour que `serde(default = …)`
+/// puisse le nommer, et pour qu'un futur champ n'ait pas à recopier `true`.
+fn ripple_button_enabled() -> bool {
+    true
 }
 
 /// Un sprite de curseur : image + point de pivot.

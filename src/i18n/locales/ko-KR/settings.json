@@ -433,6 +433,14 @@
 		"reportBug": "버그 신고"
 	},
 	"cursor": {
+		"ripple": "클릭 파형",
+		"rippleTip": "클릭할 때마다 커서 아래에 고리를 그림",
+		"rippleLeft": "왼쪽 클릭",
+		"rippleRight": "오른쪽 클릭",
+		"rippleMiddle": "가운데 클릭",
+		"rippleSize": "파형 크기",
+		"rippleDuration": "파형 길이",
+		"rippleOpacity": "파형 불투명도",
 		"smoothing": "부드러움",
 		"clickBounce": "클릭 바운스",
 		"model3d": "3D 커서",
