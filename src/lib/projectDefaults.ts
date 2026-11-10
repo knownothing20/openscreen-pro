@@ -211,6 +211,9 @@ export interface CursorRippleSettings {
 	left: CursorRippleButton;
 	right: CursorRippleButton;
 	middle: CursorRippleButton;
+	/** The two halves of mode 4 (V2.7.2). Both on = the ring of V2.7.1. */
+	dot: boolean;
+	ring: boolean;
 }
 
 /** One button's ring: whether it draws, and in which colour (`#rrggbb`). */
@@ -218,6 +221,47 @@ export interface CursorRippleButton {
 	enabled: boolean;
 	color: string;
 }
+
+/**
+ * The cursor trail (V2.7.2): the copies the compositor already painted for motion blur, opened
+ * on a longer window. Off by default — a trail is a look, and an existing project must not
+ * acquire one by being opened.
+ */
+export interface CursorTrailSettings {
+	enabled: boolean;
+	/** Window the copies cover, in ms. */
+	lengthMs: number;
+	/** Multiplier on each copy's weight, 0..1. */
+	opacity: number;
+	/** Scale of the last copy relative to the cursor, 0.1..1 (1 = no taper). */
+	thickness: number;
+}
+
+/**
+ * The halo that follows the pointer (V2.7.2): a soft disc drawn under the cursor, so the tip
+ * stays sharp. Its size never reacts to clicks — it is a lamp, not an effect.
+ */
+export interface CursorApertureSettings {
+	enabled: boolean;
+	/** Radius in output pixels. */
+	radiusPx: number;
+	opacity: number;
+	color: string;
+}
+
+export const DEFAULT_CURSOR_TRAIL: CursorTrailSettings = {
+	enabled: false,
+	lengthMs: 220,
+	opacity: 0.5,
+	thickness: 0.45,
+};
+
+export const DEFAULT_CURSOR_APERTURE: CursorApertureSettings = {
+	enabled: false,
+	radiusPx: 120,
+	opacity: 0.25,
+	color: "#59b3ff",
+};
 
 /** White / orange / blue: the colours V2.7.1 hard-coded, now the defaults a project edits. */
 export const DEFAULT_CURSOR_RIPPLE: CursorRippleSettings = {
@@ -228,6 +272,8 @@ export const DEFAULT_CURSOR_RIPPLE: CursorRippleSettings = {
 	left: { enabled: true, color: "#ffffff" },
 	right: { enabled: true, color: "#ff9e33" },
 	middle: { enabled: true, color: "#59b3ff" },
+	dot: true,
+	ring: true,
 };
 
 export interface ProjectAppearanceDefaults {
@@ -267,6 +313,8 @@ export interface ProjectAppearanceDefaults {
 		clickImpact: boolean;
 		autoHide: boolean;
 		ripple: CursorRippleSettings;
+		trail: CursorTrailSettings;
+		aperture: CursorApertureSettings;
 	};
 	cursorShow: boolean;
 	cursorAutoHide: boolean;
@@ -319,6 +367,9 @@ export const DEFAULT_PROJECT_APPEARANCE: ProjectAppearanceDefaults = {
 		// The same numbers V2.7.1 hard-coded, so a project that never edits them renders the
 		// identical ring: 450 ms, 72 px, 0.55, white / orange / blue.
 		ripple: DEFAULT_CURSOR_RIPPLE,
+		// Both off: a trail and a halo are looks, and an existing project must not acquire one.
+		trail: DEFAULT_CURSOR_TRAIL,
+		aperture: DEFAULT_CURSOR_APERTURE,
 	},
 	cursorShow: true,
 	cursorAutoHide: false,
@@ -357,6 +408,14 @@ export const SETTING_BOUNDS = {
 	rippleDuration: [80, 2000],
 	rippleSize: [16, 240],
 	rippleOpacity: [0, 1],
+	// The trail (V2.7.2): 40 ms is the shortest that reads as a trail rather than a smear.
+	// The taper floor is 0.1 — below it the tail copies are sub-pixel and simply vanish.
+	trailLength: [40, 800],
+	trailOpacity: [0, 1],
+	trailThickness: [0.1, 1],
+	// The halo (V2.7.2): 24 px is barely wider than the cursor; 400 px covers a 1080p fifth.
+	apertureRadius: [24, 400],
+	apertureOpacity: [0, 1],
 	// 16 is Chromium's `playbackRate` ceiling: past it the preview could not show what the
 	// export rendered.
 	playbackSpeed: [0.25, 16],
@@ -434,5 +493,38 @@ export function readCursorRipple(
 		left: button(value.left, fallback.left),
 		right: button(value.right, fallback.right),
 		middle: button(value.middle, fallback.middle),
+		// Absent = the V2.7.1 ring, which drew both halves.
+		dot: typeof value.dot === "boolean" ? value.dot : fallback.dot,
+		ring: typeof value.ring === "boolean" ? value.ring : fallback.ring,
+	};
+}
+
+/** The trail as stored, bounded field by field. */
+export function readCursorTrail(
+	stored: unknown,
+	fallback: CursorTrailSettings = DEFAULT_CURSOR_TRAIL,
+): CursorTrailSettings {
+	if (typeof stored !== "object" || stored === null || Array.isArray(stored)) return fallback;
+	const value = stored as Record<string, unknown>;
+	return {
+		enabled: typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
+		lengthMs: readBounded(value.lengthMs, "trailLength", fallback.lengthMs),
+		opacity: readBounded(value.opacity, "trailOpacity", fallback.opacity),
+		thickness: readBounded(value.thickness, "trailThickness", fallback.thickness),
+	};
+}
+
+/** The halo as stored, bounded field by field; a colour that is not `#rrggbb` keeps the default. */
+export function readCursorAperture(
+	stored: unknown,
+	fallback: CursorApertureSettings = DEFAULT_CURSOR_APERTURE,
+): CursorApertureSettings {
+	if (typeof stored !== "object" || stored === null || Array.isArray(stored)) return fallback;
+	const value = stored as Record<string, unknown>;
+	return {
+		enabled: typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
+		radiusPx: readBounded(value.radiusPx, "apertureRadius", fallback.radiusPx),
+		opacity: readBounded(value.opacity, "apertureOpacity", fallback.opacity),
+		color: isRippleColour(value.color) ? value.color.toLowerCase() : fallback.color,
 	};
 }

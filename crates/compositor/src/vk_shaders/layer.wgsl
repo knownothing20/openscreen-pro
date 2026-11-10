@@ -2322,6 +2322,50 @@ fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
     } else if layer.mode < 1.5 {
         // Mode 1 — couleur pleine.
         rgb = layer.color.rgb;
+    } else if layer.mode > 3.5 && layer.mode < 4.5 {
+        // Mode 4 — curseur dessine (point + anneau), port du HLSL et du MSL. Il manquait : la
+        // chaine sautait de `mode < 1.5` a `mode > 4.5`, donc un anneau de clic tombait dans la
+        // branche `else` (ombre du mode 2) et se dessinait comme un rectangle flou.
+        //
+        // V2.7.2 : `src.x = 1` -> `src.y` porte un masque (bit0 point, bit1 anneau, bit2 disque).
+        // Sans lui, `src = [0,0,1,1]` et le dessin reste point + anneau, comme avant.
+        if i.pout.x < layer.fx.x || i.pout.x > layer.fx.x + layer.fx.z
+            || i.pout.y < layer.fx.y || i.pout.y > layer.fx.y + layer.fx.w
+        {
+            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        }
+        let mask = select(3u, u32(layer.src.y), layer.src.x > 0.5);
+        let want_dot = (mask & 1u) != 0u;
+        let want_ring = (mask & 2u) != 0u;
+        let want_disc = (mask & 4u) != 0u;
+        let p = i.local - layer.quad_px * 0.5;
+        let r = length(p);
+        let R = min(layer.quad_px.x, layer.quad_px.y) * 0.5;
+        let aa = 1.5;
+        let dot_r = R * 0.34;
+        let ring_r = R * 0.72;
+        let ring_w = R * 0.09;
+        var ddot = 0.0;
+        if want_dot {
+            ddot = 1.0 - smoothstep(dot_r - aa, dot_r + aa, r);
+        }
+        var ring = 0.0;
+        if want_ring {
+            ring = smoothstep(ring_r - ring_w - aa, ring_r - ring_w, r)
+                * (1.0 - smoothstep(ring_r + ring_w, ring_r + ring_w + aa, r));
+        }
+        // Le disque (V2.7.2) : halo doux qui remplit le quad, eteint au bord.
+        var disc = 0.0;
+        if want_disc {
+            disc = 1.0 - smoothstep(R * 0.1, R, r);
+        }
+        var halo = 0.0;
+        if want_dot {
+            halo = (1.0 - smoothstep(dot_r + aa, dot_r + aa + 2.5, r)) * (1.0 - ddot);
+        }
+        let cov = clamp(ddot + ring + disc, 0.0, 1.0);
+        let a = clamp(cov * layer.color.a + halo * 0.35 * layer.color.a, 0.0, 1.0);
+        return vec4<f32>(layer.color.rgb * cov * a, a);
     } else if layer.mode > 4.5 && layer.mode < 5.5 {
         // Mode 5 -- gradient lineaire jusqu'a 4 stops : noeuds `rgb + position` dans color,
         // src_prev, dst_prev, src (cf. `ramp4`), le long de la direction fx.xy (sin, -cos de

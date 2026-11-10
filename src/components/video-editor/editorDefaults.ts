@@ -86,6 +86,8 @@ export const DEFAULT_CURSOR_SETTINGS: CursorVisualSettings & { show: boolean; th
 	clickImpact: false,
 	theme: DEFAULT_CURSOR_THEME_ID,
 	ripple: DEFAULT_PROJECT_APPEARANCE.cursor.ripple,
+	trail: DEFAULT_PROJECT_APPEARANCE.cursor.trail,
+	aperture: DEFAULT_PROJECT_APPEARANCE.cursor.aperture,
 };
 
 export const DEFAULT_EXPORT_SETTINGS: {

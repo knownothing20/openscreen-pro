@@ -66,7 +66,9 @@ import { parseCssGradient, resolveLinearGradientAngle } from "@/lib/exporter/gra
 import {
 	type FrameTheme,
 	type RecordingFrame,
+	readCursorAperture,
 	readCursorRipple,
+	readCursorTrail,
 	type WebcamAnchor,
 } from "@/lib/projectDefaults";
 import { resolveTextFontFamily } from "@/lib/textFonts";
@@ -558,6 +560,24 @@ export interface SceneCursor {
 		leftEnabled?: boolean;
 		rightEnabled?: boolean;
 		middleEnabled?: boolean;
+		/** The two halves of mode 4 (V2.7.2). Omitted = both, i.e. the V2.7.1 ring. */
+		dot?: boolean;
+		ring?: boolean;
+	};
+	/**
+	 * The trail (V2.7.2): motion-blur copies on a longer window, with their own opacity and
+	 * taper. Omitted when the trail is off, which is the default and every older project.
+	 */
+	trail?: {
+		lengthMs: number;
+		opacity: number;
+		thickness: number;
+	};
+	/** The halo under the cursor (V2.7.2). Omitted = none. */
+	aperture?: {
+		radiusPx: number;
+		opacity: number;
+		color: [number, number, number, number];
 	};
 	clipToBounds: boolean;
 	/** Cursor theme id (sprite set). */
@@ -1018,12 +1038,37 @@ function sceneClickRipple(
 			leftEnabled: r.left.enabled,
 			rightEnabled: r.right.enabled,
 			middleEnabled: r.middle.enabled,
+			// Mode 4's two halves. Both false = no quad at all, handled in `plan_cursor`.
+			dot: r.dot,
+			ring: r.ring,
 		},
 	};
 }
 
-const RIPPLE_HEX = /^#[0-9a-f]{6}$/i;
+/**
+ * The trail, or nothing. Off is the default and every project that never touched it, so the key
+ * is absent and the compositor keeps its motion-blur-only taps — the picture does not change.
+ */
+function sceneCursorTrail(
+	settings: ReturnType<typeof getEditorSettings>,
+): Pick<SceneCursor, "trail"> {
+	const t = readCursorTrail(settings.cursor.trail);
+	if (!t.enabled) return {};
+	return { trail: { lengthMs: t.lengthMs, opacity: t.opacity, thickness: t.thickness } };
+}
 
+/** The halo, or nothing. Same rule: off means the key is absent, not a zero-opacity quad. */
+function sceneCursorAperture(
+	settings: ReturnType<typeof getEditorSettings>,
+): Pick<SceneCursor, "aperture"> {
+	const a = readCursorAperture(settings.cursor.aperture);
+	if (!a.enabled || a.opacity <= 0) return {};
+	return {
+		aperture: { radiusPx: a.radiusPx, opacity: a.opacity, color: rippleColour(a.color) },
+	};
+}
+
+const RIPPLE_HEX = /^#[0-9a-f]{6}$/i;
 /**
  * `#rrggbb` → `[r, g, b, 1]` in 0..1, the form the compositor's premultiplied blend expects.
  * Alpha stays 1 on purpose: the ring's fade is the separate `opacity` scalar. A value that is
@@ -1560,6 +1605,8 @@ export function buildSceneDescription(
 			asArrow: settings.cursor.asArrow,
 			...(settings.cursor.clickImpact ? { clickImpact: true as const } : {}),
 			...sceneClickRipple(settings, document),
+			...sceneCursorTrail(settings),
+			...sceneCursorAperture(settings),
 			// The "Keep inside frame" option is gone: the cursor always overflows into the
 			// background. The field stays because the compositor's scene requires it.
 			clipToBounds: false,

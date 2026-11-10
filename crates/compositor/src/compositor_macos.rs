@@ -2584,10 +2584,19 @@ impl Compositor {
                 if plan.glass {
                     self.snapshot_rt(cmd_buf, false);
                 }
-                // L'anneau du clic (mode 4) puis l'impact (mode 16), posés sous le curseur.
-                if !plan.ripples.is_empty() || !plan.impacts.is_empty() {
+                // Le halo du pointeur (V2.7.2), l'anneau du clic (mode 4) puis l'impact
+                // (mode 16), posés sous le curseur — sa pointe reste donc nette.
+                if !plan.apertures.is_empty()
+                    || !plan.ripples.is_empty()
+                    || !plan.impacts.is_empty()
+                {
                     let e = self.begin_pass(cmd_buf, &self.rt, None, &self.pipeline_main)?;
-                    for cb in plan.ripples.iter().chain(plan.impacts.iter()) {
+                    for cb in plan
+                        .apertures
+                        .iter()
+                        .chain(plan.ripples.iter())
+                        .chain(plan.impacts.iter())
+                    {
                         self.draw_solid(e, cb);
                     }
                     e.end_encoding();
@@ -2627,14 +2636,19 @@ impl Compositor {
                     let mut bounds = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
                     for k in 0..plan.taps {
                         let f = k as f32 / (plan.taps - 1) as f32;
-                        let w = crate::frame_geometry::cursor_tap_weight(k, plan.taps);
+                        // La traînée (V2.7.2) : poids global et rétrécissement vers la queue.
+                        let look = plan.trail;
+                        let w = crate::frame_geometry::cursor_tap_weight(k, plan.taps)
+                            * look.map_or(1.0, |t| t.alpha);
+                        let tap_size = plan.size_px
+                            * look.map_or(1.0, |t| t.tail_scale + (1.0 - t.tail_scale) * f);
                         e.set_blend_color(w, w, w, w);
                         let drawn = self.draw_cur_themed(
                             e,
                             &sprites,
                             kind,
                             plan.prev_placement.lerp(plan.placement, f),
-                            plan.size_px,
+                            tap_size,
                             plan.alpha,
                             plan.clip,
                             plan.model,

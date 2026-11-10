@@ -126,6 +126,10 @@ export interface ProjectEditorState {
 	 * GUI shows the project's own colours.
 	 */
 	cursorClickRipple?: unknown;
+	/** The trail (V2.7.2). Same reason as the ripple: the CLI export reads only through here. */
+	cursorTrail?: unknown;
+	/** The halo (V2.7.2). Same reason. */
+	cursorAperture?: unknown;
 	cursorAsArrow?: CursorKind[];
 	/** The one switch before `cursorAsArrow`; `getEditorSettings` reads it as every kind. */
 	cursorAlwaysArrow?: boolean;
@@ -523,6 +527,8 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		...(editor.cursorClickRipple !== undefined
 			? { cursorClickRipple: editor.cursorClickRipple }
 			: {}),
+		...(editor.cursorTrail !== undefined ? { cursorTrail: editor.cursorTrail } : {}),
+		...(editor.cursorAperture !== undefined ? { cursorAperture: editor.cursorAperture } : {}),
 		...(Array.isArray(editor.cursorAsArrow)
 			? { cursorAsArrow: readCursorAsArrow(editor.cursorAsArrow, undefined, []) }
 			: {}),

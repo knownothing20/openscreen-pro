@@ -3746,6 +3746,16 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
 /// `plan_frame` : deux backends qui doivent poser le curseur au pixel près ne peuvent pas
 /// entretenir deux copies de ce mapping. Le placement dépend de la coupe source, du zoom,
 /// du padding et de l'inclinaison — autant d'endroits où deux implémentations dérivent.
+/// Ce que la traînée indépendante change au dessin (V2.7.2) : mêmes positions de copies, mais la
+/// queue rétrécit et l'ensemble s'allège. Lu par les trois boucles de dessin, jamais par un shader.
+#[derive(Debug, Clone, Copy)]
+pub struct CursorTrailLook {
+    /// Échelle de la DERNIÈRE copie, 0..1 (1 = même taille que le curseur).
+    pub tail_scale: f32,
+    /// Multiplicateur d'opacité de chaque copie, 0..1.
+    pub alpha: f32,
+}
+
 pub struct CursorPlan {
     pub placement: CursorPlacement,
     /// Placement à `t - trail_frames/FPS`, pour la traînée. `placement` quand il n'y en a pas.
@@ -3755,6 +3765,10 @@ pub struct CursorPlan {
     pub size_px: f32,
     /// Nombre d'échantillons de la traînée. 1 = curseur net, pas d'accumulation.
     pub taps: u32,
+    /// La traînée indépendante (V2.7.2). `Some` = les copies rétrécissent vers la queue et leur
+    /// poids est multiplié par `alpha` ; `None` = le flou de mouvement d'avant, copies de même
+    /// taille. Les deux passent par les MÊMES boucles de dessin : aucune passe GPU en plus.
+    pub trail: Option<CursorTrailLook>,
     /// Rect de clip « Clip to canvas » (mode 4/7 du shader lit `fx`).
     pub clip: [f32; 4],
     /// État du curseur à cet instant (`arrow`, `pointer`, …) pour choisir le sprite.
@@ -3773,6 +3787,9 @@ pub struct CursorPlan {
     /// `impacts`. Vide quand le project n'a pas de `clickRipple`, ou quand l'écran est incliné
     /// (l'anneau est un repère d'écran ; il ne suit pas le plan).
     pub ripples: Vec<LayerCB>,
+    /// Le halo qui suit le pointeur (mode 4, masque disque), dessiné SOUS le curseur pour que sa
+    /// pointe reste nette. Vide quand le project n'a pas d'aperture.
+    pub apertures: Vec<LayerCB>,
     /// Le curseur modélisé est le cristal de Prism Glow : il réfracte l'image déjà composée, le
     /// métrage et ses flous de confidentialité, que le backend lui copie juste avant de le
     /// dessiner. Seuls des pixels floutés passent ainsi à travers le verre.
@@ -3992,6 +4009,12 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
         let prev = if input.track.visible_at(t) { place(at(t), g.s_dst_prev) } else { None };
         prev.unwrap_or(placement)
     };
+    // La traînée indépendante (V2.7.2) prend la main sur la fenêtre d'obturation : une image ne
+    // porte qu'UNE série de copies, donc un seul intervalle à choisir. Absente → le flou d'avant.
+    let trail_cfg: Option<crate::scene::SceneCursorTrail> = input
+        .scene
+        .and_then(|s| s.cursor.trail)
+        .filter(|t| t.length_ms > 0.0 && t.opacity > 0.0);
     let (taps, prev_placement) = if !has_scene {
         let taps = input.cfg.mblur_n;
         let prev = if taps <= 1 {
@@ -4000,6 +4023,20 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
             trail_from(input.t - 1.0 / FPS)
         };
         (taps, prev)
+    } else if let Some(trail) = trail_cfg {
+        // Fenêtre = la longueur demandée ; la densité suit encore la distance parcourue, sinon
+        // une traînée longue se lit comme des fantômes discrets. 24 est le plafond : au-delà,
+        // chaque copie coûte un dessin plein écran pour un gain invisible.
+        let prev = trail_from(input.t - trail.length_ms / 1000.0);
+        let c_now = placement.upright_center();
+        let c_prev = prev.upright_center();
+        let dist_px = ((c_now[0] - c_prev[0]) * rw).hypot((c_now[1] - c_prev[1]) * rh);
+        if dist_px < 1.0 {
+            (1, placement)
+        } else {
+            let needed = (dist_px / 2.5).ceil() as u32;
+            (needed.clamp(2, 24), prev)
+        }
     } else if blur01 <= 0.001 {
         (1, placement)
     } else {
@@ -4091,11 +4128,37 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
                     if !enabled {
                         return None;
                     }
+                    // Le mode 4 dessine un point ET un anneau ; le masque dit lesquels (V2.7.2).
+                    // Les deux coupés = aucun quad : c'est le seul cas qui ne coûte rien.
+                    let mask = (if r.dot { RIPPLE_DOT_MASK } else { 0.0 })
+                        + (if r.ring { RIPPLE_RING_MASK } else { 0.0 });
+                    if mask <= 0.0 {
+                        return None;
+                    }
                     let side = r.size_px * (0.35 + 0.65 * progress);
                     let fade = (1.0 - progress).powf(1.5) * r.opacity;
-                    click_ripple_cb(center, side, color, fade * alpha, [rw, rh])
+                    click_ripple_cb(center, side, color, fade * alpha, [rw, rh], mask)
                 })
                 .collect()
+        }
+        _ => Vec::new(),
+    };
+
+    // Le halo (V2.7.2) : un disque doux centré sur le curseur, dessiné sous lui. Sa taille et son
+    // opacité ne dépendent ni des clics ni de la vitesse — à l'arrêt il ne bouge pas d'un pixel,
+    // ce qui est la différence avec le halo du point, qui respire avec le clic.
+    let apertures = match input.scene.and_then(|s| s.cursor.aperture) {
+        Some(a) if a.radius_px > 0.0 && a.opacity > 0.0 && alpha > 0.0 => {
+            click_ripple_cb(
+                placement.upright_center(),
+                a.radius_px * 2.0,
+                a.color,
+                a.opacity * alpha,
+                [rw, rh],
+                APERTURE_MASK,
+            )
+            .into_iter()
+            .collect()
         }
         _ => Vec::new(),
     };
@@ -4105,10 +4168,15 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
         prev_placement,
         size_px,
         taps,
+        trail: trail_cfg.map(|t| CursorTrailLook {
+            tail_scale: t.thickness.clamp(0.0, 1.0),
+            alpha: t.opacity.clamp(0.0, 1.0),
+        }),
         clip,
         cursor_type: cursor_type.map(str::to_string),
         alpha,
         ripples,
+        apertures,
         model: model_sprite.map(|s| {
             let pointing = pointing_factor([s.hotspot_x, s.hotspot_y]);
             cursor_pose(input.track, input.t, lp.cursor_bounce_scale, pointing)
@@ -4648,6 +4716,14 @@ struct Impact {
     spot_a: f32,
 }
 
+/// Le masque du mode 4, porté par `src.y` quand `src.x = 1` : bit0 point, bit1 anneau, bit2 disque
+/// (le halo). Les trois langages de shader lisent les mêmes bits.
+/// Anneau d'un clic : point + anneau, ce que le mode 4 dessine depuis V2.7.1.
+pub const RIPPLE_DOT_MASK: f32 = 1.0;
+pub const RIPPLE_RING_MASK: f32 = 2.0;
+/// Le halo du curseur : un seul disque doux, sans point ni anneau.
+const APERTURE_MASK: f32 = 4.0;
+
 /// `LayerCB` de l'impact (mode 16) centré sur le point du plan de `placement`, carré de demi-côté
 /// `half_px` (px du rect d'écran non incliné, l'unité de la taille du curseur). `None` pour un
 /// placement droit : le curseur modélisé a toujours un plan.
@@ -4662,6 +4738,7 @@ fn click_ripple_cb(
     color: [f32; 4],
     alpha: f32,
     render_px: [f32; 2],
+    mask: f32,
 ) -> Option<LayerCB> {
     if side_px <= 0.0 || alpha <= 0.0 || render_px[0] <= 0.0 || render_px[1] <= 0.0 {
         return None;
@@ -4670,7 +4747,9 @@ fn click_ripple_cb(
     let h = side_px / render_px[1];
     Some(LayerCB {
         dst: [center[0] - w * 0.5, center[1] - h * 0.5, w, h],
-        src: [0.0, 0.0, 1.0, 1.0],
+        // `src.x = 1` : le mode 4 lit alors `src.y` comme un masque (bit0 point, bit1 anneau,
+        // bit2 disque). La valeur d'avant, `src = [0,0,1,1]`, garde le dessin point+anneau.
+        src: [1.0, mask, 1.0, 1.0],
         quad_px: [side_px, side_px],
         radius_px: 0.0,
         mode: 4.0,
@@ -9230,5 +9309,92 @@ mod tests {
         assert!(middle.ripples.is_empty(), "bouton milieu coupé : aucun quad");
         let right = ripple_plan(&scene, vec![(1.0, crate::cursor::ClickKind::Right)], 1.05);
         assert_eq!(right.ripples.len(), 1, "le bouton droit reste allumé");
+    }
+
+    // V2.7.2 — le mode 4 dessine un point et un anneau ; `src.y` porte désormais le masque
+    // (bit0 point, bit1 anneau, bit2 disque), `src.x = 1` disant au shader de le lire.
+
+    const RIPPLE_DOT_ONLY: &str = r#","clickRipple":{"durationMs":450,"sizePx":72,"opacity":0.55,
+        "left":[1,1,1,1],"right":[1,0.62,0.2,1],"middle":[0.35,0.7,1,1],
+        "dot":true,"ring":false}"#;
+
+    const RIPPLE_RING_ONLY: &str = r#","clickRipple":{"durationMs":450,"sizePx":72,"opacity":0.55,
+        "left":[1,1,1,1],"right":[1,0.62,0.2,1],"middle":[0.35,0.7,1,1],
+        "dot":false,"ring":true}"#;
+
+    const RIPPLE_NEITHER: &str = r#","clickRipple":{"durationMs":450,"sizePx":72,"opacity":0.55,
+        "left":[1,1,1,1],"right":[1,0.62,0.2,1],"middle":[0.35,0.7,1,1],
+        "dot":false,"ring":false}"#;
+
+    #[test]
+    fn the_dot_and_the_ring_can_be_drawn_apart() {
+        let dot = ripple_plan(
+            &ripple_scene(RIPPLE_DOT_ONLY),
+            vec![(1.0, crate::cursor::ClickKind::Left)],
+            1.03,
+        );
+        assert_eq!(dot.ripples.len(), 1);
+        assert_eq!(dot.ripples[0].src, [1.0, 1.0, 1.0, 1.0], "point seul : masque 1");
+
+        let ring = ripple_plan(
+            &ripple_scene(RIPPLE_RING_ONLY),
+            vec![(1.0, crate::cursor::ClickKind::Left)],
+            1.03,
+        );
+        assert_eq!(ring.ripples[0].src, [1.0, 2.0, 1.0, 1.0], "anneau seul : masque 2");
+
+        // Les deux, et le JSON d'avant (sans les clés) : même masque, donc même dessin.
+        let both = ripple_plan(
+            &ripple_scene(RIPPLE),
+            vec![(1.0, crate::cursor::ClickKind::Left)],
+            1.03,
+        );
+        assert_eq!(both.ripples[0].src, [1.0, 3.0, 1.0, 1.0], "les deux : masque 3");
+    }
+
+    #[test]
+    fn neither_half_draws_no_quad_at_all() {
+        let plan = ripple_plan(
+            &ripple_scene(RIPPLE_NEITHER),
+            vec![(1.0, crate::cursor::ClickKind::Left)],
+            1.03,
+        );
+        assert!(plan.ripples.is_empty(), "point et anneau coupés : rien à dessiner");
+    }
+
+    const TRAIL: &str = r#","trail":{"lengthMs":400,"opacity":0.5,"thickness":0.4}"#;
+    const APERTURE: &str = r#","aperture":{"radiusPx":100,"opacity":0.3,"color":[0.2,0.4,1,1]}"#;
+
+    #[test]
+    fn the_trail_carries_its_own_opacity_and_taper() {
+        let plan = ripple_plan(&ripple_scene(TRAIL), vec![], 1.0);
+        let look = plan.trail.expect("une traînée réglée doit être planifiée");
+        assert!((look.alpha - 0.5).abs() < 1e-6);
+        assert!((look.tail_scale - 0.4).abs() < 1e-6);
+
+        // Sans le réglage, aucun look : les copies restent celles du flou de mouvement.
+        let plain = ripple_plan(&ripple_scene(""), vec![], 1.0);
+        assert!(plain.trail.is_none());
+    }
+
+    #[test]
+    fn the_aperture_is_one_disc_of_its_radius_under_the_cursor() {
+        let plan = ripple_plan(&ripple_scene(APERTURE), vec![], 1.0);
+        assert_eq!(plan.apertures.len(), 1, "un seul disque, quel que soit le nombre de clics");
+        let cb = &plan.apertures[0];
+        assert_eq!(cb.mode, 4.0, "le disque réutilise le mode 4, pas une passe à lui");
+        assert_eq!(cb.src[1], 4.0, "masque disque");
+        let width_px = cb.dst[2] * 1920.0;
+        assert!((width_px - 200.0).abs() < 0.5, "diamètre = 2 × rayon : {width_px}");
+        // Il ne dépend pas des clics : même disque, même taille, 300 ms après un clic.
+        let after_click = plan.ripples.len();
+        assert_eq!(after_click, 0, "aucun anneau : la scène n'a pas de clickRipple");
+    }
+
+    #[test]
+    fn a_cursor_without_settings_draws_neither_trail_nor_aperture() {
+        let plan = ripple_plan(&ripple_scene(""), vec![], 1.0);
+        assert!(plan.trail.is_none());
+        assert!(plan.apertures.is_empty());
     }
 }

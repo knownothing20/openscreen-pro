@@ -6,7 +6,9 @@ import {
 import type { WebcamLayoutPreset } from "@/lib/compositeLayout";
 import type { CursorKind } from "@/lib/cursor/cursorThemes";
 import {
+	type CursorApertureSettings,
 	type CursorRippleSettings,
+	type CursorTrailSettings,
 	DEFAULT_PROJECT_APPEARANCE,
 	SETTING_BOUNDS,
 } from "@/lib/projectDefaults";
@@ -303,6 +305,10 @@ export interface CursorVisualSettings {
 	autoHide?: boolean;
 	/** The click ring (`projectDefaults.CursorRippleSettings`): per-button colour and switch. */
 	ripple: CursorRippleSettings;
+	/** The trail (V2.7.2): motion-blur copies opened on a longer window. Off = old behaviour. */
+	trail: CursorTrailSettings;
+	/** The halo under the cursor (V2.7.2). Off = nothing drawn. */
+	aperture: CursorApertureSettings;
 }
 
 // The project defaults, under the names the legacy editor reads: one value, not two to keep in sync.

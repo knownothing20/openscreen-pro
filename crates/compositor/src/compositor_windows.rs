@@ -2362,8 +2362,11 @@ impl Compositor {
                     self.ctx.CopySubresourceRegion(&self.ann_copy, 0, 0, 0, 0, &self.rt, 0, None);
                     self.ctx.PSSetShaderResources(5, Some(&[Some(self.ann_copy_srv.clone())]));
                 }
-                // L'anneau du clic (mode 4), puis l'impact (mode 16) : tous deux sans texture,
-                // posés sur l'écran SOUS le curseur.
+                // Le halo du pointeur (V2.7.2), puis l'anneau du clic, puis l'impact : tous sans
+                // texture, posés sur l'écran SOUS le curseur — le halo ne mange donc jamais sa pointe.
+                for cb in &plan.apertures {
+                    self.draw_solid(cb);
+                }
                 for cb in &plan.ripples {
                     self.draw_solid(cb);
                 }
@@ -2390,13 +2393,19 @@ impl Compositor {
                     let mut bounds = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
                     for k in 0..plan.taps {
                         let f = k as f32 / (plan.taps - 1) as f32;
-                        let w = crate::frame_geometry::cursor_tap_weight(k, plan.taps);
+                        // La traînée (V2.7.2) : poids global et rétrécissement vers la queue.
+                        // Sans elle (`None`), poids et taille sont ceux d'avant.
+                        let look = plan.trail;
+                        let w = crate::frame_geometry::cursor_tap_weight(k, plan.taps)
+                            * look.map_or(1.0, |t| t.alpha);
+                        let tap_size = plan.size_px
+                            * look.map_or(1.0, |t| t.tail_scale + (1.0 - t.tail_scale) * f);
                         self.ctx.OMSetBlendState(&self.blend_add, Some(&[w, w, w, w]), 0xffffffff);
                         let drawn = self.draw_cur_themed(
                             &cursor_sprites,
                             cursor_type,
                             plan.prev_placement.lerp(plan.placement, f),
-                            plan.size_px,
+                            tap_size,
                             plan.alpha,
                             plan.clip,
                             plan.model,

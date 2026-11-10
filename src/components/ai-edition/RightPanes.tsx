@@ -3959,6 +3959,8 @@ export function CursorPane() {
 	// The click ripple (V2.7.2). The whole object is written on every edit: `nextLegacy` stores
 	// it whole, so a partial write would let a stale button survive under a new master switch.
 	const ripple = settings.cursor.ripple;
+	const trail = settings.cursor.trail;
+	const aperture = settings.cursor.aperture;
 	const rippleButtonLabels = {
 		left: ts("cursor.rippleLeft"),
 		right: ts("cursor.rippleRight"),
@@ -4244,6 +4246,26 @@ export function CursorPane() {
 									</div>
 								</div>
 							))}
+							{/* The two halves of mode 4 (V2.7.2): the dot and the ring used to come
+							    together, and a project may want only one of them. */}
+							<div className={styles.paneRow}>
+								<span className={styles.label}>{ts("cursor.rippleDot")}</span>
+								<Toggle
+									ariaLabel={ts("cursor.rippleDot")}
+									checked={ripple.dot}
+									disabled={!hasDocument}
+									onChange={(dot) => writeRipple({ dot })}
+								/>
+							</div>
+							<div className={styles.paneRow}>
+								<span className={styles.label}>{ts("cursor.rippleRing")}</span>
+								<Toggle
+									ariaLabel={ts("cursor.rippleRing")}
+									checked={ripple.ring}
+									disabled={!hasDocument}
+									onChange={(ring) => writeRipple({ ring })}
+								/>
+							</div>
 							<div className={styles.sliderGrid}>
 								<SliderCell
 									label={ts("cursor.rippleSize")}
@@ -4285,6 +4307,133 @@ export function CursorPane() {
 									onChange={(v) => {
 										writeRipple({ opacity: v / 100 }, true);
 									}}
+									onCommit={() => void commit()}
+								/>
+							</div>
+						</>
+					) : null}
+				</>
+			) : null}
+			{/* The trail (V2.7.2): the copies the compositor already draws for motion blur, opened
+			    on a longer window with their own opacity and taper. Off = the picture of V2.7.1. */}
+			{settings.cursorShow ? (
+				<>
+					<div className={styles.paneRow}>
+						<span className={styles.label}>{ts("cursor.trail")}</span>
+						<Toggle
+							ariaLabel={ts("cursor.trail")}
+							tooltip={ts("cursor.trailTip")}
+							checked={trail.enabled}
+							disabled={!hasDocument}
+							onChange={(enabled) => void set({ cursor: { trail: { ...trail, enabled } } })}
+						/>
+					</div>
+					{trail.enabled ? (
+						<div className={styles.sliderGrid}>
+							<SliderCell
+								label={ts("cursor.trailLength")}
+								value={trail.lengthMs}
+								min={SETTING_BOUNDS.trailLength[0]}
+								max={SETTING_BOUNDS.trailLength[1]}
+								step={10}
+								suffix="ms"
+								defaultValue={DEFAULT_EDITOR_SETTINGS.cursor.trail.lengthMs}
+								disabled={!hasDocument}
+								onChange={(lengthMs) => void setLive({ cursor: { trail: { ...trail, lengthMs } } })}
+								onCommit={() => void commit()}
+							/>
+							<SliderCell
+								label={ts("cursor.trailOpacity")}
+								value={Math.round(trail.opacity * 100)}
+								min={SETTING_BOUNDS.trailOpacity[0] * 100}
+								max={SETTING_BOUNDS.trailOpacity[1] * 100}
+								step={1}
+								suffix="%"
+								defaultValue={Math.round(DEFAULT_EDITOR_SETTINGS.cursor.trail.opacity * 100)}
+								disabled={!hasDocument}
+								onChange={(v) =>
+									void setLive({ cursor: { trail: { ...trail, opacity: v / 100 } } })
+								}
+								onCommit={() => void commit()}
+							/>
+							<SliderCell
+								label={ts("cursor.trailThickness")}
+								value={Math.round(trail.thickness * 100)}
+								min={SETTING_BOUNDS.trailThickness[0] * 100}
+								max={SETTING_BOUNDS.trailThickness[1] * 100}
+								step={1}
+								suffix="%"
+								defaultValue={Math.round(DEFAULT_EDITOR_SETTINGS.cursor.trail.thickness * 100)}
+								disabled={!hasDocument}
+								onChange={(v) =>
+									void setLive({ cursor: { trail: { ...trail, thickness: v / 100 } } })
+								}
+								onCommit={() => void commit()}
+							/>
+						</div>
+					) : null}
+				</>
+			) : null}
+			{/* The halo (V2.7.2): a soft disc under the cursor, never over its tip, and never
+			    reacting to clicks — a lamp, not an effect. */}
+			{settings.cursorShow ? (
+				<>
+					<div className={styles.paneRow}>
+						<span className={styles.label}>{ts("cursor.aperture")}</span>
+						<Toggle
+							ariaLabel={ts("cursor.aperture")}
+							tooltip={ts("cursor.apertureTip")}
+							checked={aperture.enabled}
+							disabled={!hasDocument}
+							onChange={(enabled) => void set({ cursor: { aperture: { ...aperture, enabled } } })}
+						/>
+					</div>
+					{aperture.enabled ? (
+						<>
+							<div className={styles.paneRow}>
+								<span className={styles.label}>{ts("cursor.apertureColor")}</span>
+								<ColorField
+									label={ts("cursor.apertureColor")}
+									value={aperture.color}
+									swatch={aperture.color}
+									disabled={!hasDocument}
+									onChange={(hex) => {
+										if (FULL_HEX.test(hex)) {
+											void setLive({
+												cursor: { aperture: { ...aperture, color: hex.toLowerCase() } },
+											});
+										}
+									}}
+									onCommit={() => void commit()}
+								/>
+							</div>
+							<div className={styles.sliderGrid}>
+								<SliderCell
+									label={ts("cursor.apertureRadius")}
+									value={aperture.radiusPx}
+									min={SETTING_BOUNDS.apertureRadius[0]}
+									max={SETTING_BOUNDS.apertureRadius[1]}
+									step={2}
+									suffix="px"
+									defaultValue={DEFAULT_EDITOR_SETTINGS.cursor.aperture.radiusPx}
+									disabled={!hasDocument}
+									onChange={(radiusPx) =>
+										void setLive({ cursor: { aperture: { ...aperture, radiusPx } } })
+									}
+									onCommit={() => void commit()}
+								/>
+								<SliderCell
+									label={ts("cursor.apertureOpacity")}
+									value={Math.round(aperture.opacity * 100)}
+									min={SETTING_BOUNDS.apertureOpacity[0] * 100}
+									max={SETTING_BOUNDS.apertureOpacity[1] * 100}
+									step={1}
+									suffix="%"
+									defaultValue={Math.round(DEFAULT_EDITOR_SETTINGS.cursor.aperture.opacity * 100)}
+									disabled={!hasDocument}
+									onChange={(v) =>
+										void setLive({ cursor: { aperture: { ...aperture, opacity: v / 100 } } })
+									}
 									onCommit={() => void commit()}
 								/>
 							</div>

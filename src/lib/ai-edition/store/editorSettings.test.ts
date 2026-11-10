@@ -7,7 +7,12 @@ import {
 } from "@/components/video-editor/types";
 import { defaultOpeningSequence } from "@/lib/ai-edition/opening/opening";
 import { DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
-import { DEFAULT_CURSOR_RIPPLE, SETTING_BOUNDS } from "@/lib/projectDefaults";
+import {
+	DEFAULT_CURSOR_APERTURE,
+	DEFAULT_CURSOR_RIPPLE,
+	DEFAULT_CURSOR_TRAIL,
+	SETTING_BOUNDS,
+} from "@/lib/projectDefaults";
 import { ROUNDNESS_SLIDER_MAX_PX } from "@/native/paramUnits";
 import type { AxcutDocument } from "../schema";
 import { axcutSchemaVersion } from "../schema";
@@ -464,6 +469,8 @@ describe("cursor ripple settings", () => {
 			left: { enabled: true, color: "#12ab34" },
 			right: { enabled: false, color: "#ff0000" },
 			middle: { enabled: true, color: "#0000ff" },
+			dot: false,
+			ring: true,
 		};
 		const doc = patchEditorSettings(baseDoc, { cursor: { ripple } });
 		expect(getEditorSettings(doc).cursor.ripple).toEqual(ripple);
@@ -489,5 +496,43 @@ describe("cursor ripple settings", () => {
 		expect(ripple.opacity).toBe(1);
 		// A colour a shader cannot take leaves the whole button at its default.
 		expect(ripple.left).toEqual(DEFAULT_CURSOR_RIPPLE.left);
+	});
+});
+
+// V2.7.2 — the trail and the halo live in their own `legacyEditor` objects, both off by default
+// so that opening an old project cannot add either.
+describe("cursor trail and halo settings", () => {
+	it("reads both off when the project stores neither", () => {
+		const snap = getEditorSettings(baseDoc);
+		expect(snap.cursor.trail).toEqual(DEFAULT_CURSOR_TRAIL);
+		expect(snap.cursor.aperture).toEqual(DEFAULT_CURSOR_APERTURE);
+		expect(snap.cursor.trail.enabled).toBe(false);
+		expect(snap.cursor.aperture.enabled).toBe(false);
+	});
+
+	it("round-trips a stored trail and halo through the patch writer", () => {
+		const trail = { enabled: true, lengthMs: 320, opacity: 0.4, thickness: 0.5 };
+		const aperture = { enabled: true, radiusPx: 140, opacity: 0.3, color: "#12ab34" };
+		const doc = patchEditorSettings(baseDoc, { cursor: { trail, aperture } });
+		const snap = getEditorSettings(doc);
+		expect(snap.cursor.trail).toEqual(trail);
+		expect(snap.cursor.aperture).toEqual(aperture);
+		expect((doc.legacyEditor as Record<string, unknown>).cursorTrail).toEqual(trail);
+		expect((doc.legacyEditor as Record<string, unknown>).cursorAperture).toEqual(aperture);
+	});
+
+	it("bounds a hand-edited trail and halo", () => {
+		const doc = patchEditorSettings(baseDoc, {
+			cursor: {
+				trail: { enabled: true, lengthMs: 99_999, opacity: 7, thickness: 0 },
+				aperture: { enabled: true, radiusPx: 1, opacity: -2, color: "#ff0000" },
+			},
+		});
+		const snap = getEditorSettings(doc);
+		expect(snap.cursor.trail.lengthMs).toBe(SETTING_BOUNDS.trailLength[1]);
+		expect(snap.cursor.trail.opacity).toBe(1);
+		expect(snap.cursor.trail.thickness).toBe(SETTING_BOUNDS.trailThickness[0]);
+		expect(snap.cursor.aperture.radiusPx).toBe(SETTING_BOUNDS.apertureRadius[0]);
+		expect(snap.cursor.aperture.opacity).toBe(0);
 	});
 });

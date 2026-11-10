@@ -1384,7 +1384,72 @@ describe("buildSceneDescription.settings mapping", () => {
 				leftEnabled: true,
 				rightEnabled: false,
 				middleEnabled: true,
+				// Both halves default to on: the object predating them keeps the V2.7.1 ring.
+				dot: true,
+				ring: true,
 			});
+		});
+
+		it("carries the dot and ring switches, and omits them in the old rule", () => {
+			const doc = makeDoc({
+				legacyEditor: {
+					cursorClickBounce: 1,
+					cursorClickRipple: {
+						enabled: true,
+						durationMs: 450,
+						sizePx: 72,
+						opacity: 0.55,
+						dot: false,
+						ring: true,
+						left: { enabled: true, color: "#ffffff" },
+						right: { enabled: true, color: "#ff9e33" },
+						middle: { enabled: true, color: "#59b3ff" },
+					},
+				},
+			});
+			const ripple = buildSceneDescription(doc).cursor.clickRipple;
+			expect([ripple?.dot, ripple?.ring]).toEqual([false, true]);
+
+			// The old rule writes neither key: serde defaults them to true, so nothing changes.
+			const legacy = makeDoc({ legacyEditor: { cursorClickBounce: 1 } });
+			const old = buildSceneDescription(legacy).cursor.clickRipple;
+			expect("dot" in (old ?? {})).toBe(false);
+			expect("ring" in (old ?? {})).toBe(false);
+		});
+
+		it("sends the trail and the halo only when they are on", () => {
+			const off = buildSceneDescription(makeDoc({}));
+			expect(off.cursor.trail).toBeUndefined();
+			expect(off.cursor.aperture).toBeUndefined();
+
+			const doc = makeDoc({
+				legacyEditor: {
+					cursorTrail: { enabled: true, lengthMs: 320, opacity: 0.4, thickness: 0.5 },
+					cursorAperture: {
+						enabled: true,
+						radiusPx: 140,
+						opacity: 0.3,
+						color: "#12ab34",
+					},
+				},
+			});
+			const scene = buildSceneDescription(doc);
+			expect(scene.cursor.trail).toEqual({ lengthMs: 320, opacity: 0.4, thickness: 0.5 });
+			expect(scene.cursor.aperture).toEqual({
+				radiusPx: 140,
+				opacity: 0.3,
+				color: [0x12 / 255, 0xab / 255, 0x34 / 255, 1],
+			});
+
+			// A zero-opacity halo is not a halo: the key is dropped rather than sent as a no-op.
+			const transparent = buildSceneDescription(
+				makeDoc({
+					legacyEditor: {
+						cursorAperture: { enabled: true, radiusPx: 140, opacity: 0, color: "#12ab34" },
+					},
+				}),
+			);
+			expect(transparent.cursor.aperture).toBeUndefined();
 		});
 	});
 

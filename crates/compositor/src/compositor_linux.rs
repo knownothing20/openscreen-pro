@@ -2988,8 +2988,9 @@ impl Compositor {
                 ];
             };
             let impacts: Vec<LayerBind> = plan
-                .ripples
+                .apertures
                 .iter()
+                .chain(plan.ripples.iter())
                 .chain(plan.impacts.iter())
                 .map(|cb| self.make_bind(cb, None, &dummy))
                 .collect();
@@ -3030,7 +3031,7 @@ impl Compositor {
                     Ok((sdf, shape)) => {
                         let shape = crate::frame_geometry::model_shape(sprite, shape);
                         let sdf_view = sdf.create_view(&wgpu::TextureViewDescriptor::default());
-                        for placement in placements {
+                        for placement in placements.iter().copied() {
                             let Some(cb) = cursor_model_cb(
                                 placement,
                                 plan.size_px,
@@ -3062,15 +3063,25 @@ impl Compositor {
                 }
             }
 
-            for placement in placements {
+            // Traînée (V2.7.2) : les copies rétrécissent vers la queue et l'ensemble s'allège.
+            // Vulkan empile ses copies dans `accum` en un seul draw instancié, sans poids par
+            // instance : la taille est donc portée par chaque bind, et `alpha` s'applique à
+            // toutes les copies à la fois. Windows et macOS font mieux (poids par copie) ; ici
+            // la traînée se lit par le rétrécissement, ce qui reste son signal principal.
+            let trail_look = plan.trail;
+            let taps = placements.len().max(1);
+            for (k, placement) in placements.into_iter().enumerate() {
+                let f = if taps <= 1 { 1.0 } else { k as f32 / (taps - 1) as f32 };
+                let tap_scale = trail_look.map_or(1.0, |t| t.tail_scale + (1.0 - t.tail_scale) * f);
+                let tap_alpha = plan.alpha * trail_look.map_or(1.0, |t| t.alpha);
                 // Geometrie partagee avec Windows et macOS (`cursor_sprite_cb`) :
                 // mode 7 droit, ou mode 13 pose sur le plan -- le clip vit alors
                 // dans `dst_prev`.
                 let cb = cursor_sprite_cb(
                     placement,
-                    [pw, ph],
+                    [pw * tap_scale, ph * tap_scale],
                     hotspot,
-                    plan.alpha,
+                    tap_alpha,
                     plan.clip,
                     [rw, rh],
                 );

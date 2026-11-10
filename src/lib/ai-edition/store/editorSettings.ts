@@ -29,7 +29,9 @@ import {
 	type RecordingFrame,
 	readBackgroundBlur,
 	readBounded,
+	readCursorAperture,
 	readCursorRipple,
+	readCursorTrail,
 	readRecordingFrame,
 	readWebcamAnchor,
 	readWebcamMask,
@@ -192,6 +194,10 @@ interface LegacyShape {
 	 * `cursorClickBounce > 0` meant rings at the old hard-coded look.
 	 */
 	cursorClickRipple?: unknown;
+	/** The trail (V2.7.2). Absent = the compositor keeps the old motion-blur-only behaviour. */
+	cursorTrail?: unknown;
+	/** The halo (V2.7.2). Absent = nothing is drawn. */
+	cursorAperture?: unknown;
 	cursorModel3d?: boolean;
 	/** `unknown`: read through `readCursorAsArrow`, which drops what this build does not know. */
 	cursorAsArrow?: unknown;
@@ -251,6 +257,10 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		// Absent = the project predates the ripple settings: `buildSceneDescription` then keeps
 		// the old rule (`clickBounce > 0`). Present = it drives the ring on its own.
 		ripple: readCursorRipple(legacy?.cursorClickRipple, defaults.cursor.ripple),
+		// Both are off in their defaults, so a project that never stores them renders exactly
+		// as it did: no trail settings are sent, and neither is a halo.
+		trail: readCursorTrail(legacy?.cursorTrail, defaults.cursor.trail),
+		aperture: readCursorAperture(legacy?.cursorAperture, defaults.cursor.aperture),
 	};
 
 	// The pan is authoritative and the rect's offset is rebuilt from it, so the two cannot
@@ -399,6 +409,8 @@ function nextLegacy(current: LegacyShape | null, patch: EditorSettingsPatch): Le
 		// The whole object, replaced whole: a partial merge would let a build that knows fewer
 		// buttons than the writer keep a stale switch for the one it does not know.
 		if (c.ripple !== undefined) next.cursorClickRipple = c.ripple;
+		if (c.trail !== undefined) next.cursorTrail = c.trail;
+		if (c.aperture !== undefined) next.cursorAperture = c.aperture;
 		if (c.model3d !== undefined) next.cursorModel3d = c.model3d;
 		if (c.asArrow !== undefined) {
 			next.cursorAsArrow = c.asArrow;

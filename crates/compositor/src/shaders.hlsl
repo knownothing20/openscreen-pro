@@ -4007,12 +4007,20 @@ float4 ps_main(VSOut i) : SV_Target
 
     // mode 4 : curseur custom (dot + ring, dessiné depuis les maths). color = teinte.
     // fx = rect de clip "Clip to canvas" (mêmes conventions que le mode 7 ci-dessus).
+    //
+    // V2.7.2 : `src.x = 1` → `src.y` porte un masque (bit0 point, bit1 anneau, bit2 disque).
+    // Les appels d'avant laissent `src = [0,0,1,1]` et gardent donc point + anneau, à l'octet
+    // près : le mode 4 ne lit `src` nulle part ailleurs (`uv` n'est pas échantillonné ici).
     if (mode > 3.5)
     {
         if (i.pout.x < fx.x || i.pout.x > fx.x + fx.z || i.pout.y < fx.y || i.pout.y > fx.y + fx.w)
         {
             return float4(0.0, 0.0, 0.0, 0.0);
         }
+        uint mask = (src.x > 0.5) ? (uint)src.y : 3u;
+        bool want_dot = (mask & 1u) != 0u;
+        bool want_ring = (mask & 2u) != 0u;
+        bool want_disc = (mask & 4u) != 0u;
         float2 p = i.local - quad_px * 0.5;
         float r = length(p);
         float R = quad_px.x * 0.5;
@@ -4020,13 +4028,20 @@ float4 ps_main(VSOut i) : SV_Target
         float dot_r = R * 0.34;
         float ring_r = R * 0.72;
         float ring_w = R * 0.09;
-        float dot = 1.0 - smoothstep(dot_r - aa, dot_r + aa, r);
-        float ring = smoothstep(ring_r - ring_w - aa, ring_r - ring_w, r)
-                   * (1.0 - smoothstep(ring_r + ring_w, ring_r + ring_w + aa, r));
+        float dot = want_dot ? 1.0 - smoothstep(dot_r - aa, dot_r + aa, r) : 0.0;
+        float ring = want_ring
+            ? smoothstep(ring_r - ring_w - aa, ring_r - ring_w, r)
+              * (1.0 - smoothstep(ring_r + ring_w, ring_r + ring_w + aa, r))
+            : 0.0;
+        // Le disque (V2.7.2) : un halo doux qui remplit tout le quad, éteint au bord. Il ne
+        // dépend d'aucune constante de clic — c'est un projecteur qui suit le pointeur.
+        float disc = want_disc ? 1.0 - smoothstep(R * 0.1, R, r) : 0.0;
         // liseré sombre fin sous le dot pour le contraste sur fond clair
-        float halo = (1.0 - smoothstep(dot_r + aa, dot_r + aa + 2.5, r)) * (1.0 - dot);
-        float a = saturate(dot + ring) * color.a;
-        float3 rgb = color.rgb * (dot + ring) + float3(0, 0, 0) * halo;
+        float halo = want_dot
+            ? (1.0 - smoothstep(dot_r + aa, dot_r + aa + 2.5, r)) * (1.0 - dot)
+            : 0.0;
+        float a = saturate(dot + ring + disc) * color.a;
+        float3 rgb = color.rgb * (dot + ring + disc) + float3(0, 0, 0) * halo;
         a = saturate(a + halo * 0.35 * color.a);
         return float4(rgb * a, a);
     }

@@ -815,6 +815,13 @@ pub struct SceneCursor {
     /// avant ce réglage, et de tout utilisateur qui n'a pas activé le retour de clic.
     #[serde(default)]
     pub click_ripple: Option<SceneClickRipple>,
+    /// La traînée indépendante (V2.7.2). Absente = le flou de mouvement garde son comportement
+    /// d'avant, et un projet qui n'écrit pas ces clés ne change pas d'un pixel.
+    #[serde(default)]
+    pub trail: Option<SceneCursorTrail>,
+    /// Le halo qui suit le pointeur (V2.7.2). Absent = aucun halo.
+    #[serde(default)]
+    pub aperture: Option<SceneCursorAperture>,
     pub clip_to_bounds: bool,
     /// id du thème (jeu de sprites) — informatif ici : le natif consomme `cursor_sprites`.
     pub theme: String,
@@ -858,6 +865,47 @@ pub struct SceneClickRipple {
     pub right_enabled: bool,
     #[serde(default = "ripple_button_enabled")]
     pub middle_enabled: bool,
+    /// Les deux moitiés du mode 4, séparément (V2.7.2). Le shader dessine un point plein et un
+    /// anneau creux ; jusqu'ici ils venaient ensemble. `#[serde(default = …)]` → `true` : un
+    /// projet qui n'écrit pas ces clés garde exactement le dessin d'avant, et un couple
+    /// (false, false) n'émet aucun quad du tout — rien à dessiner vaut mieux qu'un quad vide.
+    #[serde(default = "ripple_button_enabled")]
+    pub dot: bool,
+    #[serde(default = "ripple_button_enabled")]
+    pub ring: bool,
+}
+
+/// La traînée du curseur (V2.7.2), indépendante du flou de mouvement.
+///
+/// Le compositeur peignait déjà N copies interpolées entre la position d'il y a un instant et
+/// la position courante (`CursorPlan::taps`), mais uniquement comme flou d'obturation : la
+/// fenêtre valait `motionBlur / FPS` et les copies gardaient toutes la taille du curseur. Cette
+/// structure ouvre la même machinerie sur une fenêtre plus longue — une vraie traînée — avec sa
+/// propre opacité et son propre rétrécissement vers la queue.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneCursorTrail {
+    /// Longueur de la traînée, en millisecondes : la fenêtre que les copies couvrent.
+    pub length_ms: f32,
+    /// Opacité de la traînée, 0..1 (multiplie le poids de chaque copie).
+    pub opacity: f32,
+    /// Taille relative de la queue, 0..1 : 1 = copies de la taille du curseur, 0.4 = queue fine.
+    pub thickness: f32,
+}
+
+/// Un halo doux centré sur le curseur (V2.7.2) : le « projecteur » qui suit le pointeur.
+///
+/// Dessiné AVANT le sprite, donc sous lui : la pointe du curseur reste nette. Sa taille ne
+/// dépend pas des clics — il ne pulse pas — et son opacité est constante tant que le curseur
+/// est visible, ce qui le rend stable à l'arrêt.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneCursorAperture {
+    /// Rayon en pixels de sortie (le halo s'éteint en douceur avant ce rayon).
+    pub radius_px: f32,
+    /// Opacité au centre, 0..1.
+    pub opacity: f32,
+    pub color: [f32; 4],
 }
 
 /// Le défaut des trois interrupteurs : allumés. Hors de la struct pour que `serde(default = …)`

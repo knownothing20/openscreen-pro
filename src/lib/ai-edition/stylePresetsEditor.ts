@@ -54,6 +54,8 @@ export function stylePresetAppearanceFromSettings(
 				right: { ...ripple.right },
 				middle: { ...ripple.middle },
 			},
+			trail: { ...settings.cursor.trail },
+			aperture: { ...settings.cursor.aperture },
 		},
 		cursorShow: settings.cursorShow,
 		cursorAutoHide: settings.cursorAutoHide,

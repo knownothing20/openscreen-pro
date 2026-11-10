@@ -3619,8 +3619,15 @@ fragment float4 ps_main(VSOut i [[stage_in]],
     }
 
     // mode 4 : curseur dessiné (dot + ring SDF).
+    //
+    // V2.7.2 : `src.x = 1` → `src.y` porte un masque (bit0 point, bit1 anneau, bit2 disque).
+    // Sans lui, `src = [0,0,1,1]` et le dessin reste point + anneau : identique à avant.
     if (layer.mode > 3.5 && layer.mode < 4.5)
     {
+        uint mask = (layer.src.x > 0.5) ? (uint)layer.src.y : 3u;
+        bool want_dot = (mask & 1u) != 0u;
+        bool want_ring = (mask & 2u) != 0u;
+        bool want_disc = (mask & 4u) != 0u;
         float2 p = i.local - layer.quad_px * 0.5;
         float R = min(layer.quad_px.x, layer.quad_px.y) * 0.5;
         float r = length(p);
@@ -3628,12 +3635,20 @@ fragment float4 ps_main(VSOut i [[stage_in]],
         float dot_r = R * 0.34;
         float ring_r = R * 0.72;
         float ring_w = R * 0.09;
-        float ddot = 1.0 - clamp((r - (dot_r - aa)) / (2.0 * aa), 0.0, 1.0);
-        float ring = clamp((r - (ring_r - ring_w - aa)) / aa, 0.0, 1.0)
-                   * (1.0 - clamp((r - (ring_r + ring_w)) / aa, 0.0, 1.0));
-        float halo = (1.0 - clamp((r - (dot_r + aa)) / 2.5, 0.0, 1.0)) * (1.0 - ddot);
-        float a = clamp(ddot + ring, 0.0, 1.0) * layer.color.a;
-        float3 rgb = layer.color.rgb * (ddot + ring);
+        float ddot = want_dot ? 1.0 - clamp((r - (dot_r - aa)) / (2.0 * aa), 0.0, 1.0) : 0.0;
+        float ring = want_ring
+            ? clamp((r - (ring_r - ring_w - aa)) / aa, 0.0, 1.0)
+              * (1.0 - clamp((r - (ring_r + ring_w)) / aa, 0.0, 1.0))
+            : 0.0;
+        // Le disque (V2.7.2) : halo doux qui remplit le quad, éteint au bord.
+        float disc = want_disc
+            ? 1.0 - clamp((r - R * 0.1) / (R * 0.9), 0.0, 1.0)
+            : 0.0;
+        float halo = want_dot
+            ? (1.0 - clamp((r - (dot_r + aa)) / 2.5, 0.0, 1.0)) * (1.0 - ddot)
+            : 0.0;
+        float a = clamp(ddot + ring + disc, 0.0, 1.0) * layer.color.a;
+        float3 rgb = layer.color.rgb * (ddot + ring + disc);
         a = clamp(a + halo * 0.35 * layer.color.a, 0.0, 1.0);
         return float4(rgb * a, a);
     }

@@ -32,7 +32,9 @@ import {
 	isFrameTheme,
 	LEGACY_BACKGROUND_BLUR_ON,
 	type RecordingFrame,
+	readCursorAperture,
 	readCursorRipple,
+	readCursorTrail,
 	readRecordingFrame,
 	readWebcamMask,
 	type SettingBound,
@@ -345,6 +347,10 @@ export function parseStylePresetAppearance(value: unknown): StylePresetAppearanc
 			// Presets written before V2.7.2 carry no ripple: they meant the default look, which
 			// is exactly what a project that never edited the ring plays today.
 			ripple: readCursorRipple(cursor.ripple, DEFAULT_PROJECT_APPEARANCE.cursor.ripple),
+			// Same rule for the trail and the halo: a preset written before V2.7.2 meant their
+			// defaults (off), which is what a project that never edited them plays today.
+			trail: readCursorTrail(cursor.trail, DEFAULT_PROJECT_APPEARANCE.cursor.trail),
+			aperture: readCursorAperture(cursor.aperture, DEFAULT_PROJECT_APPEARANCE.cursor.aperture),
 		},
 		cursorShow: readBoolean(value, "cursorShow"),
 		cursorAutoHide: readBoolean(value, "cursorAutoHide"),
@@ -442,6 +448,8 @@ export const LOOK_LEGACY_EDITOR_KEYS = [
 	"cursorClickImpact",
 	// The whole ripple object, switches and colours together (V2.7.2).
 	"cursorClickRipple",
+	"cursorTrail",
+	"cursorAperture",
 	"cursorShow",
 	"cursorAutoHide",
 	"cursorTheme",
@@ -460,6 +468,8 @@ export function stylePresetLegacyEditor(appearance: StylePresetAppearance): Fiel
 		cursorAsArrow: cursor.asArrow,
 		cursorClickImpact: cursor.clickImpact,
 		cursorClickRipple: cursor.ripple,
+		cursorTrail: cursor.trail,
+		cursorAperture: cursor.aperture,
 	};
 }
 

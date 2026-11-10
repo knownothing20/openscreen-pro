@@ -100,6 +100,42 @@ describe("projectPersistence media compatibility", () => {
 		});
 	});
 
+	it("passes the ripple, trail and halo objects through whole (V2.7.2)", () => {
+		// The CLI export reads a project ONLY through `normalizeProjectEditor`: a key this
+		// whitelist drops is a setting the GUI shows and the export silently ignores (that is
+		// exactly how V2.7.2's first ripple pass shipped a byte-identical export).
+		const ripple = {
+			enabled: true,
+			durationMs: 450,
+			sizePx: 72,
+			opacity: 0.55,
+			dot: false,
+			ring: true,
+			left: { enabled: true, color: "#ffffff" },
+			right: { enabled: true, color: "#ff9e33" },
+			middle: { enabled: false, color: "#59b3ff" },
+		};
+		const trail = { enabled: true, lengthMs: 320, opacity: 0.4, thickness: 0.5 };
+		const aperture = { enabled: true, radiusPx: 140, opacity: 0.3, color: "#59b3ff" };
+		const editor = normalizeProjectEditor({
+			cursorClickRipple: ripple,
+			cursorTrail: trail,
+			cursorAperture: aperture,
+		});
+		expect(editor).toMatchObject({
+			cursorClickRipple: ripple,
+			cursorTrail: trail,
+			cursorAperture: aperture,
+		});
+
+		// Absent stays absent: an old project must not gain a present-but-off object, or
+		// `buildSceneDescription` would take the new path and change what it draws.
+		const empty = normalizeProjectEditor({});
+		for (const key of ["cursorClickRipple", "cursorTrail", "cursorAperture"]) {
+			expect(key in empty).toBe(false);
+		}
+	});
+
 	it("passes the format fill choice through, and leaves it unset when absent", () => {
 		expect(normalizeProjectEditor({ formatFollowCursor: true }).formatFollowCursor).toBe(true);
 		expect(normalizeProjectEditor({ formatFollowCursor: false }).formatFollowCursor).toBe(false);
