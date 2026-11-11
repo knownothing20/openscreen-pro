@@ -118,6 +118,7 @@ import { assetCameraSource, hasAnyClipWithCamera } from "@/lib/ai-edition/timeli
 import { breatheCut } from "@/lib/ai-edition/timeline/cut-breath";
 import { formatMs } from "@/lib/ai-edition/timeline/format";
 import { removedRawSpans } from "@/lib/ai-edition/timeline/programme-time";
+import { DEFAULT_SHORTCUT_OVERLAY } from "@/lib/ai-edition/timeline/shortcutOverlay";
 import {
 	type AssetTranscriptionView,
 	type TranscriptGateReason,
@@ -3910,9 +3911,22 @@ function safeAssetUrl(relativePath: string): string {
 	}
 }
 
+/** The four places a card can sit. Keys are literals so `i18n:check` can resolve them. */
+const SHORTCUT_POSITIONS = [
+	{ position: "top-center", label: "cursor.shortcutPosTopCenter" },
+	{ position: "bottom-center", label: "cursor.shortcutPosBottomCenter" },
+	{ position: "bottom-left", label: "cursor.shortcutPosBottomLeft" },
+	{ position: "bottom-right", label: "cursor.shortcutPosBottomRight" },
+] as const satisfies ReadonlyArray<{
+	position: "top-center" | "bottom-center" | "bottom-left" | "bottom-right";
+	label: string;
+}>;
+
 export function CursorPane() {
 	const ts = useScopedT("settings");
 	const { settings, set, setLive, commit, hasDocument } = useEditorSettings();
+	// The shortcut cards (V2.8). Off unless the project turned them on.
+	const shortcutOverlay = settings.cursor.shortcutOverlay;
 
 	// Push cursor settings into the native compositor (initial + on view activation); the
 	// handlers below push diffs live. Sizes are sent as direct scales (1 = fixture default).
@@ -4439,6 +4453,91 @@ export function CursorPane() {
 							</div>
 						</>
 					) : null}
+				</>
+			) : null}
+			{/* Shortcut cards (V2.8): the chords the sidecar captured, drawn over the take. Off by
+		    default, so a project that never opted in renders exactly as it did before. */}
+			<div className={styles.sectionLabel}>{ts("cursor.shortcut")}</div>
+			<div className={styles.paneRow}>
+				<span className={styles.label}>{ts("cursor.shortcutShow")}</span>
+				<Toggle
+					ariaLabel={ts("cursor.shortcutShow")}
+					tooltip={ts("cursor.shortcutTip")}
+					checked={shortcutOverlay.enabled}
+					disabled={!hasDocument}
+					onChange={(v) =>
+						void set({ cursor: { shortcutOverlay: { ...shortcutOverlay, enabled: v } } })
+					}
+				/>
+			</div>
+			{shortcutOverlay.enabled ? (
+				<>
+					<div
+						role="group"
+						aria-label={ts("cursor.shortcutPosition")}
+						className={styles.cursorGrid}
+					>
+						{SHORTCUT_POSITIONS.map((entry) => (
+							<button
+								type="button"
+								key={entry.position}
+								aria-label={ts(entry.label)}
+								aria-pressed={shortcutOverlay.position === entry.position}
+								disabled={!hasDocument}
+								onClick={() =>
+									void set({
+										cursor: {
+											shortcutOverlay: { ...shortcutOverlay, position: entry.position },
+										},
+									})
+								}
+							>
+								{ts(entry.label)}
+							</button>
+						))}
+					</div>
+					<div className={styles.sliderGrid}>
+						<SliderCell
+							label={ts("cursor.shortcutDuration")}
+							value={shortcutOverlay.durationMs}
+							min={500}
+							max={6000}
+							step={100}
+							suffix="ms"
+							defaultValue={DEFAULT_SHORTCUT_OVERLAY.durationMs}
+							disabled={!hasDocument}
+							onChange={(durationMs) =>
+								void setLive({ cursor: { shortcutOverlay: { ...shortcutOverlay, durationMs } } })
+							}
+							onCommit={() => void commit()}
+						/>
+						<SliderCell
+							label={ts("cursor.shortcutFontSize")}
+							value={Math.round(shortcutOverlay.fontSizeRel * 100)}
+							min={2}
+							max={12}
+							step={0.5}
+							suffix="%"
+							decimals={1}
+							defaultValue={Math.round(DEFAULT_SHORTCUT_OVERLAY.fontSizeRel * 100)}
+							disabled={!hasDocument}
+							onChange={(v) =>
+								void setLive({
+									cursor: { shortcutOverlay: { ...shortcutOverlay, fontSizeRel: v / 100 } },
+								})
+							}
+							onCommit={() => void commit()}
+						/>
+						{/* Opacity is stored but the text box has no alpha channel yet: no
+						    slider here until it actually changes the picture. */}
+					</div>
+					<button
+						type="button"
+						disabled={!hasDocument}
+						onClick={() => void set({ cursor: { shortcutOverlay: DEFAULT_SHORTCUT_OVERLAY } })}
+					>
+						{ts("cursor.shortcutReset")}
+					</button>
 				</>
 			) : null}
 		</Pane>
