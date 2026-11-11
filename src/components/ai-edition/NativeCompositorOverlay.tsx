@@ -60,6 +60,8 @@ export function NativeCompositorOverlay() {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const previousActiveClipIdRef = useRef<string | null>(null);
 	const document = useProjectStore((s) => s.document);
+	// Preview-only zoom regions (V2.8); empty when nothing is being previewed.
+	const previewZooms = useProjectStore((s) => s.previewZooms);
 	const currentTimeSec = useProjectStore((s) => s.currentTimeSec);
 	// ponytail: re-render whenever the webcam dim cache changes (the WebcamOverlay
 	// mounts AFTER the first scene push and only knows the real dims once the <video>
@@ -159,7 +161,12 @@ export function NativeCompositorOverlay() {
 		void (async () => {
 			try {
 				const webcamSourceSize = cameraPath ? getWebcamNativeSize(cameraPath) : null;
-				const base = buildSceneDescription(document, webcamSourceSize);
+				// A "preview" region is spliced in here, not in the document: the compositor draws
+				// it, `document.zoomRanges` stays as it was, and nothing reaches the undo stack.
+				const sceneDocument = previewZooms.length
+					? { ...document, zoomRanges: [...document.zoomRanges, ...previewZooms] }
+					: document;
+				const base = buildSceneDescription(sceneDocument, webcamSourceSize);
 				const scene = await withShortcutOverlay(base, document);
 				if (!cancelled) setNativeScene(JSON.stringify(scene));
 			} catch (error) {
@@ -174,7 +181,7 @@ export function NativeCompositorOverlay() {
 		// re-read fresh via getWebcamNativeSize() above on every run (biome flags this as
 		// an "unnecessary" dependency, but removing it would mean a probed webcam size
 		// arriving after mount never gets pushed to native).
-	}, [viewId, document, sources, _webcamSizeRevision]);
+	}, [viewId, document, sources, _webcamSizeRevision, previewZooms]);
 
 	// SYNCHRO COMPLETE DES PARAMS, en un seul endroit.
 	//

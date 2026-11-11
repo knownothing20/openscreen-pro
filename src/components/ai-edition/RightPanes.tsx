@@ -3964,6 +3964,23 @@ export function CursorPane() {
 			setAutoZoomBusy(false);
 		}
 	}, []);
+	// Preview = draw it, do not keep it. The region is anchored by the same call the real apply
+	// uses, so what shows on screen is exactly what would land — but it goes to `previewZooms`,
+	// not to the document, so there is no write, no history and nothing on disk.
+	const previewAutoZoom = useCallback((suggestion: AutoZoomSuggestion) => {
+		const store = useProjectStore.getState();
+		const document = store.document;
+		if (!document) return;
+		const anchored = appendAutoZoomSuggestions(document, [suggestion]);
+		useProjectStore.setState({
+			previewZooms: anchored.zoomRanges.slice(document.zoomRanges.length),
+		});
+		store.setCurrentTime(suggestion.span.start / 1000);
+	}, []);
+	const clearAutoZoomPreview = useCallback(() => {
+		useProjectStore.setState({ previewZooms: [] });
+	}, []);
+
 	const applyAutoZooms = useCallback(async () => {
 		const store = useProjectStore.getState();
 		const document = store.document;
@@ -3978,6 +3995,7 @@ export function CursorPane() {
 		const next = appendAutoZoomSuggestions(document, chosen);
 		store.setDocument(next, { history: false });
 		await store.saveDocument(next, { history: true, historyBase: previous });
+		useProjectStore.setState({ previewZooms: [] });
 		setAutoZooms(null);
 	}, [autoZooms, autoZoomPicked]);
 
@@ -4638,6 +4656,13 @@ export function CursorPane() {
 							>
 								{`${(suggestion.span.start / 1000).toFixed(1)}s – ${(suggestion.span.end / 1000).toFixed(1)}s`}
 							</button>
+							<button
+								type="button"
+								disabled={!hasDocument}
+								onClick={() => previewAutoZoom(suggestion)}
+							>
+								{ts("cursor.smartZoomPreview")}
+							</button>
 						</div>
 					))}
 					<div className={styles.sliderGrid}>
@@ -4665,7 +4690,14 @@ export function CursorPane() {
 								String(autoZoomPicked.filter(Boolean).length),
 							)}
 						</button>
-						<button type="button" disabled={autoZooms === null} onClick={() => setAutoZooms(null)}>
+						<button
+							type="button"
+							disabled={autoZooms === null}
+							onClick={() => {
+								clearAutoZoomPreview();
+								setAutoZooms(null);
+							}}
+						>
 							{ts("cursor.smartZoomClear")}
 						</button>
 					</div>

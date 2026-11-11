@@ -504,7 +504,8 @@
     "smartZoomAll": "Select all",
     "smartZoomNone": "Select none",
     "smartZoomApplySelected": "Apply {count}",
-    "smartZoomPick": "Suggestion {index}"
+    "smartZoomPick": "Suggestion {index}",
+    "smartZoomPreview": "Preview"
   },
   "export": {
     "gifButton": "Exportovat GIF",

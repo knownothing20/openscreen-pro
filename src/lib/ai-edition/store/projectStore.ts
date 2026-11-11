@@ -136,6 +136,12 @@ export interface ProjectState {
 	error: string | null;
 	sourceDurationSec: number;
 	currentTimeSec: number;
+	/**
+	 * Regions rendered for a PREVIEW only (V2.8). Never written to the document, never on the
+	 * undo stack: the preview path splices these into the scene it hands the compositor, so the
+	 * picture changes while `document.zoomRanges` does not.
+	 */
+	previewZooms: AxcutDocument["zoomRanges"];
 	/** The selected imported audio track (issue #350), or null. In the store — not
 	 *  `useTimeline`'s local selection — because the media panel (which imports the
 	 *  file) and the inspector (which edits it) sit in different component subtrees
@@ -273,6 +279,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	error: null,
 	sourceDurationSec: 0,
 	currentTimeSec: 0,
+	previewZooms: [],
 	selectedAudioTrackId: null,
 	playing: false,
 	dirty: false,
