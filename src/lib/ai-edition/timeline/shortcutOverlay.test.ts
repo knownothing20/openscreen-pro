@@ -1,0 +1,96 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_SHORTCUT_OVERLAY, looksLikeChord, shortcutCardAt } from "./shortcutOverlay";
+
+const ON = { ...DEFAULT_SHORTCUT_OVERLAY, enabled: true, durationMs: 1000 };
+const CHORDS = [
+	{ timeMs: 2000, combo: "Ctrl+S" },
+	{ timeMs: 5000, combo: "Ctrl+Shift+P" },
+];
+
+describe("shortcutCardAt", () => {
+	it("draws nothing when the overlay is off, or the take has no chords", () => {
+		expect(shortcutCardAt(CHORDS, { ...ON, enabled: false }, 2100)).toBeNull();
+		expect(shortcutCardAt([], ON, 2100)).toBeNull();
+		expect(shortcutCardAt(null, ON, 2100)).toBeNull();
+	});
+
+	it("shows the chord only inside its window", () => {
+		// Before the press, and exactly at the end of the window: both empty. A card that lingers
+		// past its duration is what leaves a ghost overlay after a seek backwards.
+		expect(shortcutCardAt(CHORDS, ON, 1999)).toBeNull();
+		expect(shortcutCardAt(CHORDS, ON, 2000)?.combo).toBe("Ctrl+S");
+		expect(shortcutCardAt(CHORDS, ON, 2999)?.combo).toBe("Ctrl+S");
+		expect(shortcutCardAt(CHORDS, ON, 3000)).toBeNull();
+	});
+
+	it("answers the same whichever direction the playhead came from", () => {
+		// The function takes only a time, so this is really a promise about the caller: there is no
+		// state to carry. Frames sampled out of order must agree with frames sampled in order.
+		const forward = [1900, 2100, 2600, 3100, 5100].map(
+			(t) => shortcutCardAt(CHORDS, ON, t)?.combo ?? null,
+		);
+		expect(forward).toEqual([null, "Ctrl+S", "Ctrl+S", null, "Ctrl+Shift+P"]);
+		const backward = [5100, 3100, 2600, 2100, 1900]
+			.map((t) => shortcutCardAt(CHORDS, ON, t)?.combo ?? null)
+			.reverse();
+		expect(backward).toEqual(forward);
+	});
+
+	it("lets the newer press win when two windows overlap", () => {
+		const overlapping = [
+			{ timeMs: 0, combo: "Ctrl+A" },
+			{ timeMs: 500, combo: "Ctrl+B" },
+		];
+		expect(shortcutCardAt(overlapping, { ...ON, durationMs: 2000 }, 800)?.combo).toBe("Ctrl+B");
+	});
+
+	it("reports progress through the card for the enter/exit fade", () => {
+		expect(shortcutCardAt(CHORDS, ON, 2000)?.progress).toBe(0);
+		expect(shortcutCardAt(CHORDS, ON, 2500)?.progress).toBeCloseTo(0.5, 3);
+		expect(shortcutCardAt(CHORDS, ON, 2999)?.progress).toBeGreaterThan(0.99);
+	});
+
+	it("refuses to paint anything that is not a chord", () => {
+		// The sidecar is meant to hold chords only; this is the gate at the drawing end. Typed text
+		// must never reach the screen even if it reached the file.
+		const withText = [
+			{ timeMs: 0, combo: "hunter2" },
+			{ timeMs: 10, combo: "a" },
+			{ timeMs: 20, combo: "Ctrl" },
+			{ timeMs: 30, combo: "my password is 1234" },
+		];
+		for (const { timeMs } of withText) {
+			expect(shortcutCardAt(withText, { ...ON, durationMs: 5000 }, timeMs + 100)).toBeNull();
+		}
+	});
+});
+
+describe("looksLikeChord", () => {
+	it("accepts the forms a recording actually produces", () => {
+		for (const combo of [
+			"Ctrl+S",
+			"Ctrl+Shift+P",
+			"Alt+Tab",
+			"Cmd+Z",
+			"F5",
+			"Ctrl+Alt+Delete",
+			"Shift+F10",
+		]) {
+			expect(looksLikeChord(combo), combo).toBe(true);
+		}
+	});
+
+	it("rejects prose, single letters and bare modifiers", () => {
+		for (const combo of [
+			"hello",
+			"a",
+			"Ctrl",
+			"Ctrl+",
+			"   ",
+			"this is not a chord at all",
+			"Ctrl+" + "x".repeat(20),
+		]) {
+			expect(looksLikeChord(combo), combo).toBe(false);
+		}
+	});
+});
