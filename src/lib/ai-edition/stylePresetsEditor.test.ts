@@ -52,6 +52,16 @@ function styledSettings(): EditorSettingsSnapshot {
 		webcamWallpaper: "#123456",
 		webcamBlurIntensity: 0.9,
 		cursor: {
+			shortcutOverlay: {
+				enabled: false,
+				durationMs: 1500,
+				position: "bottom-center" as const,
+				fontSizeRel: 0.045,
+				background: "#111318",
+				color: "#f4f6fb",
+				radiusPx: 10,
+				opacity: 0.92,
+			},
 			size: 2.5,
 			smoothing: 0.1,
 			motionBlur: 0.9,

@@ -33,6 +33,7 @@ import {
 	readCursorRipple,
 	readCursorTrail,
 	readRecordingFrame,
+	readShortcutOverlay,
 	readWebcamAnchor,
 	readWebcamMask,
 	type WebcamAnchor,
@@ -198,6 +199,8 @@ interface LegacyShape {
 	cursorTrail?: unknown;
 	/** The halo (V2.7.2). Absent = nothing is drawn. */
 	cursorAperture?: unknown;
+	/** The shortcut overlay (V2.8). Absent = no cards, like every project before it. */
+	cursorShortcutOverlay?: unknown;
 	cursorModel3d?: boolean;
 	/** `unknown`: read through `readCursorAsArrow`, which drops what this build does not know. */
 	cursorAsArrow?: unknown;
@@ -261,6 +264,10 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		// as it did: no trail settings are sent, and neither is a halo.
 		trail: readCursorTrail(legacy?.cursorTrail, defaults.cursor.trail),
 		aperture: readCursorAperture(legacy?.cursorAperture, defaults.cursor.aperture),
+		shortcutOverlay: readShortcutOverlay(
+			legacy?.cursorShortcutOverlay,
+			defaults.cursor.shortcutOverlay,
+		),
 	};
 
 	// The pan is authoritative and the rect's offset is rebuilt from it, so the two cannot
@@ -411,6 +418,7 @@ function nextLegacy(current: LegacyShape | null, patch: EditorSettingsPatch): Le
 		if (c.ripple !== undefined) next.cursorClickRipple = c.ripple;
 		if (c.trail !== undefined) next.cursorTrail = c.trail;
 		if (c.aperture !== undefined) next.cursorAperture = c.aperture;
+		if (c.shortcutOverlay !== undefined) next.cursorShortcutOverlay = c.shortcutOverlay;
 		if (c.model3d !== undefined) next.cursorModel3d = c.model3d;
 		if (c.asArrow !== undefined) {
 			next.cursorAsArrow = c.asArrow;

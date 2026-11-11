@@ -39,6 +39,7 @@ export function stylePresetAppearanceFromSettings(
 		webcamWallpaper: settings.webcamWallpaper,
 		webcamBlurIntensity: settings.webcamBlurIntensity,
 		cursor: {
+			shortcutOverlay: settings.cursor.shortcutOverlay,
 			size: settings.cursor.size,
 			smoothing: settings.cursor.smoothing,
 			motionBlur: settings.cursor.motionBlur,

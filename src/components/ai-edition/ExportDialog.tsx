@@ -21,6 +21,7 @@ import type { AxcutDocument } from "@/lib/ai-edition/schema";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
+import { withShortcutOverlay } from "@/lib/ai-edition/timeline/shortcutOverlayScene";
 import { resolveEncoderDevice, type VideoCodec } from "@/lib/encoderDevices";
 import {
 	type ExportFormat,
@@ -401,7 +402,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			// region emits 80% of `duration * fps`, which is where the "frozen at ~80%" of
 			// OpenScreen#371 came from — the bar climbed to 80% and the export finished
 			// there. `outputFrameCount` mirrors the compositor's own span arithmetic.
-			const sceneDesc = buildSceneDescription(document);
+			const sceneDesc = await withShortcutOverlay(buildSceneDescription(document), document);
 			const totalFrames = outputFrameCount(clips, sceneDesc.speedRegions, outFps);
 			const startedAt = Date.now();
 			const unsubscribeProgress = window.electronAPI?.onNativeExportProgress?.(

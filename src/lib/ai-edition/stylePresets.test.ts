@@ -37,6 +37,16 @@ function appearance(overrides: Partial<StylePresetAppearance> = {}): StylePreset
 		webcamWallpaper: "#112233",
 		webcamBlurIntensity: 0.5,
 		cursor: {
+			shortcutOverlay: {
+				enabled: false,
+				durationMs: 1500,
+				position: "bottom-center" as const,
+				fontSizeRel: 0.045,
+				background: "#111318",
+				color: "#f4f6fb",
+				radiusPx: 10,
+				opacity: 0.92,
+			},
 			size: 3,
 			smoothing: 0.67,
 			motionBlur: 0.35,

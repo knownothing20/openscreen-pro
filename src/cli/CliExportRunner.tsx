@@ -28,6 +28,7 @@ import {
 } from "@/lib/ai-edition/timeline/apply-auto-zooms";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
+import { withShortcutOverlay } from "@/lib/ai-edition/timeline/shortcutOverlayScene";
 import type { CliDoneResult, CliExportRequest } from "@/lib/cliContracts";
 import { resolveEncoderDevice } from "@/lib/encoderDevices";
 import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
@@ -288,7 +289,9 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 	if (builtClips.length === 0) {
 		throw new Error("The project's timeline has no visible clips to export");
 	}
-	const sceneDesc = buildSceneDescription(axcutDocument);
+	// Same overlay as the preview, from the same function: a card that shows in the editor and
+	// not in the file (or the reverse) is the bug this indirection exists to prevent.
+	const sceneDesc = await withShortcutOverlay(buildSceneDescription(axcutDocument), axcutDocument);
 
 	// The webcam background effect is applied by the compositor from the scene, so the clip
 	// list needs no pre-rendering pass.

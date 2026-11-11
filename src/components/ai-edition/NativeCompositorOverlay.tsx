@@ -5,6 +5,7 @@ import { noteUiProbeClipSwitch } from "@/lib/ai-edition/perf/uiFrameProbe";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
+import { withShortcutOverlay } from "@/lib/ai-edition/timeline/shortcutOverlayScene";
 import { findActiveSpeedRegion, type SpeedRegion } from "@/lib/ai-edition/timeline/speed";
 import { resolveNativePosition } from "@/lib/ai-edition/timeline/timelineMap";
 import {
@@ -152,13 +153,22 @@ export function NativeCompositorOverlay() {
 		if (viewId === null || !document) {
 			return;
 		}
-		try {
-			const webcamSourceSize = cameraPath ? getWebcamNativeSize(cameraPath) : null;
-			const scene = buildSceneDescription(document, webcamSourceSize);
-			setNativeScene(JSON.stringify(scene));
-		} catch (error) {
-			console.warn("[compositor-view] build/push scene failed:", error);
-		}
+		// The overlay needs the sidecar, which is async; the effect stays sync and awaits inside,
+		// so a slow read never blocks the first paint of the scene the user already had.
+		let cancelled = false;
+		void (async () => {
+			try {
+				const webcamSourceSize = cameraPath ? getWebcamNativeSize(cameraPath) : null;
+				const base = buildSceneDescription(document, webcamSourceSize);
+				const scene = await withShortcutOverlay(base, document);
+				if (!cancelled) setNativeScene(JSON.stringify(scene));
+			} catch (error) {
+				console.warn("[compositor-view] build/push scene failed:", error);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
 		// _webcamSizeRevision itself isn't read in the body — it's a dependency purely to
 		// re-trigger this effect when the probed-size cache mutates; the actual value is
 		// re-read fresh via getWebcamNativeSize() above on every run (biome flags this as

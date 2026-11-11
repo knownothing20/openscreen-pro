@@ -1,3 +1,7 @@
+import {
+	DEFAULT_SHORTCUT_OVERLAY,
+	type ShortcutOverlaySettings,
+} from "./ai-edition/timeline/shortcutOverlay";
 import type { CursorKind } from "./cursor/cursorThemes";
 
 /**
@@ -315,6 +319,8 @@ export interface ProjectAppearanceDefaults {
 		ripple: CursorRippleSettings;
 		trail: CursorTrailSettings;
 		aperture: CursorApertureSettings;
+		/** The shortcut cards (V2.8); off unless a project turns them on. */
+		shortcutOverlay: ShortcutOverlaySettings;
 	};
 	cursorShow: boolean;
 	cursorAutoHide: boolean;
@@ -370,6 +376,7 @@ export const DEFAULT_PROJECT_APPEARANCE: ProjectAppearanceDefaults = {
 		// Both off: a trail and a halo are looks, and an existing project must not acquire one.
 		trail: DEFAULT_CURSOR_TRAIL,
 		aperture: DEFAULT_CURSOR_APERTURE,
+		shortcutOverlay: DEFAULT_SHORTCUT_OVERLAY,
 	},
 	cursorShow: true,
 	cursorAutoHide: false,
@@ -526,5 +533,43 @@ export function readCursorAperture(
 		radiusPx: readBounded(value.radiusPx, "apertureRadius", fallback.radiusPx),
 		opacity: readBounded(value.opacity, "apertureOpacity", fallback.opacity),
 		color: isRippleColour(value.color) ? value.color.toLowerCase() : fallback.color,
+	};
+}
+
+/**
+ * The shortcut overlay as stored, bounded field by field.
+ *
+ * Bounded here rather than in the panel: a hand-edited project must not be able to put a
+ * forty-second card on screen or hand the compositor a colour it cannot parse. Absent means off,
+ * which is what every project written before V2.8 gets.
+ */
+export function readShortcutOverlay(
+	stored: unknown,
+	fallback: ShortcutOverlaySettings = DEFAULT_SHORTCUT_OVERLAY,
+): ShortcutOverlaySettings {
+	if (typeof stored !== "object" || stored === null || Array.isArray(stored)) return fallback;
+	const value = stored as Record<string, unknown>;
+	const bounded = (key: string, low: number, high: number, fallbackValue: number) => {
+		const raw = value[key];
+		if (typeof raw !== "number" || !Number.isFinite(raw)) return fallbackValue;
+		return Math.min(high, Math.max(low, raw));
+	};
+	const position = value.position;
+	const known =
+		position === "top-center" ||
+		position === "bottom-center" ||
+		position === "bottom-left" ||
+		position === "bottom-right";
+	return {
+		enabled: typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
+		durationMs: bounded("durationMs", 300, 6000, fallback.durationMs),
+		position: known ? position : fallback.position,
+		fontSizeRel: bounded("fontSizeRel", 0.02, 0.12, fallback.fontSizeRel),
+		background: isRippleColour(value.background)
+			? value.background.toLowerCase()
+			: fallback.background,
+		color: isRippleColour(value.color) ? value.color.toLowerCase() : fallback.color,
+		radiusPx: bounded("radiusPx", 0, 40, fallback.radiusPx),
+		opacity: bounded("opacity", 0.1, 1, fallback.opacity),
 	};
 }

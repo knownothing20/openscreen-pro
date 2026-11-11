@@ -88,6 +88,7 @@ export const DEFAULT_CURSOR_SETTINGS: CursorVisualSettings & { show: boolean; th
 	ripple: DEFAULT_PROJECT_APPEARANCE.cursor.ripple,
 	trail: DEFAULT_PROJECT_APPEARANCE.cursor.trail,
 	aperture: DEFAULT_PROJECT_APPEARANCE.cursor.aperture,
+	shortcutOverlay: DEFAULT_PROJECT_APPEARANCE.cursor.shortcutOverlay,
 };
 
 export const DEFAULT_EXPORT_SETTINGS: {

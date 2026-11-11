@@ -36,6 +36,7 @@ import {
 	readCursorRipple,
 	readCursorTrail,
 	readRecordingFrame,
+	readShortcutOverlay,
 	readWebcamMask,
 	type SettingBound,
 	type WebcamMask,
@@ -334,6 +335,7 @@ export function parseStylePresetAppearance(value: unknown): StylePresetAppearanc
 		webcamWallpaper: parseStylePresetWallpaper(value.webcamWallpaper, "webcamWallpaper"),
 		webcamBlurIntensity: readNumber(value, "webcamBlurIntensity", "webcamBlurIntensity"),
 		cursor: {
+			shortcutOverlay: readShortcutOverlay(cursor.shortcutOverlay),
 			size: readNumber(cursor, "size", CURSOR_BOUNDS.size, "cursor."),
 			smoothing: readNumber(cursor, "smoothing", CURSOR_BOUNDS.smoothing, "cursor."),
 			motionBlur: readNumber(cursor, "motionBlur", CURSOR_BOUNDS.motionBlur, "cursor."),

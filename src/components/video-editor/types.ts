@@ -1,3 +1,4 @@
+import type { ShortcutOverlaySettings } from "@/lib/ai-edition/timeline/shortcutOverlay";
 import {
 	effectiveZoomScale,
 	type ZoomDepth,
@@ -309,6 +310,8 @@ export interface CursorVisualSettings {
 	trail: CursorTrailSettings;
 	/** The halo under the cursor (V2.7.2). Off = nothing drawn. */
 	aperture: CursorApertureSettings;
+	/** The shortcut cards (V2.8). Off by default. */
+	shortcutOverlay: ShortcutOverlaySettings;
 }
 
 // The project defaults, under the names the legacy editor reads: one value, not two to keep in sync.
