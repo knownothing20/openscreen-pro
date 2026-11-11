@@ -494,7 +494,13 @@
     "shortcutPosBottomCenter": "Bottom",
     "shortcutPosBottomLeft": "Bottom left",
     "shortcutPosBottomRight": "Bottom right",
-    "shortcutReset": "Reset card style"
+    "shortcutReset": "Reset card style",
+    "smartZoom": "Smart zoom",
+    "smartZoomIdle": "Not analysed yet",
+    "smartZoomFound": "Found {count} suggestion(s)",
+    "smartZoomAnalyze": "Analyse clicks",
+    "smartZoomApply": "Apply all",
+    "smartZoomClear": "Discard"
   },
   "export": {
     "gifButton": "Exporter le GIF",

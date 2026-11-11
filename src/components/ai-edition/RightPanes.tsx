@@ -114,11 +114,16 @@ import {
 	type TrimRun,
 	voiceoverPlacements,
 } from "@/lib/ai-edition/timeline/aggregated-transcript";
+import {
+	appendAutoZoomSuggestions,
+	collectAutoZoomSuggestionsForDocument,
+} from "@/lib/ai-edition/timeline/apply-auto-zooms";
 import { assetCameraSource, hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
 import { breatheCut } from "@/lib/ai-edition/timeline/cut-breath";
 import { formatMs } from "@/lib/ai-edition/timeline/format";
 import { removedRawSpans } from "@/lib/ai-edition/timeline/programme-time";
 import { DEFAULT_SHORTCUT_OVERLAY } from "@/lib/ai-edition/timeline/shortcutOverlay";
+import type { AutoZoomSuggestion } from "@/lib/ai-edition/timeline/zoom-suggestions";
 import {
 	type AssetTranscriptionView,
 	type TranscriptGateReason,
@@ -158,6 +163,7 @@ import {
 	wallpaperStyle,
 } from "@/lib/wallpaper";
 import { isNativeCompositorActive, setNativeParam } from "@/native";
+import { nativeBridgeClient } from "@/native/client";
 import {
 	SEGMENTATION_HEIGHT,
 	SEGMENTATION_WIDTH,
@@ -3928,6 +3934,45 @@ export function CursorPane() {
 	// The shortcut cards (V2.8). Off unless the project turned them on.
 	const shortcutOverlay = settings.cursor.shortcutOverlay;
 
+	// Smart zoom (V2.8): the plan lives in memory until the user applies it. Analysis reads the
+	// sidecar and never touches the document; `null` means "not analysed yet".
+	const [autoZooms, setAutoZooms] = useState<AutoZoomSuggestion[] | null>(null);
+	const [autoZoomBusy, setAutoZoomBusy] = useState(false);
+	const analyzeAutoZooms = useCallback(async () => {
+		const document = useProjectStore.getState().document;
+		if (!document) return;
+		setAutoZoomBusy(true);
+		try {
+			const found = await collectAutoZoomSuggestionsForDocument(document, async (videoPath) => {
+				const data = await nativeBridgeClient.cursor.getRecordingData(videoPath);
+				// The sidecar's sample carries the same fields the planner reads; the narrowing is
+				// explicit so a future sidecar field cannot silently change the plan's input.
+				return (data.samples ?? []).map((sample) => ({
+					timeMs: sample.timeMs,
+					cx: sample.cx,
+					cy: sample.cy,
+					visible: sample.visible,
+					interactionType: sample.interactionType,
+				}));
+			});
+			setAutoZooms(found);
+		} finally {
+			setAutoZoomBusy(false);
+		}
+	}, []);
+	const applyAutoZooms = useCallback(async () => {
+		const store = useProjectStore.getState();
+		const document = store.document;
+		if (!document || !autoZooms || autoZooms.length === 0) return;
+		// One document write, one undo step: `setDocument` puts it on screen, and only the save
+		// records history — against the document we started from.
+		const previous = document;
+		const next = appendAutoZoomSuggestions(document, autoZooms);
+		store.setDocument(next, { history: false });
+		await store.saveDocument(next, { history: true, historyBase: previous });
+		setAutoZooms(null);
+	}, [autoZooms]);
+
 	// Push cursor settings into the native compositor (initial + on view activation); the
 	// handlers below push diffs live. Sizes are sent as direct scales (1 = fixture default).
 	// Synchro initiale : cf. NativeCompositorOverlay (`pushAllNativeParams`).
@@ -4540,6 +4585,35 @@ export function CursorPane() {
 					</button>
 				</>
 			) : null}
+			{/* Smart zoom (V2.8): plan from the recorded clicks, write on demand. Analysis only
+		    proposes; the document changes when the user applies. */}
+			<div className={styles.sectionLabel}>{ts("cursor.smartZoom")}</div>
+			<div className={styles.paneRow}>
+				<span className={styles.label}>
+					{autoZooms === null
+						? ts("cursor.smartZoomIdle")
+						: ts("cursor.smartZoomFound").replace("{count}", String(autoZooms.length))}
+				</span>
+			</div>
+			<div className={styles.sliderGrid}>
+				<button
+					type="button"
+					disabled={!hasDocument || autoZoomBusy}
+					onClick={() => void analyzeAutoZooms()}
+				>
+					{ts("cursor.smartZoomAnalyze")}
+				</button>
+				<button
+					type="button"
+					disabled={!hasDocument || autoZoomBusy || !autoZooms || autoZooms.length === 0}
+					onClick={() => void applyAutoZooms()}
+				>
+					{ts("cursor.smartZoomApply")}
+				</button>
+				<button type="button" disabled={autoZooms === null} onClick={() => setAutoZooms(null)}>
+					{ts("cursor.smartZoomClear")}
+				</button>
+			</div>
 		</Pane>
 	);
 }

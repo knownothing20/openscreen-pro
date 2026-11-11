@@ -143,6 +143,13 @@ const DECLARED: WritePath[] = [
 	// would make their first Ctrl+Z delete markers they dropped minutes earlier.
 	w("src/components/ai-edition/recordingImport.ts", "importPendingRecording", "save", "automatic"),
 	// Renaming the project from the title field.
+	// Applying the smart-zoom plan (V2.8). One write for the whole batch, so one Ctrl+Z takes
+	// back every region the planner proposed — the gesture is the click on "Apply all".
+	w("src/components/ai-edition/RightPanes.tsx", "applyAutoZooms", "save", "gesture"),
+	// The same apply also puts the batch on screen before the disk write lands; that half records
+	// no history, which is why the entry above is the one Ctrl+Z lands on.
+	w("src/components/ai-edition/RightPanes.tsx", "applyAutoZooms", "set", "automatic"),
+
 	w("src/components/ai-edition/NewEditorShell.tsx", "handleRenameProject", "save", "gesture"),
 	// Ctrl+S / File > Save.
 	w("src/components/ai-edition/NewEditorShell.tsx", "handleSave", "save", "gesture"),
