@@ -120,3 +120,68 @@ export function shortcutCardAt(
 		progress: Math.min(1, Math.max(0, (atMs - best.timeMs) / duration)),
 	};
 }
+
+/** The minimum a clip has to expose for a card to be placed on it. */
+export interface ShortcutCardClip {
+	/** The screen recording this clip plays — the same path the sidecar is keyed by. */
+	screenPath: string;
+	sourceStartSec: number;
+	sourceEndSec: number;
+}
+
+/** One card, placed on the clip that shows the footage it belongs to. */
+export interface ShortcutCardSpan {
+	clipIndex: number;
+	/** SOURCE seconds, the unit `SceneAnnotation.startSec`/`endSec` are in. */
+	startSec: number;
+	endSec: number;
+	combo: string;
+}
+
+/**
+ * Place every chord on every clip that plays the footage it happened in.
+ *
+ * The scene's annotations are addressed in `sourceTime` (see `SceneDescription.annotations`), and
+ * a chord's `timeMs` is already source time, so this needs no programme/speed conversion at all:
+ * speed changes how long a span stays on screen, not where it sits in the recording, and the
+ * timeline's own projection handles the rest.
+ *
+ * Three properties fall out of addressing clips instead of the timeline:
+ *
+ * - **Trimmed away → gone.** A chord outside `[sourceStartSec, sourceEndSec)` matches no clip and
+ *   is never drawn, so a trim cannot leave a card floating over footage that no longer exists.
+ * - **Split → shown twice.** One source chord that lands in two clips produces two spans, which is
+ *   correct: both clips really do play that moment.
+ * - **Reordered → follows the footage.** The span carries `clipIndex`, so moving a clip moves the
+ *   card with it rather than leaving it at the old timeline position.
+ *
+ * A card never spills past its clip's end: if the chord lands in the last second of a clip, the
+ * card is cut there rather than bleeding into the next shot.
+ */
+export function shortcutCardSpans(
+	clips: readonly ShortcutCardClip[],
+	events: readonly RecordedShortcut[] | null | undefined,
+	settings: ShortcutOverlaySettings,
+	/** The recording these events came from. Omit only when every clip plays that same file. */
+	videoPath?: string,
+): ShortcutCardSpan[] {
+	if (!settings.enabled) return [];
+	if (!events || events.length === 0) return [];
+	const durationSec = Math.max(1, settings.durationMs) / 1000;
+	const spans: ShortcutCardSpan[] = [];
+	for (const event of events) {
+		if (!Number.isFinite(event.timeMs) || event.timeMs < 0) continue;
+		if (!event.combo || !looksLikeChord(event.combo)) continue;
+		const atSec = event.timeMs / 1000;
+		clips.forEach((clip, clipIndex) => {
+			// A chord belongs to the recording it was pressed in: two takes in one timeline must not
+			// show each other's keys.
+			if (videoPath !== undefined && clip.screenPath !== videoPath) return;
+			if (atSec < clip.sourceStartSec || atSec >= clip.sourceEndSec) return;
+			const endSec = Math.min(atSec + durationSec, clip.sourceEndSec);
+			if (endSec <= atSec) return;
+			spans.push({ clipIndex, startSec: atSec, endSec, combo: event.combo });
+		});
+	}
+	return spans;
+}

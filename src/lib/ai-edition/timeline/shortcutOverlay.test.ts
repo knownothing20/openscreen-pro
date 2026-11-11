@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SHORTCUT_OVERLAY, looksLikeChord, shortcutCardAt } from "./shortcutOverlay";
+import {
+	DEFAULT_SHORTCUT_OVERLAY,
+	looksLikeChord,
+	shortcutCardAt,
+	shortcutCardSpans,
+} from "./shortcutOverlay";
 
 const ON = { ...DEFAULT_SHORTCUT_OVERLAY, enabled: true, durationMs: 1000 };
 const CHORDS = [
@@ -92,5 +97,73 @@ describe("looksLikeChord", () => {
 		]) {
 			expect(looksLikeChord(combo), combo).toBe(false);
 		}
+	});
+});
+
+describe("shortcutCardSpans", () => {
+	const CLIPS = [
+		{ screenPath: "C://take.mp4", sourceStartSec: 0, sourceEndSec: 10 },
+		{ screenPath: "C://take.mp4", sourceStartSec: 10, sourceEndSec: 20 },
+	];
+	const ON = { ...DEFAULT_SHORTCUT_OVERLAY, enabled: true, durationMs: 2000 };
+	const EVENTS = [
+		{ timeMs: 2000, combo: "Ctrl+S" },
+		{ timeMs: 15000, combo: "Alt+Tab" },
+	];
+
+	it("places each chord on the clip that plays its footage", () => {
+		const spans = shortcutCardSpans(CLIPS, EVENTS, ON, "C://take.mp4");
+		expect(spans.map((s) => [s.clipIndex, s.startSec, s.combo])).toEqual([
+			[0, 2, "Ctrl+S"],
+			[1, 15, "Alt+Tab"],
+		]);
+	});
+
+	it("drops only the chord the trim removed", () => {
+		// The 2 s chord is behind the new in-point, so its footage is gone. The 15 s chord is
+		// still inside the take: a trim is not a reason to lose every card in the clip.
+		const trimmed = [{ screenPath: "C://take.mp4", sourceStartSec: 8, sourceEndSec: 20 }];
+		expect(shortcutCardSpans(trimmed, EVENTS, ON, "C://take.mp4").map((s) => s.combo)).toEqual([
+			"Alt+Tab",
+		]);
+	});
+
+	it("puts a chord on the one side of a split that plays it", () => {
+		// A split cuts the SOURCE into two windows; 2.5 s is only inside the first. One card,
+		// on the first clip, cut at the cut — not one per side.
+		const split = [
+			{ screenPath: "C://take.mp4", sourceStartSec: 1, sourceEndSec: 3 },
+			{ screenPath: "C://take.mp4", sourceStartSec: 3, sourceEndSec: 5 },
+		];
+		const spans = shortcutCardSpans(
+			split,
+			[{ timeMs: 2500, combo: "Ctrl+S" }],
+			{ ...ON, durationMs: 3000 },
+			"C://take.mp4",
+		);
+		expect(spans.map((s) => [s.clipIndex, s.endSec])).toEqual([[0, 3]]);
+	});
+
+	it("never bleeds into the next clip", () => {
+		const spans = shortcutCardSpans(
+			[{ screenPath: "C://take.mp4", sourceStartSec: 0, sourceEndSec: 3 }],
+			[{ timeMs: 2900, combo: "Ctrl+S" }],
+			{ ...ON, durationMs: 5000 },
+			"C://take.mp4",
+		);
+		expect(spans[0].endSec).toBe(3);
+	});
+
+	it("keeps one take's chords off another take's clips", () => {
+		const mixed = [
+			{ screenPath: "C://a.mp4", sourceStartSec: 0, sourceEndSec: 20 },
+			{ screenPath: "C://b.mp4", sourceStartSec: 0, sourceEndSec: 20 },
+		];
+		const spans = shortcutCardSpans(mixed, [{ timeMs: 5000, combo: "Ctrl+S" }], ON, "C://b.mp4");
+		expect(spans.map((s) => s.clipIndex)).toEqual([1]);
+	});
+
+	it("draws nothing when the overlay is off", () => {
+		expect(shortcutCardSpans(CLIPS, EVENTS, { ...ON, enabled: false }, "C://take.mp4")).toEqual([]);
 	});
 });
