@@ -3938,6 +3938,9 @@ export function CursorPane() {
 	// sidecar and never touches the document; `null` means "not analysed yet".
 	const [autoZooms, setAutoZooms] = useState<AutoZoomSuggestion[] | null>(null);
 	const [autoZoomBusy, setAutoZoomBusy] = useState(false);
+	// Which suggestions the user wants. Kept parallel to `autoZooms` and reset whenever a new
+	// analysis lands, so a stale tick can never apply to a plan it was not made for.
+	const [autoZoomPicked, setAutoZoomPicked] = useState<boolean[]>([]);
 	const analyzeAutoZooms = useCallback(async () => {
 		const document = useProjectStore.getState().document;
 		if (!document) return;
@@ -3956,6 +3959,7 @@ export function CursorPane() {
 				}));
 			});
 			setAutoZooms(found);
+			setAutoZoomPicked(found.map(() => true));
 		} finally {
 			setAutoZoomBusy(false);
 		}
@@ -3964,14 +3968,18 @@ export function CursorPane() {
 		const store = useProjectStore.getState();
 		const document = store.document;
 		if (!document || !autoZooms || autoZooms.length === 0) return;
+		// Only what is ticked. The write is still ONE document write, so the batch stays a
+		// single Ctrl+Z however many regions it carries.
+		const chosen = autoZooms.filter((_, index) => autoZoomPicked[index] !== false);
+		if (chosen.length === 0) return;
 		// One document write, one undo step: `setDocument` puts it on screen, and only the save
 		// records history — against the document we started from.
 		const previous = document;
-		const next = appendAutoZoomSuggestions(document, autoZooms);
+		const next = appendAutoZoomSuggestions(document, chosen);
 		store.setDocument(next, { history: false });
 		await store.saveDocument(next, { history: true, historyBase: previous });
 		setAutoZooms(null);
-	}, [autoZooms]);
+	}, [autoZooms, autoZoomPicked]);
 
 	// Push cursor settings into the native compositor (initial + on view activation); the
 	// handlers below push diffs live. Sizes are sent as direct scales (1 = fixture default).
@@ -4594,8 +4602,6 @@ export function CursorPane() {
 						? ts("cursor.smartZoomIdle")
 						: ts("cursor.smartZoomFound").replace("{count}", String(autoZooms.length))}
 				</span>
-			</div>
-			<div className={styles.sliderGrid}>
 				<button
 					type="button"
 					disabled={!hasDocument || autoZoomBusy}
@@ -4603,17 +4609,68 @@ export function CursorPane() {
 				>
 					{ts("cursor.smartZoomAnalyze")}
 				</button>
-				<button
-					type="button"
-					disabled={!hasDocument || autoZoomBusy || !autoZooms || autoZooms.length === 0}
-					onClick={() => void applyAutoZooms()}
-				>
-					{ts("cursor.smartZoomApply")}
-				</button>
-				<button type="button" disabled={autoZooms === null} onClick={() => setAutoZooms(null)}>
-					{ts("cursor.smartZoomClear")}
-				</button>
 			</div>
+			{/* One row per proposal. The time is a button: clicking it parks the playhead there so
+			    the user can look at the framing before deciding — no document write, no history. */}
+			{autoZooms && autoZooms.length > 0 ? (
+				<>
+					{autoZooms.map((suggestion, index) => (
+						<div className={styles.paneRow} key={`${suggestion.span.start}-${index}`}>
+							<input
+								type="checkbox"
+								checked={autoZoomPicked[index] !== false}
+								disabled={!hasDocument}
+								aria-label={ts("cursor.smartZoomPick").replace("{index}", String(index + 1))}
+								onChange={(e) =>
+									setAutoZoomPicked((prev) => {
+										const next = [...prev];
+										next[index] = e.target.checked;
+										return next;
+									})
+								}
+							/>
+							<button
+								type="button"
+								disabled={!hasDocument}
+								onClick={() =>
+									useProjectStore.getState().setCurrentTime(suggestion.span.start / 1000)
+								}
+							>
+								{`${(suggestion.span.start / 1000).toFixed(1)}s – ${(suggestion.span.end / 1000).toFixed(1)}s`}
+							</button>
+						</div>
+					))}
+					<div className={styles.sliderGrid}>
+						<button
+							type="button"
+							disabled={!hasDocument}
+							onClick={() => setAutoZoomPicked(autoZooms.map(() => true))}
+						>
+							{ts("cursor.smartZoomAll")}
+						</button>
+						<button
+							type="button"
+							disabled={!hasDocument}
+							onClick={() => setAutoZoomPicked(autoZooms.map(() => false))}
+						>
+							{ts("cursor.smartZoomNone")}
+						</button>
+						<button
+							type="button"
+							disabled={!hasDocument || autoZoomBusy}
+							onClick={() => void applyAutoZooms()}
+						>
+							{ts("cursor.smartZoomApplySelected").replace(
+								"{count}",
+								String(autoZoomPicked.filter(Boolean).length),
+							)}
+						</button>
+						<button type="button" disabled={autoZooms === null} onClick={() => setAutoZooms(null)}>
+							{ts("cursor.smartZoomClear")}
+						</button>
+					</div>
+				</>
+			) : null}
 		</Pane>
 	);
 }

@@ -500,7 +500,11 @@
     "smartZoomFound": "Found {count} suggestion(s)",
     "smartZoomAnalyze": "Analyse clicks",
     "smartZoomApply": "Apply all",
-    "smartZoomClear": "Discard"
+    "smartZoomClear": "Discard",
+    "smartZoomAll": "Select all",
+    "smartZoomNone": "Select none",
+    "smartZoomApplySelected": "Apply {count}",
+    "smartZoomPick": "Suggestion {index}"
   },
   "export": {
     "gifButton": "导出 GIF",
