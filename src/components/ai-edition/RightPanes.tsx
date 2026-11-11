@@ -116,6 +116,7 @@ import {
 } from "@/lib/ai-edition/timeline/aggregated-transcript";
 import {
 	appendAutoZoomSuggestions,
+	clipExtentSignature,
 	collectAutoZoomSuggestionsForDocument,
 } from "@/lib/ai-edition/timeline/apply-auto-zooms";
 import { assetCameraSource, hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
@@ -3960,6 +3961,8 @@ export function CursorPane() {
 			});
 			setAutoZooms(found);
 			setAutoZoomPicked(found.map(() => true));
+			// A new plan supersedes whatever the previous one was previewing.
+			useProjectStore.setState({ previewZooms: [], previewZoomSignature: "" });
 		} finally {
 			setAutoZoomBusy(false);
 		}
@@ -3974,11 +3977,14 @@ export function CursorPane() {
 		const anchored = appendAutoZoomSuggestions(document, [suggestion]);
 		useProjectStore.setState({
 			previewZooms: anchored.zoomRanges.slice(document.zoomRanges.length),
+			// Stamped with the clip geometry: a trim, split, reorder or project switch later
+			// makes this preview describe footage that is no longer there.
+			previewZoomSignature: clipExtentSignature(document),
 		});
 		store.setCurrentTime(suggestion.span.start / 1000);
 	}, []);
 	const clearAutoZoomPreview = useCallback(() => {
-		useProjectStore.setState({ previewZooms: [] });
+		useProjectStore.setState({ previewZooms: [], previewZoomSignature: "" });
 	}, []);
 
 	const applyAutoZooms = useCallback(async () => {
@@ -3995,7 +4001,7 @@ export function CursorPane() {
 		const next = appendAutoZoomSuggestions(document, chosen);
 		store.setDocument(next, { history: false });
 		await store.saveDocument(next, { history: true, historyBase: previous });
-		useProjectStore.setState({ previewZooms: [] });
+		useProjectStore.setState({ previewZooms: [], previewZoomSignature: "" });
 		setAutoZooms(null);
 	}, [autoZooms, autoZoomPicked]);
 

@@ -142,6 +142,8 @@ export interface ProjectState {
 	 * picture changes while `document.zoomRanges` does not.
 	 */
 	previewZooms: AxcutDocument["zoomRanges"];
+	/** `clipExtentSignature` of the document those regions were planned against. */
+	previewZoomSignature: string;
 	/** The selected imported audio track (issue #350), or null. In the store — not
 	 *  `useTimeline`'s local selection — because the media panel (which imports the
 	 *  file) and the inspector (which edits it) sit in different component subtrees
@@ -280,6 +282,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	sourceDurationSec: 0,
 	currentTimeSec: 0,
 	previewZooms: [],
+	previewZoomSignature: "",
 	selectedAudioTrackId: null,
 	playing: false,
 	dirty: false,

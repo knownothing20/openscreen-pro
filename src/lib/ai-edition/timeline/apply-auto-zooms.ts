@@ -54,6 +54,25 @@ export async function collectAutoZoomSuggestionsForDocument(
  * necessarily the same one — and if a clip was trimmed, moved, added, removed or
  * reordered in between, the spans land on different media, or on nothing.
  */
+/**
+ * The preview regions that still belong to THIS document.
+ *
+ * A preview region was measured against the clips that existed when the suggestion was made.
+ * Trim, split, reorder or a project switch changes that geometry, and then the region no longer
+ * describes anything real — it would draw a zoom over footage it was not planned for. So the
+ * region carries the signature of the document it was built from, and a mismatch means "drop it"
+ * rather than "approximate it".
+ */
+export function previewRegionsFor(
+	document: AxcutDocument,
+	regions: AxcutDocument["zoomRanges"] | null | undefined,
+	signature: string | null | undefined,
+): AxcutDocument["zoomRanges"] {
+	if (!regions || regions.length === 0) return [];
+	if (!signature) return [];
+	return signature === clipExtentSignature(document) ? regions : [];
+}
+
 export function clipExtentSignature(document: AxcutDocument): string {
 	return document.timeline.clips
 		.map(

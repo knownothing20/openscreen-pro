@@ -6,6 +6,7 @@ import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { withShortcutOverlay } from "@/lib/ai-edition/timeline/shortcutOverlayScene";
+import { previewRegionsFor } from "@/lib/ai-edition/timeline/apply-auto-zooms";
 import { findActiveSpeedRegion, type SpeedRegion } from "@/lib/ai-edition/timeline/speed";
 import { resolveNativePosition } from "@/lib/ai-edition/timeline/timelineMap";
 import {
@@ -61,7 +62,8 @@ export function NativeCompositorOverlay() {
 	const previousActiveClipIdRef = useRef<string | null>(null);
 	const document = useProjectStore((s) => s.document);
 	// Preview-only zoom regions (V2.8); empty when nothing is being previewed.
-	const previewZooms = useProjectStore((s) => s.previewZooms);
+	const previewZoomsRaw = useProjectStore((s) => s.previewZooms);
+	const previewZoomSignature = useProjectStore((s) => s.previewZoomSignature);
 	const currentTimeSec = useProjectStore((s) => s.currentTimeSec);
 	// ponytail: re-render whenever the webcam dim cache changes (the WebcamOverlay
 	// mounts AFTER the first scene push and only knows the real dims once the <video>
@@ -163,6 +165,7 @@ export function NativeCompositorOverlay() {
 				const webcamSourceSize = cameraPath ? getWebcamNativeSize(cameraPath) : null;
 				// A "preview" region is spliced in here, not in the document: the compositor draws
 				// it, `document.zoomRanges` stays as it was, and nothing reaches the undo stack.
+				const previewZooms = previewRegionsFor(document, previewZoomsRaw, previewZoomSignature);
 				const sceneDocument = previewZooms.length
 					? { ...document, zoomRanges: [...document.zoomRanges, ...previewZooms] }
 					: document;
@@ -181,7 +184,7 @@ export function NativeCompositorOverlay() {
 		// re-read fresh via getWebcamNativeSize() above on every run (biome flags this as
 		// an "unnecessary" dependency, but removing it would mean a probed webcam size
 		// arriving after mount never gets pushed to native).
-	}, [viewId, document, sources, _webcamSizeRevision, previewZooms]);
+	}, [viewId, document, sources, _webcamSizeRevision, previewZoomsRaw, previewZoomSignature]);
 
 	// SYNCHRO COMPLETE DES PARAMS, en un seul endroit.
 	//
