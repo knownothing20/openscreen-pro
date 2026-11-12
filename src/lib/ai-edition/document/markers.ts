@@ -193,3 +193,71 @@ export function bindMarkersToAsset(
 	}
 	return { ...document, markers: sortMarkers([...byId.values()]) };
 }
+
+/**
+ * Where a marker has to sit in SOURCE time so that it lands at `rawTimeSec` on the timeline.
+ *
+ * The inverse of `markerRawTimeSec`, and deliberately not a programme-time conversion: markers
+ * are stored on the source ruler, and the raw timeline is that ruler plus each clip's offset, so
+ * the mapping inside one clip is linear. Speed changes how long a source second *plays*, not
+ * where it sits, so a marker does not move when the user speeds a range up.
+ *
+ * Returns null when no clip on the timeline covers that raw moment — a marker cannot be placed
+ * on empty timeline, and guessing the nearest clip would silently bind it to another take.
+ */
+export function markerSourceTimeAtRawTime(
+	document: Pick<AxcutDocument, "timeline">,
+	rawTimeSec: number,
+	preferredAssetId?: string,
+): { assetId: string; sourceTimeSec: number } | null {
+	for (const clip of document.timeline.clips) {
+		if (rawTimeSec < clip.timelineStartSec || rawTimeSec >= clip.timelineEndSec) continue;
+		if (preferredAssetId !== undefined && clip.assetId !== preferredAssetId) continue;
+		return {
+			assetId: clip.assetId,
+			sourceTimeSec: clip.sourceStartSec + (rawTimeSec - clip.timelineStartSec),
+		};
+	}
+	return null;
+}
+
+/** Moves one marker to a raw timeline position, keeping its id, label and createdAt. */
+export function moveMarkerToRawTime(
+	document: AxcutDocument,
+	id: string,
+	rawTimeSec: number,
+): AxcutDocument {
+	const marker = (document.markers ?? []).find((m) => m.id === id);
+	if (!marker) return document;
+	const placed = markerSourceTimeAtRawTime(document, rawTimeSec, marker.assetId);
+	if (!placed) return document;
+	return {
+		...document,
+		markers: (document.markers ?? []).map((m) =>
+			m.id === id ? { ...m, sourceTimeSec: placed.sourceTimeSec } : m,
+		),
+	};
+}
+
+/**
+ * Merges markers that belong to the same take into the earliest of them.
+ *
+ * Same asset only: two markers from different recordings have no common ruler, so "earliest"
+ * would be comparing seconds of one video against seconds of another. The survivor keeps its id
+ * (any reference to it stays valid), label and createdAt, and takes the earliest source time.
+ */
+export function mergeMarkers(document: AxcutDocument, ids: readonly string[]): AxcutDocument {
+	const markers = document.markers ?? [];
+	const picked = markers.filter((m) => ids.includes(m.id));
+	if (picked.length < 2) return document;
+	const assetId = picked[0].assetId;
+	if (picked.some((m) => m.assetId !== assetId)) return document;
+	const keep = picked.reduce((a, b) => (b.sourceTimeSec < a.sourceTimeSec ? b : a));
+	const dropIds = new Set(picked.filter((m) => m.id !== keep.id).map((m) => m.id));
+	return {
+		...document,
+		markers: markers
+			.filter((m) => !dropIds.has(m.id))
+			.map((m) => (m.id === keep.id ? { ...m, sourceTimeSec: keep.sourceTimeSec } : m)),
+	};
+}

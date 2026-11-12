@@ -58,7 +58,13 @@ import {
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { resolveCaptionLane } from "@/lib/ai-edition/captions/settings";
 import { collapseTracksToPills, trackGroupId } from "@/lib/ai-edition/document/audioTracks";
-import { createMarker, removeMarker, setMarkerLabel } from "@/lib/ai-edition/document/markers";
+import {
+	createMarker,
+	mergeMarkers,
+	moveMarkerToRawTime,
+	removeMarker,
+	setMarkerLabel,
+} from "@/lib/ai-edition/document/markers";
 import {
 	collectNativeFormats,
 	formatFillAvailability,
@@ -3975,6 +3981,28 @@ export function CursorPane() {
 		},
 		[writeMarkers],
 	);
+	// Multi-select exists only for merging; the timeline position comes from the playhead, so a
+	// marker needs no time editor of its own.
+	const [pickedMarkers, setPickedMarkers] = useState<string[]>([]);
+	const moveMarkerToPlayhead = useCallback(
+		async (id: string) => {
+			const store = useProjectStore.getState();
+			const document = store.document;
+			if (!document) return;
+			const next = moveMarkerToRawTime(document, id, store.currentTimeSec);
+			if (next === document) return;
+			await writeMarkers(next, document);
+		},
+		[writeMarkers],
+	);
+	const mergePickedMarkers = useCallback(async () => {
+		const document = useProjectStore.getState().document;
+		if (!document || pickedMarkers.length < 2) return;
+		const next = mergeMarkers(document, pickedMarkers);
+		if (next === document) return;
+		await writeMarkers(next, document);
+		setPickedMarkers([]);
+	}, [pickedMarkers, writeMarkers]);
 	const deleteMarker = useCallback(
 		async (id: string) => {
 			const document = useProjectStore.getState().document;
@@ -4797,12 +4825,25 @@ export function CursorPane() {
 							<button
 								type="button"
 								disabled={!hasDocument}
+								title={ts("cursor.markerMoveHere")}
+								onClick={() => void moveMarkerToPlayhead(marker.id)}
+							>
+								{ts("cursor.markerMove")}
+							</button>
+							<button
+								type="button"
+								disabled={!hasDocument}
 								onClick={() => void deleteMarker(marker.id)}
 							>
 								{ts("cursor.markerDelete")}
 							</button>
 						</div>
 					))}
+					{pickedMarkers.length >= 2 ? (
+						<button type="button" onClick={() => void mergePickedMarkers()}>
+							{ts("cursor.markerMerge").replace("{count}", String(pickedMarkers.length))}
+						</button>
+					) : null}
 				</>
 			) : null}
 			<div className={styles.sectionLabel}>{ts("cursor.smartZoom")}</div>
