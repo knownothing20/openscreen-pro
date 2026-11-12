@@ -1,0 +1,73 @@
+name: Build Windows (manual)
+
+# Windows-only build, on demand.
+#
+# `build.yml` runs the whole matrix on a tag — Windows, macOS ×2, Linux, both
+# installers, publish — which is right for a release and wasteful for "I want a
+# Windows installer from this commit". This workflow is the narrow door: one job,
+# one artifact, nothing published. It is deliberately a copy of `build-windows`
+# rather than a `uses:` of it, because GitHub has no way to invoke a single job of
+# another workflow.
+#
+# Both feed electron-updater: latest.yml is what the updater reads, the .blockmap
+# is what lets it download a delta instead of the whole installer.
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: "Why this build exists (free text, for the run list)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-manual-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: ./.github/actions/setup
+
+      # STT is the bundled whisper-stt-server. The binary is produced by
+      # build-whisper-stt.yml and staged here from the run built from this commit's
+      # helper sources — without it the installer ships without speech-to-text.
+      - name: Stage whisper-stt binaries
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/stage-whisper-stt.sh win32-x64
+
+      - name: Build Windows app
+        run: npm run build:win -- --publish never
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: openscreen-windows
+          path: |
+            release/**/Openscreen.Setup.*.exe
+            release/**/Openscreen.Setup.*.exe.blockmap
+            release/**/latest.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      # `if-no-files-found: error` evaluates the UNION of the globs above, so one dead
+      # pattern among live ones passes silently — that is how the Linux job's *.zsync
+      # glob rotted unnoticed. Assert the update feed by name.
+      - name: Verify the update feed was produced
+        shell: bash
+        run: |
+          test -f "$(find release -name latest.yml | head -1)" \
+            || { echo "::error::latest.yml missing — electron-updater has no feed to read"; exit 1; }
+          test -f "$(find release -name 'Openscreen.Setup.*.exe.blockmap' | head -1)" \
+            || { echo "::error::blockmap missing — differential updates would silently degrade"; exit 1; }
