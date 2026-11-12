@@ -513,7 +513,9 @@
     "stepsApply": "Add markers",
     "stepsClear": "Discard",
     "stepLabel": "Step {n}",
-    "stepClicks": "{count} click(s)"
+    "stepClicks": "{count} click(s)",
+    "appliedSteps": "Applied steps",
+    "markerDelete": "Delete"
   },
   "export": {
     "gifButton": "导出 GIF",

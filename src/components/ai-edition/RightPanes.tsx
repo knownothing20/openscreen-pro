@@ -58,7 +58,7 @@ import {
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { resolveCaptionLane } from "@/lib/ai-edition/captions/settings";
 import { collapseTracksToPills, trackGroupId } from "@/lib/ai-edition/document/audioTracks";
-import { createMarker } from "@/lib/ai-edition/document/markers";
+import { createMarker, removeMarker, setMarkerLabel } from "@/lib/ai-edition/document/markers";
 import {
 	collectNativeFormats,
 	formatFillAvailability,
@@ -3931,6 +3931,9 @@ const SHORTCUT_POSITIONS = [
 	label: string;
 }>;
 
+/** Stable empty array: a selector must not allocate, or every render looks like a change. */
+const EMPTY_MARKERS: never[] = [];
+
 export function CursorPane() {
 	const ts = useScopedT("settings");
 	const { settings, set, setLive, commit, hasDocument } = useEditorSettings();
@@ -3949,6 +3952,39 @@ export function CursorPane() {
 	// analysis proposes, the document changes only when the user applies.
 	const [steps, setSteps] = useState<StepSuggestion[] | null>(null);
 	const [stepsBusy, setStepsBusy] = useState(false);
+
+	// Editing an applied step. Both go through the document's own helpers (setMarkerLabel /
+	// removeMarker) so the marker keeps its id, assetId and createdAt, and so the write lands
+	// where every other write does — one save, one undo step.
+	const appliedMarkers = useProjectStore((s) => s.document?.markers ?? EMPTY_MARKERS);
+	const writeMarkers = useCallback(
+		async (next: ReturnType<typeof setMarkerLabel>, previous: NonNullable<typeof next>) => {
+			const store = useProjectStore.getState();
+			store.setDocument(next, { history: false });
+			await store.saveDocument(next, { history: true, historyBase: previous });
+		},
+		[],
+	);
+	const renameMarker = useCallback(
+		async (id: string, label: string) => {
+			const document = useProjectStore.getState().document;
+			if (!document) return;
+			const next = setMarkerLabel(document, id, label);
+			if (next === document) return;
+			await writeMarkers(next, document);
+		},
+		[writeMarkers],
+	);
+	const deleteMarker = useCallback(
+		async (id: string) => {
+			const document = useProjectStore.getState().document;
+			if (!document) return;
+			const next = removeMarker(document, id);
+			if (next === document) return;
+			await writeMarkers(next, document);
+		},
+		[writeMarkers],
+	);
 	const analyzeSteps = useCallback(async () => {
 		const document = useProjectStore.getState().document;
 		if (!document) return;
@@ -4732,6 +4768,41 @@ export function CursorPane() {
 							{ts("cursor.stepsClear")}
 						</button>
 					</div>
+				</>
+			) : null}
+			{/* Applied steps: the markers that are actually in the document. Editing here writes
+			    through the document helpers, so a rename is one undo step, not one per keystroke. */}
+			{appliedMarkers.length > 0 ? (
+				<>
+					<div className={styles.sectionLabel}>{ts("cursor.appliedSteps")}</div>
+					{appliedMarkers.map((marker, index) => (
+						<div className={styles.paneRow} key={marker.id}>
+							<input
+								type="text"
+								defaultValue={marker.label}
+								aria-label={ts("cursor.stepLabel").replace("{n}", String(index + 1))}
+								onBlur={(event) => {
+									const value = event.currentTarget.value.trim().slice(0, 60);
+									if (value !== marker.label) void renameMarker(marker.id, value);
+								}}
+								onKeyDown={(event) => {
+									if (event.key === "Enter") event.currentTarget.blur();
+									if (event.key === "Escape") {
+										event.currentTarget.value = marker.label;
+										event.currentTarget.blur();
+									}
+								}}
+							/>
+							<span className={styles.label}>{`${marker.sourceTimeSec.toFixed(1)}s`}</span>
+							<button
+								type="button"
+								disabled={!hasDocument}
+								onClick={() => void deleteMarker(marker.id)}
+							>
+								{ts("cursor.markerDelete")}
+							</button>
+						</div>
+					))}
 				</>
 			) : null}
 			<div className={styles.sectionLabel}>{ts("cursor.smartZoom")}</div>

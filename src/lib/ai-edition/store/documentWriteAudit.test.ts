@@ -153,6 +153,11 @@ const DECLARED: WritePath[] = [
 	// records history against the document before the batch, and the on-screen half beside it.
 	w("src/components/ai-edition/RightPanes.tsx", "applySteps", "save", "gesture"),
 	w("src/components/ai-edition/RightPanes.tsx", "applySteps", "set", "automatic"),
+	// Renaming or deleting an applied step (V2.8). Both funnel through `writeMarkers`, so the
+	// write is attributed to that one site rather than to the two callers.
+	w("src/components/ai-edition/RightPanes.tsx", "writeMarkers", "save", "gesture"),
+	w("src/components/ai-edition/RightPanes.tsx", "writeMarkers", "set", "automatic"),
+
 
 
 	w("src/components/ai-edition/NewEditorShell.tsx", "handleRenameProject", "save", "gesture"),
