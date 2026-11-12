@@ -149,6 +149,11 @@ const DECLARED: WritePath[] = [
 	// The same apply also puts the batch on screen before the disk write lands; that half records
 	// no history, which is why the entry above is the one Ctrl+Z lands on.
 	w("src/components/ai-edition/RightPanes.tsx", "applyAutoZooms", "set", "automatic"),
+	// Applying the tutorial step suggestions (V2.8): same shape as the zoom batch — one save that
+	// records history against the document before the batch, and the on-screen half beside it.
+	w("src/components/ai-edition/RightPanes.tsx", "applySteps", "save", "gesture"),
+	w("src/components/ai-edition/RightPanes.tsx", "applySteps", "set", "automatic"),
+
 
 	w("src/components/ai-edition/NewEditorShell.tsx", "handleRenameProject", "save", "gesture"),
 	// Ctrl+S / File > Save.

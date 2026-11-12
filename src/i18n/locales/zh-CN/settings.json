@@ -505,7 +505,15 @@
     "smartZoomNone": "Select none",
     "smartZoomApplySelected": "Apply {count}",
     "smartZoomPick": "Suggestion {index}",
-    "smartZoomPreview": "Preview"
+    "smartZoomPreview": "Preview",
+    "steps": "Tutorial steps",
+    "stepsIdle": "Not analysed yet",
+    "stepsFound": "Found {count} step(s)",
+    "stepsAnalyze": "Analyse steps",
+    "stepsApply": "Add markers",
+    "stepsClear": "Discard",
+    "stepLabel": "Step {n}",
+    "stepClicks": "{count} click(s)"
   },
   "export": {
     "gifButton": "导出 GIF",

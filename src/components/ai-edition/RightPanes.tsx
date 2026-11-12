@@ -58,6 +58,7 @@ import {
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { resolveCaptionLane } from "@/lib/ai-edition/captions/settings";
 import { collapseTracksToPills, trackGroupId } from "@/lib/ai-edition/document/audioTracks";
+import { createMarker } from "@/lib/ai-edition/document/markers";
 import {
 	collectNativeFormats,
 	formatFillAvailability,
@@ -124,6 +125,7 @@ import { breatheCut } from "@/lib/ai-edition/timeline/cut-breath";
 import { formatMs } from "@/lib/ai-edition/timeline/format";
 import { removedRawSpans } from "@/lib/ai-edition/timeline/programme-time";
 import { DEFAULT_SHORTCUT_OVERLAY } from "@/lib/ai-edition/timeline/shortcutOverlay";
+import { type StepSuggestion, suggestSteps } from "@/lib/ai-edition/timeline/stepSuggestions";
 import type { AutoZoomSuggestion } from "@/lib/ai-edition/timeline/zoom-suggestions";
 import {
 	type AssetTranscriptionView,
@@ -3942,6 +3944,72 @@ export function CursorPane() {
 	// Which suggestions the user wants. Kept parallel to `autoZooms` and reset whenever a new
 	// analysis lands, so a stale tick can never apply to a plan it was not made for.
 	const [autoZoomPicked, setAutoZoomPicked] = useState<boolean[]>([]);
+
+	// Tutorial steps (V2.8): clicks in, marker suggestions out. Same shape as the zoom plan —
+	// analysis proposes, the document changes only when the user applies.
+	const [steps, setSteps] = useState<StepSuggestion[] | null>(null);
+	const [stepsBusy, setStepsBusy] = useState(false);
+	const analyzeSteps = useCallback(async () => {
+		const document = useProjectStore.getState().document;
+		if (!document) return;
+		setStepsBusy(true);
+		try {
+			// The first video asset actually on the timeline: its sidecar is the only evidence
+			// of what was clicked.
+			const asset = document.assets.find(
+				(a) =>
+					a.kind === "video" &&
+					a.originalPath &&
+					document.timeline.clips.some((clip) => clip.assetId === a.id),
+			);
+			if (!asset?.originalPath) {
+				setSteps([]);
+				return;
+			}
+			const data = await nativeBridgeClient.cursor.getRecordingData(asset.originalPath);
+			const points = (data.samples ?? []).map((sample) => ({
+				timeMs: sample.timeMs,
+				cx: sample.cx,
+				cy: sample.cy,
+				visible: sample.visible,
+				interactionType: sample.interactionType,
+			}));
+			setSteps(
+				suggestSteps(points, {
+					frameWidth: asset.video?.width,
+					frameHeight: asset.video?.height,
+				}),
+			);
+		} finally {
+			setStepsBusy(false);
+		}
+	}, []);
+	const applySteps = useCallback(async () => {
+		const store = useProjectStore.getState();
+		const document = store.document;
+		if (!document || !steps || steps.length === 0) return;
+		const asset = document.assets.find(
+			(a) =>
+				a.kind === "video" &&
+				a.originalPath &&
+				document.timeline.clips.some((clip) => clip.assetId === a.id),
+		);
+		// The label is minted here, in the user's language: the sidecar knows a coordinate and
+		// a timestamp, and guessing "Open settings" from an (x, y) would be invention.
+		const added = steps.map((step, index) =>
+			createMarker({
+				...(asset ? { assetId: asset.id } : {}),
+				sourceTimeSec: step.startMs / 1000,
+				label: ts("cursor.stepLabel").replace("{n}", String(index + 1)),
+			}),
+		);
+		// One document write, one undo step for the whole batch.
+		const previous = document;
+		const next = { ...document, markers: [...(document.markers ?? []), ...added] };
+		store.setDocument(next, { history: false });
+		await store.saveDocument(next, { history: true, historyBase: previous });
+		setSteps(null);
+	}, [steps, ts]);
 	const analyzeAutoZooms = useCallback(async () => {
 		const document = useProjectStore.getState().document;
 		if (!document) return;
@@ -4619,6 +4687,53 @@ export function CursorPane() {
 			) : null}
 			{/* Smart zoom (V2.8): plan from the recorded clicks, write on demand. Analysis only
 		    proposes; the document changes when the user applies. */}
+			{/* Tutorial steps (V2.8): each row is a moment worth a marker. Applying writes into
+			    the document's existing markers — no second chapter database. */}
+			<div className={styles.sectionLabel}>{ts("cursor.steps")}</div>
+			<div className={styles.paneRow}>
+				<span className={styles.label}>
+					{steps === null
+						? ts("cursor.stepsIdle")
+						: ts("cursor.stepsFound").replace("{count}", String(steps.length))}
+				</span>
+				<button
+					type="button"
+					disabled={!hasDocument || stepsBusy}
+					onClick={() => void analyzeSteps()}
+				>
+					{ts("cursor.stepsAnalyze")}
+				</button>
+			</div>
+			{steps && steps.length > 0 ? (
+				<>
+					{steps.map((step, index) => (
+						<div className={styles.paneRow} key={`${step.startMs}-${index}`}>
+							<button
+								type="button"
+								disabled={!hasDocument}
+								onClick={() => useProjectStore.getState().setCurrentTime(step.startMs / 1000)}
+							>
+								{`${ts("cursor.stepLabel").replace("{n}", String(index + 1))}  ${(step.startMs / 1000).toFixed(1)}s`}
+							</button>
+							<span className={styles.label}>
+								{ts("cursor.stepClicks").replace("{count}", String(step.clicks))}
+							</span>
+						</div>
+					))}
+					<div className={styles.sliderGrid}>
+						<button
+							type="button"
+							disabled={!hasDocument || stepsBusy}
+							onClick={() => void applySteps()}
+						>
+							{ts("cursor.stepsApply")}
+						</button>
+						<button type="button" onClick={() => setSteps(null)}>
+							{ts("cursor.stepsClear")}
+						</button>
+					</div>
+				</>
+			) : null}
 			<div className={styles.sectionLabel}>{ts("cursor.smartZoom")}</div>
 			<div className={styles.paneRow}>
 				<span className={styles.label}>
