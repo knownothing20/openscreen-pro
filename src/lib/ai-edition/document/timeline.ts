@@ -267,7 +267,7 @@ export function readSpeedRegions<T extends PlaybackSpeedRegion = PlaybackSpeedRe
  * `1 / speed` piecewise. Regions are matched on the raw ruler, the same
  * coordinate their pills are drawn in.
  */
-function outputDurationOfRawSpan(
+export function outputDurationOfRawSpan(
 	fromSec: number,
 	toSec: number,
 	speedRegions: PlaybackSpeedRegion[],

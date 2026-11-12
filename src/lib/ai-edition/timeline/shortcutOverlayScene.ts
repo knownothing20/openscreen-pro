@@ -3,6 +3,7 @@ import type { SceneAnnotation, SceneDescription } from "@/native/sceneDescriptio
 import type { AxcutDocument } from "../schema";
 import { getEditorSettings } from "../store/editorSettings";
 import { looksLikeChord, type RecordedShortcut, shortcutCardSpans } from "./shortcutOverlay";
+import { readSpeedRegions } from "../document/timeline";
 
 /**
  * The shortcut overlay, applied to a finished scene.
@@ -68,7 +69,14 @@ export async function withShortcutOverlay(
 	const cards: SceneAnnotation[] = [];
 	for (const { path, events } of perPath) {
 		if (events.length === 0) continue;
-		for (const span of shortcutCardSpans(scene.clips, events, settings, path)) {
+		// Programme time, so the user's "1500 ms" means 1.5 s of finished video at any speed.
+		for (const span of shortcutCardSpans(
+			scene.clips,
+			events,
+			settings,
+			path,
+			readSpeedRegions(document),
+		)) {
 			cards.push(cardAnnotation(span, settings));
 		}
 	}

@@ -128,9 +128,11 @@ describe("shortcutCardSpans", () => {
 		]);
 	});
 
-	it("puts a chord on the one side of a split that plays it", () => {
-		// A split cuts the SOURCE into two windows; 2.5 s is only inside the first. One card,
-		// on the first clip, cut at the cut — not one per side.
+	it("starts the chord on the side of a split that plays it, and carries on past the cut", () => {
+		// A split cuts the SOURCE into two windows; 2.5 s is only inside the first, so that is
+		// where the card starts. It used to stop dead at the cut, which made a 3 s card last
+		// 0.5 s whenever the user split in the middle of it — the two windows play the same
+		// take back to back, so the card continues (V2.8, programme-time duration).
 		const split = [
 			{ screenPath: "C://take.mp4", sourceStartSec: 1, sourceEndSec: 3 },
 			{ screenPath: "C://take.mp4", sourceStartSec: 3, sourceEndSec: 5 },
@@ -141,7 +143,10 @@ describe("shortcutCardSpans", () => {
 			{ ...ON, durationMs: 3000 },
 			"C://take.mp4",
 		);
-		expect(spans.map((s) => [s.clipIndex, s.endSec])).toEqual([[0, 3]]);
+		expect(spans.map((s) => [s.clipIndex, s.startSec, s.endSec])).toEqual([
+			[0, 2.5, 3],
+			[1, 3, 5],
+		]);
 	});
 
 	it("never bleeds into the next clip", () => {

@@ -158,12 +158,52 @@ export interface ShortcutCardSpan {
  * A card never spills past its clip's end: if the chord lands in the last second of a clip, the
  * card is cut there rather than bleeding into the next shot.
  */
+import {
+	outputDurationOfRawSpan,
+	type PlaybackSpeedRegion,
+} from "../document/timeline";
+
+/**
+ * How much SOURCE time the card has to cover to stay on screen for `outputSec` of programme.
+ *
+ * Inverting the existing forward mapping rather than dividing by speed: a 2x stretch makes one
+ * source second play for half a second, and a span that crosses several speed regions has no
+ * single multiplier. Bisection over `outputDurationOfRawSpan` handles all of that with one
+ * authority for the arithmetic, and cannot disagree with the rest of the timeline about what a
+ * speed region means.
+ */
+export function sourceSpanSecForOutputSec(
+	atSec: number,
+	outputSec: number,
+	speedRegions: readonly PlaybackSpeedRegion[] = [],
+): number {
+	if (!(outputSec > 0)) return 0;
+	if (speedRegions.length === 0) return outputSec;
+	const speeds = speedRegions.map((r) => (r.speed > 0 ? r.speed : 1));
+	const fastest = Math.max(1, ...speeds);
+	const slowest = Math.min(1, ...speeds);
+	let lo = outputSec * slowest;
+	let hi = outputSec * fastest;
+	// Bracket first: hi must already produce at least `outputSec` of programme.
+	for (let i = 0; i < 8 && outputDurationOfRawSpan(atSec, atSec + hi, [...speedRegions]) < outputSec; i++) {
+		hi *= 2;
+	}
+	for (let i = 0; i < 60; i++) {
+		const mid = (lo + hi) / 2;
+		if (outputDurationOfRawSpan(atSec, atSec + mid, [...speedRegions]) < outputSec) lo = mid;
+		else hi = mid;
+	}
+	return hi;
+}
+
 export function shortcutCardSpans(
 	clips: readonly ShortcutCardClip[],
 	events: readonly RecordedShortcut[] | null | undefined,
 	settings: ShortcutOverlaySettings,
 	/** The recording these events came from. Omit only when every clip plays that same file. */
 	videoPath?: string,
+	/** Speed regions, so `durationMs` means programme time rather than source time. */
+	speedRegions: readonly PlaybackSpeedRegion[] = [],
 ): ShortcutCardSpan[] {
 	if (!settings.enabled) return [];
 	if (!events || events.length === 0) return [];
@@ -173,15 +213,36 @@ export function shortcutCardSpans(
 		if (!Number.isFinite(event.timeMs) || event.timeMs < 0) continue;
 		if (!event.combo || !looksLikeChord(event.combo)) continue;
 		const atSec = event.timeMs / 1000;
-		clips.forEach((clip, clipIndex) => {
-			// A chord belongs to the recording it was pressed in: two takes in one timeline must not
-			// show each other's keys.
-			if (videoPath !== undefined && clip.screenPath !== videoPath) return;
-			if (atSec < clip.sourceStartSec || atSec >= clip.sourceEndSec) return;
-			const endSec = Math.min(atSec + durationSec, clip.sourceEndSec);
-			if (endSec <= atSec) return;
-			spans.push({ clipIndex, startSec: atSec, endSec, combo: event.combo });
-		});
+		// `durationSec` is programme time. Convert once, then spend that much SOURCE time across
+		// however many clips show it — a split at second 3 must not cut the card in half.
+		const sourceSpanSec = sourceSpanSecForOutputSec(atSec, durationSec, speedRegions);
+		const startIndex = clips.findIndex(
+			(clip) =>
+				(videoPath === undefined || clip.screenPath === videoPath) &&
+				atSec >= clip.sourceStartSec &&
+				atSec < clip.sourceEndSec,
+		);
+		if (startIndex < 0) continue;
+		let remaining = sourceSpanSec;
+		let cursor = atSec;
+		for (let index = startIndex; index < clips.length && remaining > 0; index++) {
+			const clip = clips[index];
+			if (index > startIndex) {
+				const previous = clips[index - 1];
+				// Only carry on when the next clip keeps playing the same take from where the last
+				// one stopped. A reordered or trimmed timeline breaks that, and the card must end
+				// rather than appear over unrelated footage.
+				if (clip.screenPath !== previous.screenPath) break;
+				if (Math.abs(clip.sourceStartSec - previous.sourceEndSec) > 1e-6) break;
+				cursor = clip.sourceStartSec;
+			}
+			const room = clip.sourceEndSec - cursor;
+			if (room <= 0) break;
+			const take = Math.min(room, remaining);
+			spans.push({ clipIndex: index, startSec: cursor, endSec: cursor + take, combo: event.combo });
+			remaining -= take;
+			cursor = clip.sourceEndSec;
+		}
 	}
 	return spans;
 }
