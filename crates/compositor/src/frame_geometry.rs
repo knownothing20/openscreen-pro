@@ -3700,8 +3700,53 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // côté app (`focusEffect.ts`, `sceneDescription.ts`), le natif ne voit jamais l'énumération
         // de cible. Sans région de mouvement, aucun projecteur — pas un cas d'erreur, juste rien à
         // dessiner.
-        let focus =
+        let authored_focus =
             crate::screen_motion::focus_effect_sample_at(screen_motion_regions, source_t, &clock);
+        // L'auto-spotlight d'un zoom automatique, lu APRÈS le focus authored : la main de
+        // l'utilisateur garde la priorité, et les deux ne se cumulent jamais (c'est un `or_else`,
+        // pas une somme de deux passes).
+        //
+        // La porte est `zoom_strength`, l'enveloppe du zoom déjà calculée pour cette frame : la
+        // lumière entre et sort donc avec le même mouvement que l'image, sans second jeu d'easings
+        // qui pourrait se désynchroniser.
+        //
+        // Le centre est le point de focus du zoom porté dans l'espace canvas par `s_dst` — le
+        // rectangle où le cadre est effectivement dessiné. Utiliser `focus.cx/cy` tel quel le
+        // laisserait dans les coordonnées de la SOURCE, donc à côté dès qu'il y a crop, letterbox
+        // ou zoom.
+        let auto_focus = || -> Option<crate::screen_motion::FocusEffectSample> {
+            let effect = zoom_regions
+                .iter()
+                .filter(|r| {
+                    r.focus_effect.is_some()
+                        && source_t >= r.start_sec as f32
+                        && source_t <= r.end_sec as f32
+                })
+                // La région commencée le plus tard est celle qu'on regarde : proche du gagnant de
+                // `zoom_state_in` sans réimplémenter sa logique de transition chaînée.
+                .max_by(|a, b| {
+                    a.start_sec
+                        .partial_cmp(&b.start_sec)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .and_then(|r| r.focus_effect)?;
+            if zoom_strength <= 0.0 {
+                return None;
+            }
+            Some(crate::screen_motion::FocusEffectSample {
+                shape: effect.shape,
+                angle_degrees: effect.angle_degrees.rem_euclid(360.0),
+                center: [
+                    s_dst[0] + p.focus[0] * s_dst[2],
+                    s_dst[1] + p.focus[1] * s_dst[3],
+                ],
+                size: effect.size,
+                softness: effect.softness,
+                dimming: effect.dimming * zoom_strength,
+                progress: zoom_strength,
+            })
+        };
+        let focus = authored_focus.or_else(auto_focus);
 
     FrameGeometry {
         scene_preset,

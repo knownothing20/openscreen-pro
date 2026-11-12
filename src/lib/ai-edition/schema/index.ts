@@ -524,6 +524,20 @@ export const zoomRegionSchema = endGteStart(
 			cy: z.number().min(0).max(1),
 		}),
 		focusMode: z.enum(["manual", "auto"]).optional(),
+		/** Optional spotlight for this zoom. Absent on every document written before it existed,
+		 *  so no schema bump: an older build drops the key and the picture is exactly as before.
+		 *  The centre is NOT stored — the compositor derives it from the zoom's own focus point,
+		 *  which is the only value that cannot drift from the picture. */
+		focusEffect: z
+			.object({
+				shape: z.enum(["radial", "linear"]).optional(),
+				angleDegrees: z.number().optional(),
+				size: z.number().min(0).max(1).optional(),
+				softness: z.number().min(0).max(1).optional(),
+				dimming: z.number().min(0).max(1).optional(),
+			})
+			.nullable()
+			.optional(),
 		/** The zoom's 3D camera (`Rotation3DPreset` in `components/video-editor/types.ts` — same
 		 *  literal list, duplicated here): a fixed angle, or the camera that orbits the screen
 		 *  (`crates/compositor/src/camera.rs`), placed by the zoom's focus mode. Absent means a flat

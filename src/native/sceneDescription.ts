@@ -106,6 +106,17 @@ export interface SceneZoomRegion {
 	focusY: number;
 	/** "auto" follows cursor telemetry instead of the fixed focus point. */
 	focusMode: "manual" | "auto" | null;
+	/** Optional spotlight for this zoom, drawn as the same mode-19 mask an authored focus uses.
+	 *  `centerX`/`centerY` are ignored natively: the mask follows the zoom's actual focus point,
+	 *  mapped into canvas space, because that is the only centre that cannot drift from the
+	 *  picture. */
+	focusEffect?: {
+		shape?: "radial" | "linear";
+		angleDegrees?: number;
+		size?: number;
+		softness?: number;
+		dimming?: number;
+	} | null;
 	/** The zoom's 3D camera: a fixed angle or a moving camera (`regions.rs::camera_for`).
 	 *  `null` = flat; the native side also renders an unknown value flat. */
 	rotation: Rotation3DPreset | null;
@@ -1650,6 +1661,9 @@ export function buildSceneDescription(
 			// user ("turn it off to set focus mode per zoom"), and it's what makes the toolbar
 			// button a one-click "make every zoom follow the cursor".
 			focusMode: settings.autoFocusAll ? "auto" : (region.focusMode ?? null),
+			...((region as { focusEffect?: SceneZoomRegion["focusEffect"] }).focusEffect
+				? { focusEffect: (region as { focusEffect?: SceneZoomRegion["focusEffect"] }).focusEffect }
+				: {}),
 			rotation: region.rotationPreset ?? null,
 			clipIndex: region.clipIndex,
 			...(region.underTrim ? { underTrim: true } : {}),

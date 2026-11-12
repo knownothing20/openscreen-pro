@@ -521,6 +521,13 @@ pub struct SceneZoomRegion {
     /// Masque le curseur pendant cette région de zoom.
     #[serde(default)]
     pub hide_cursor: bool,
+    /// Le projecteur de cette région de zoom, quand l'utilisateur l'a demandé.
+    ///
+    /// Il ne participe PAS au calcul du mouvement d'écran : `screen_motion_sample_at` ne le voit
+    /// jamais, donc il ne peut ni déplacer l'image ni remettre en cause le gagnant authored. Il est
+    /// lu après coup, et seulement quand aucun focus authored n'est actif (`frame_geometry`).
+    #[serde(default)]
+    pub focus_effect: Option<SceneFocusEffect>,
 }
 
 /// Une zone de vitesse portée par le temps source d'un clip.
