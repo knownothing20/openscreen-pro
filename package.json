@@ -40,6 +40,7 @@
 		"i18n:check": "node scripts/i18n-check.mjs",
 		"docs:check": "node scripts/check-docs.mjs",
 		"build:hygiene": "node scripts/check-build-hygiene.mjs",
+		"artifacts:clean": "node scripts/clean-artifacts.mjs",
 		"assets:appx": "node scripts/generate-appx-assets.mjs",
 		"preview": "vite preview",
 		"build:native:mac": "node scripts/build-macos-screencapturekit-helper.mjs",
