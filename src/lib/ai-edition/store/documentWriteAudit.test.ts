@@ -292,6 +292,11 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "commitAnnotationChange", "state", "unrecorded"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "commitZoomFocus", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "commitZoomFocus", "state", "unrecorded"),
+	// The spotlight sliders of an applied zoom: the live half and its commit, on exactly the
+	// same two rows as the focus point's own drag above (same pair of refs, same rollback).
+	w("src/lib/ai-edition/store/useTimeline.ts", "setZoomFocusEffectLive", "set", "automatic"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "commitZoomFocusEffect", "save", "gesture"),
+	w("src/lib/ai-edition/store/useTimeline.ts", "commitZoomFocusEffect", "state", "unrecorded"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "duplicateClip", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "insertClipAt", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "moveClip", "save", "gesture"),

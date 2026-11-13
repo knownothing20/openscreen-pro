@@ -38,6 +38,8 @@ vi.mock("../RightPanes", async (importOriginal) => ({
 	),
 	CursorPane: () => <div data-testid="cursor-pane">CursorPane</div>,
 	LayoutPane: () => <div data-testid="layout-pane">LayoutPane</div>,
+	// The zoom pane's spotlight switch is this button; stubbing it would stub the control.
+	Toggle: (await importOriginal<typeof import("../RightPanes")>()).Toggle,
 	TranscriptPane: () => <div data-testid="transcript-pane">TranscriptPane</div>,
 	VideoEffectsPane: () => <div data-testid="effects-pane">VideoEffectsPane</div>,
 }));
