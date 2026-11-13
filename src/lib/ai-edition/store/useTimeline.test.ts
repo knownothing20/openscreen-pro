@@ -23,6 +23,7 @@ import {
 	DEFAULT_SCREEN_MOTION_TIMING,
 	SCREEN_MOTION_DEFAULT_TARGET,
 } from "../screenMotion/presets";
+import { appendAutoZoomSuggestions } from "../timeline/apply-auto-zooms";
 import { ZOOM_SPOTLIGHT_DEFAULT } from "../timeline/zoomSpotlight";
 import { useProjectStore } from "./projectStore";
 import { clearHistory, redo, undo } from "./undo";
@@ -3579,5 +3580,88 @@ describe("useTimeline zoom spotlight", () => {
 			await result.current.resetZoomSpotlight("zoom_1");
 		});
 		expect(zoom()?.focusEffect).toEqual({ ...ZOOM_SPOTLIGHT_DEFAULT });
+	});
+});
+
+// The Smart Zoom batch.
+//
+// The panel's "Apply" is two calls, not one: it puts the next document on screen without
+// history, then saves it with the document it started from as `historyBase`. That is what
+// makes a batch of three suggestions a SINGLE Ctrl+Z — and it is why the panel's own wiring
+// cannot be covered by a test of `appendAutoZoomSuggestions` alone. This walks exactly those
+// two calls with three real suggestions, and checks that the zooms already on the timeline
+// come back untouched from the undo.
+describe("useTimeline batch apply of auto-zooms", () => {
+	const manual = (id: string, startMs: number, endMs: number) => ({
+		id,
+		startMs,
+		endMs,
+		depth: 2 as const,
+		focus: { cx: 0.3, cy: 0.3 },
+		focusMode: "manual" as const,
+	});
+
+	const withManualZooms = (): AxcutDocument => ({
+		...sampleDoc,
+		zoomRanges: [manual("zoom_manual_1", 300, 1000), manual("zoom_manual_2", 1100, 1800)],
+	});
+
+	const suggestions = [
+		{ span: { start: 3000, end: 5000 }, focus: { cx: 0.25, cy: 0.3 }, depth: 2 as const },
+		{ span: { start: 7000, end: 9000 }, focus: { cx: 0.7, cy: 0.4 }, depth: 2 as const },
+		{ span: { start: 11000, end: 13000 }, focus: { cx: 0.4, cy: 0.75 }, depth: 2 as const },
+	];
+
+	const zooms = () => useProjectStore.getState().document?.zoomRanges ?? [];
+
+	beforeEach(() => {
+		clearHistory();
+		useProjectStore.getState().clear();
+		bridgeMocks.save.mockReset();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: withManualZooms(),
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	it("adds three regions as ONE undo step and puts the two hand-made zooms back untouched", async () => {
+		renderTimeline();
+		const store = useProjectStore.getState();
+		const before = store.document;
+		expect(before).not.toBeNull();
+		if (!before) return;
+		const stepsBefore = past.length;
+
+		// Exactly what `applyAutoZooms` does, in the same order.
+		const next = appendAutoZoomSuggestions(before, suggestions);
+		await act(async () => {
+			store.setDocument(next, { history: false });
+			await store.saveDocument(next, { history: true, historyBase: before });
+		});
+
+		expect(zooms()).toHaveLength(5);
+		expect(past).toHaveLength(stepsBefore + 1);
+		const manualAfter = zooms().filter((z) => z.id.startsWith("zoom_manual"));
+		expect(manualAfter).toEqual(before.zoomRanges);
+
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(zooms()).toHaveLength(2);
+		expect(zooms()).toEqual(before.zoomRanges);
+
+		await act(async () => {
+			expect(redo()).toBe(true);
+		});
+		expect(zooms()).toHaveLength(5);
+		expect(zooms().filter((z) => z.id.startsWith("zoom_manual"))).toEqual(before.zoomRanges);
 	});
 });

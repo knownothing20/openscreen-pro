@@ -4970,11 +4970,17 @@ export function registerIpcHandlers(
 		return loadProjectFileFromPath(filePath);
 	});
 
-	// Test only: which project an acceptance run asked for, if any. Read from the environment
-	// at call time and answered as `null` on every ordinary launch, so nothing that ships
-	// depends on it. The editor asks for it once, on mount — a push from main at
-	// `did-finish-load` would arrive before React has subscribed and be dropped.
-	ipcMain.handle("test-project-path", async () => process.env.OPENSCREEN_TEST_PROJECT ?? null);
+	// Test only: which project an acceptance run asked for, if any. The editor asks for it
+	// once, on mount — a push from main at `did-finish-load` would arrive before React has
+	// subscribed and be dropped.
+	//
+	// `app.isPackaged` closes the door in a shipped build: an acceptance harness needs the
+	// hook, a user must not be able to point the editor at a file by exporting a variable.
+	// The answer is `null` everywhere else, which is what the renderer treats as "nothing to
+	// open", so a normal launch is untouched either way.
+	ipcMain.handle("test-project-path", async () =>
+		app.isPackaged ? null : (process.env.OPENSCREEN_TEST_PROJECT ?? null),
+	);
 
 	async function loadProjectFileFromPath(filePath: string): Promise<ProjectFileResult> {
 		try {
