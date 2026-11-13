@@ -3953,6 +3953,14 @@ export function CursorPane() {
 	// Which suggestions the user wants. Kept parallel to `autoZooms` and reset whenever a new
 	// analysis lands, so a stale tick can never apply to a plan it was not made for.
 	const [autoZoomPicked, setAutoZoomPicked] = useState<boolean[]>([]);
+	// Spotlight for the auto-zooms. `dimming = 0.35` is the value the real-MP4 pass landed on:
+	// 0.75 greyed the whole frame and left the subject at 73% brightness.
+	const [spotlightOn, setSpotlightOn] = useState(false);
+	const [spotlightDimming, setSpotlightDimming] = useState(0.35);
+	const [spotlightSize, setSpotlightSize] = useState(0.3);
+	const spotlightConfig = spotlightOn
+		? { size: spotlightSize, softness: 0.25, dimming: spotlightDimming }
+		: null;
 
 	// Tutorial steps (V2.8): clicks in, marker suggestions out. Same shape as the zoom plan —
 	// analysis proposes, the document changes only when the user applies.
@@ -4102,19 +4110,27 @@ export function CursorPane() {
 	// Preview = draw it, do not keep it. The region is anchored by the same call the real apply
 	// uses, so what shows on screen is exactly what would land — but it goes to `previewZooms`,
 	// not to the document, so there is no write, no history and nothing on disk.
-	const previewAutoZoom = useCallback((suggestion: AutoZoomSuggestion) => {
-		const store = useProjectStore.getState();
-		const document = store.document;
-		if (!document) return;
-		const anchored = appendAutoZoomSuggestions(document, [suggestion]);
-		useProjectStore.setState({
-			previewZooms: anchored.zoomRanges.slice(document.zoomRanges.length),
-			// Stamped with the clip geometry: a trim, split, reorder or project switch later
-			// makes this preview describe footage that is no longer there.
-			previewZoomSignature: clipExtentSignature(document),
-		});
-		store.setCurrentTime(suggestion.span.start / 1000);
-	}, []);
+	const previewAutoZoom = useCallback(
+		(suggestion: AutoZoomSuggestion) => {
+			const store = useProjectStore.getState();
+			const document = store.document;
+			if (!document) return;
+			const anchored = appendAutoZoomSuggestions(
+				document,
+				[suggestion],
+				undefined,
+				spotlightConfig,
+			);
+			useProjectStore.setState({
+				previewZooms: anchored.zoomRanges.slice(document.zoomRanges.length),
+				// Stamped with the clip geometry: a trim, split, reorder or project switch later
+				// makes this preview describe footage that is no longer there.
+				previewZoomSignature: clipExtentSignature(document),
+			});
+			store.setCurrentTime(suggestion.span.start / 1000);
+		},
+		[spotlightConfig],
+	);
 	const clearAutoZoomPreview = useCallback(() => {
 		useProjectStore.setState({ previewZooms: [], previewZoomSignature: "" });
 	}, []);
@@ -4130,12 +4146,12 @@ export function CursorPane() {
 		// One document write, one undo step: `setDocument` puts it on screen, and only the save
 		// records history — against the document we started from.
 		const previous = document;
-		const next = appendAutoZoomSuggestions(document, chosen);
+		const next = appendAutoZoomSuggestions(document, chosen, undefined, spotlightConfig);
 		store.setDocument(next, { history: false });
 		await store.saveDocument(next, { history: true, historyBase: previous });
 		useProjectStore.setState({ previewZooms: [], previewZoomSignature: "" });
 		setAutoZooms(null);
-	}, [autoZooms, autoZoomPicked]);
+	}, [autoZooms, autoZoomPicked, spotlightConfig]);
 
 	// Push cursor settings into the native compositor (initial + on view activation); the
 	// handlers below push diffs live. Sizes are sent as direct scales (1 = fixture default).
@@ -4845,6 +4861,44 @@ export function CursorPane() {
 						</button>
 					) : null}
 				</>
+			) : null}
+			{/* Spotlight on the auto-zooms. The compositor draws it from the zoom it is already
+			    rendering, so this only decides whether to send the configuration. */}
+			<div className={styles.paneRow}>
+				<label className={styles.label}>
+					<input
+						type="checkbox"
+						checked={spotlightOn}
+						onChange={(event) => setSpotlightOn(event.currentTarget.checked)}
+					/>
+					{ts("cursor.spotlight")}
+				</label>
+			</div>
+			{spotlightOn ? (
+				<div className={styles.sliderGrid}>
+					<label className={styles.label}>
+						{`${ts("cursor.spotlightDimming")} ${Math.round(spotlightDimming * 100)}%`}
+						<input
+							type="range"
+							min={0.05}
+							max={0.8}
+							step={0.05}
+							value={spotlightDimming}
+							onChange={(event) => setSpotlightDimming(Number(event.currentTarget.value))}
+						/>
+					</label>
+					<label className={styles.label}>
+						{`${ts("cursor.spotlightSize")} ${Math.round(spotlightSize * 100)}%`}
+						<input
+							type="range"
+							min={0.1}
+							max={0.6}
+							step={0.02}
+							value={spotlightSize}
+							onChange={(event) => setSpotlightSize(Number(event.currentTarget.value))}
+						/>
+					</label>
+				</div>
 			) : null}
 			<div className={styles.sectionLabel}>{ts("cursor.smartZoom")}</div>
 			<div className={styles.paneRow}>

@@ -519,7 +519,10 @@
     "markerPick": "Select step {n}",
     "markerMove": "Move here",
     "markerMoveHere": "Move this step to the playhead",
-    "markerMerge": "Merge {count} steps"
+    "markerMerge": "Merge {count} steps",
+    "spotlight": "Spotlight",
+    "spotlightDimming": "Dimming",
+    "spotlightSize": "Focus size"
   },
   "export": {
     "gifButton": "Exportar GIF",

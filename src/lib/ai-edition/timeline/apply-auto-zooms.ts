@@ -119,6 +119,14 @@ export function appendAutoZoomSuggestions(
 	document: AxcutDocument,
 	suggestions: AutoZoomSuggestion[],
 	makeId: (prefix: string) => string = createId,
+	/**
+	 * The spotlight to hang on every region this call adds, or null for none.
+	 *
+	 * It rides here rather than being patched on afterwards so that the temporary preview and the
+	 * real apply build their regions through the same call — the thing on screen is then the thing
+	 * that lands, which is the whole point of previewing.
+	 */
+	spotlight: { size?: number; softness?: number; dimming?: number } | null = null,
 ): AxcutDocument {
 	if (suggestions.length === 0) return document;
 	const anchored = suggestions.flatMap((suggestion) =>
@@ -131,6 +139,7 @@ export function appendAutoZoomSuggestions(
 					depth: suggestion.depth,
 					focus: { cx: suggestion.focus.cx, cy: suggestion.focus.cy },
 					focusMode: "auto" as const,
+					...(spotlight ? { focusEffect: spotlight } : {}),
 				},
 			],
 			document.timeline.clips,
