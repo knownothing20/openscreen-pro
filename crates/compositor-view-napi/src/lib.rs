@@ -932,25 +932,32 @@ impl Task for ExportMultiTask {
                         return Err(Error::from_reason("EXPORT_CANCELLED"));
                     }
                     let message = format!("{error:#}");
-                    let removed = gpu.device_removed_reason();
-                    let retryable = attempt == 1
-                        && pipeline::is_first_frame_failure(&message)
-                        && pipeline::retry_allows_device_restart(choice)
-                        && (removed.is_some() || pipeline::injected_device_removed());
-                    if retryable {
-                        eprintln!(
-                            "[pipeline] première frame refusée sur {} ({}), appareil D3D11 recréé — nouvelle tentative {}/2, même encodeur, même format",
-                            gpu.adapter.name,
-                            removed.map(|r| format!("0x{r:08X}")).unwrap_or_else(|| "appareil signalé retiré".to_string()),
-                            attempt + 1
-                        );
-                        continue;
-                    }
-                    if let Some(reason) = removed {
-                        eprintln!(
-                            "[pipeline] appareil D3D11 retiré (0x{reason:08X}) sur {}, export abandonné après {attempt} tentative(s)",
-                            gpu.adapter.name
-                        );
+                    // D3D11's device-removal recovery is Windows-only: the reason code lives on
+                    // the Windows `Gpu`, and `pipeline`'s first-frame classifiers only exist
+                    // there. Elsewhere a failed export is simply reported — there is no device
+                    // to recreate, so the retry could only repeat the same error.
+                    #[cfg(windows)]
+                    {
+                        let removed = gpu.device_removed_reason();
+                        let retryable = attempt == 1
+                            && pipeline::is_first_frame_failure(&message)
+                            && pipeline::retry_allows_device_restart(choice)
+                            && (removed.is_some() || pipeline::injected_device_removed());
+                        if retryable {
+                            eprintln!(
+                                "[pipeline] première frame refusée sur {} ({}), appareil D3D11 recréé — nouvelle tentative {}/2, même encodeur, même format",
+                                gpu.adapter.name,
+                                removed.map(|r| format!("0x{r:08X}")).unwrap_or_else(|| "appareil signalé retiré".to_string()),
+                                attempt + 1
+                            );
+                            continue;
+                        }
+                        if let Some(reason) = removed {
+                            eprintln!(
+                                "[pipeline] appareil D3D11 retiré (0x{reason:08X}) sur {}, export abandonné après {attempt} tentative(s)",
+                                gpu.adapter.name
+                            );
+                        }
                     }
                     return Err(Error::from_reason(message));
                 }
