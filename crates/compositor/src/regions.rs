@@ -8,7 +8,7 @@
 
 use crate::camera::Follow;
 use crate::cursor::CursorTrack;
-use crate::scene::{SceneCameraFullscreenRegion, SceneSpeedRegion, SceneZoomRegion};
+use crate::scene::{SceneCameraFullscreenRegion, SceneFocusEffect, SceneSpeedRegion, SceneZoomRegion};
 
 /// Quantification commune vidéo/audio : le web retranche exactement 1 ms avant `ceil`.
 pub const SPEED_FRAME_EPSILON_SEC: f64 = 0.001;
@@ -483,6 +483,14 @@ pub struct ZoomState {
     pub aim: [f32; 2],
     /// Le pointeur lissé qui place l'œil sur son orbite, 0..1 dans le recadrage, pondéré de même.
     pub orbit: [f32; 2],
+    /// Le projecteur de la région qui a réellement gagné, ou `None` si elle n'en porte pas.
+    ///
+    /// Il voyage AVEC `scale`/`focus` pour la raison même de ce module : le projecteur ne doit
+    /// jamais désigner une autre région que l'image. Une transition chaînée mélange les deux
+    /// effets sur la même `progress` que le mouvement, une région sans projecteur éteint celui de
+    /// l'autre au lieu de le laisser traîner, et un palier chaîné prend celui de la région qui
+    /// occupe déjà l'écran.
+    pub spotlight: Option<SceneFocusEffect>,
 }
 
 const IDENTITY_ZOOM: ZoomState = ZoomState {
@@ -494,6 +502,7 @@ const IDENTITY_ZOOM: ZoomState = ZoomState {
     camera: 0.0,
     aim: [0.5, 0.5],
     orbit: [0.5, 0.5],
+    spotlight: None,
 };
 
 /// Ce que le champ `rotation` d'une région demande.
@@ -810,6 +819,40 @@ pub fn zoom_state_at(
 ///
 /// `frame` est ce que lit l'orbite en focus auto (sans piste, elle vise le centre) ; `clock`
 /// mesure les transitions à l'écran, cf. `ScreenClock`.
+/// Le projecteur de deux régions chaînées, mélangé sur la même `progress` que l'image.
+///
+/// Une région sans projecteur ne « gagne » pas : elle éteint celui de l'autre progressivement, et
+/// une région qui en porte un l'allume. Sans ça, une paire A(projecteur)/B(sans) laisserait la
+/// lumière de A collée sur un cadrage qui appartient déjà à B.
+fn blend_spotlight(
+    a: Option<SceneFocusEffect>,
+    b: Option<SceneFocusEffect>,
+    progress: f32,
+) -> Option<SceneFocusEffect> {
+    match (a, b) {
+        (None, None) => None,
+        (Some(x), Some(y)) => Some(SceneFocusEffect {
+            shape: if progress < 0.5 { x.shape } else { y.shape },
+            angle_degrees: lerp(x.angle_degrees, y.angle_degrees, progress),
+            center_x: lerp(x.center_x, y.center_x, progress),
+            center_y: lerp(x.center_y, y.center_y, progress),
+            size: lerp(x.size, y.size, progress),
+            softness: lerp(x.softness, y.softness, progress),
+            dimming: lerp(x.dimming, y.dimming, progress),
+        }),
+        // Fading out of A: keep its shape, pull the light up with the picture.
+        (Some(x), None) => Some(SceneFocusEffect {
+            dimming: x.dimming * (1.0 - progress),
+            ..x
+        }),
+        // Fading into B.
+        (None, Some(y)) => Some(SceneFocusEffect {
+            dimming: y.dimming * progress,
+            ..y
+        }),
+    }
+}
+
 pub fn zoom_state_in(
     regions: &[SceneZoomRegion],
     t: f32,
@@ -884,6 +927,7 @@ pub fn zoom_state_in(
             camera,
             aim: weighted(mix(a.aim, b.aim), camera),
             orbit: weighted(mix(a.orbit, b.orbit), camera),
+            spotlight: blend_spotlight(cur.focus_effect, next.focus_effect, progress),
         };
     }
 
@@ -903,6 +947,7 @@ pub fn zoom_state_in(
                 camera,
                 aim: weighted(seen.aim, camera),
                 orbit: weighted(seen.orbit, camera),
+                spotlight: next.focus_effect,
             };
         }
     }
@@ -957,6 +1002,10 @@ pub fn zoom_state_in(
                 camera,
                 aim: weighted(seen.aim, camera),
                 orbit: weighted(seen.orbit, camera),
+                spotlight: r.focus_effect.map(|effect| SceneFocusEffect {
+                    dimming: effect.dimming * strength,
+                    ..effect
+                }),
             }
         }
         None => IDENTITY_ZOOM,
@@ -1640,6 +1689,7 @@ mod zoom_focus_tests {
             rotation: None,
             under_trim: false,
             hide_cursor: false,
+            focus_effect: None,
         }
     }
 
@@ -2563,6 +2613,7 @@ mod tilt_tests {
             rotation: rotation.map(Into::into),
             under_trim: false,
             hide_cursor: false,
+            focus_effect: None,
         };
         // `orbit` n'incline pas l'écran (caméra réelle, `camera.rs`) : chaînée à un angle
         // fixe, la transition passe par l'écran droit, que ce balayage couvre aussi.
@@ -2985,6 +3036,7 @@ mod tilt_tests {
             rotation: rotation.map(Into::into),
             under_trim: false,
             hide_cursor: false,
+            focus_effect: None,
         };
         assert_eq!(zoom_state_at(&[region(Some("left"))], 5.0, None).tilt, 1.0);
         assert_eq!(zoom_state_at(&[region(None)], 5.0, None).tilt, 0.0);
@@ -3303,6 +3355,7 @@ mod orbit_camera_tests {
             rotation: Some(rotation.into()),
             under_trim: false,
             hide_cursor: false,
+            focus_effect: None,
         }
     }
 

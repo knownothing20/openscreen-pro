@@ -3047,6 +3047,8 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         let mut zoom_camera = 0.0f32;
         let mut zoom_camera_prev = 0.0f32;
         let mut zoom_strength = 0.0f32;
+        // Resolved by `zoom_state_in`, so the mask cannot pick a different region than the zoom.
+        let mut zoom_spotlight: Option<crate::scene::SceneFocusEffect> = None;
         let mut zoom_strength_prev = 0.0f32;
         let mut zoom_aim = [0.5f32; 2];
         let mut zoom_orbit = [0.5f32; 2];
@@ -3077,6 +3079,7 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
             zoom_tilt = zs.tilt;
             zoom_camera = zs.camera;
             zoom_strength = zs.strength;
+            zoom_spotlight = zs.spotlight;
             zoom_aim = zs.aim;
             zoom_orbit = zs.orbit;
             // Même `CameraFrame` qu'à la frame courante : la caméra réelle d'avant (poids, visée,
@@ -3715,21 +3718,10 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // laisserait dans les coordonnées de la SOURCE, donc à côté dès qu'il y a crop, letterbox
         // ou zoom.
         let auto_focus = || -> Option<crate::screen_motion::FocusEffectSample> {
-            let effect = zoom_regions
-                .iter()
-                .filter(|r| {
-                    r.focus_effect.is_some()
-                        && source_t >= r.start_sec as f32
-                        && source_t <= r.end_sec as f32
-                })
-                // La région commencée le plus tard est celle qu'on regarde : proche du gagnant de
-                // `zoom_state_in` sans réimplémenter sa logique de transition chaînée.
-                .max_by(|a, b| {
-                    a.start_sec
-                        .partial_cmp(&b.start_sec)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .and_then(|r| r.focus_effect)?;
+            // Déjà résolu par `zoom_state_in` sur la MÊME région que l'image, mélange de
+            // transition et extinction compris. Redemander « la région qui commence le plus tard »
+            // ici rouvrait exactement le décalage que ce champ existe pour fermer.
+            let effect = zoom_spotlight?;
             if zoom_strength <= 0.0 {
                 return None;
             }
@@ -3742,7 +3734,7 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
                 ],
                 size: effect.size,
                 softness: effect.softness,
-                dimming: effect.dimming * zoom_strength,
+                dimming: effect.dimming,
                 progress: zoom_strength,
             })
         };
