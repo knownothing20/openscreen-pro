@@ -3527,3 +3527,197 @@ mod orbit_camera_tests {
         }
     }
 }
+
+/// Le projecteur d'un zoom CHAÎNÉ.
+///
+/// La question que ces tests tranchent : quand deux zooms se suivent assez près pour que
+/// l'image glisse de l'un à l'autre, la lumière doit glisser avec elle — pas rester collée sur
+/// le premier cadrage, pas sauter au second à mi-course. Le projecteur voyage donc sur la MÊME
+/// `progress` que l'échelle et le focus, ce qui rend les trois inséparables par construction :
+/// un décalage entre eux est un test rouge, pas une impression.
+#[cfg(test)]
+mod spotlight_chain_tests {
+    use super::*;
+    use crate::scene::{FocusShape, SceneFocusEffect, SceneZoomRegion};
+
+    fn effect(size: f32, dimming: f32) -> SceneFocusEffect {
+        SceneFocusEffect {
+            shape: FocusShape::Radial,
+            angle_degrees: 0.0,
+            center_x: 0.5,
+            center_y: 0.5,
+            size,
+            softness: 0.25,
+            dimming,
+        }
+    }
+
+    fn region(
+        id: &str,
+        (start, end): (f64, f64),
+        scale: f32,
+        (fx, fy): (f32, f32),
+        spot: Option<SceneFocusEffect>,
+    ) -> SceneZoomRegion {
+        SceneZoomRegion {
+            id: id.into(),
+            clip_index: Some(0),
+            start_sec: start,
+            end_sec: end,
+            scale,
+            focus_x: fx,
+            focus_y: fy,
+            focus_mode: Some("manual".into()),
+            rotation: None,
+            under_trim: false,
+            hide_cursor: false,
+            focus_effect: spot,
+        }
+    }
+
+    /// Les deux zooms de l'export de la phase A : 1,5–4,0 s à gauche, 4,5–7,5 s à droite.
+    /// L'écart de 0,5 s passe sous `CHAINED_ZOOM_PAN_GAP_S` (1,5 s), donc l'image glisse.
+    fn chain(a: Option<SceneFocusEffect>, b: Option<SceneFocusEffect>) -> [SceneZoomRegion; 2] {
+        [
+            region("a", (1.5, 4.0), 1.8, (0.30, 0.35), a),
+            region("b", (4.5, 7.5), 1.5, (0.65, 0.60), b),
+        ]
+    }
+
+    fn at(regions: &[SceneZoomRegion], t: f32) -> ZoomState {
+        zoom_state_at(regions, t, None)
+    }
+
+    /// Le milieu de la transition est bien un MÉLANGE, pas un saut : l'échelle est strictement
+    /// entre les deux, le focus est strictement entre les deux points, et le projecteur aussi.
+    /// C'est la preuve que la branche empruntée est celle du pan chaîné — un gagnant
+    /// indépendant rendrait exactement 1,8 ou exactement 1,5.
+    #[test]
+    fn the_connected_pan_carries_both_spotlights_between_the_two_zooms() {
+        let regions = chain(Some(effect(0.30, 0.35)), Some(effect(0.20, 0.50)));
+
+        let before = at(&regions, 2.5);
+        assert!((before.scale - 1.8).abs() < 1e-6, "{}", before.scale);
+        let a = before.spotlight.expect("A porte un projecteur");
+        assert!((a.size - 0.30).abs() < 1e-6 && (a.dimming - 0.35).abs() < 1e-6);
+
+        for t in [4.25f32, 4.5, 4.75] {
+            let s = at(&regions, t);
+            assert!(
+                s.scale > 1.5 + 1e-4 && s.scale < 1.8 - 1e-4,
+                "t {t} : échelle {} n'est pas un mélange — la paire n'est pas chaînée",
+                s.scale
+            );
+            assert!(
+                s.focus[0] > 0.30 && s.focus[0] < 0.65,
+                "t {t} : focus X {} sort de l'intervalle",
+                s.focus[0]
+            );
+            let spot = s.spotlight.expect("le mélange porte un projecteur");
+            assert!(
+                spot.dimming > 0.35 && spot.dimming < 0.50,
+                "t {t} : dimming {} n'est pas entre les deux",
+                spot.dimming
+            );
+            assert!(
+                spot.size < 0.30 && spot.size > 0.20,
+                "t {t} : taille {} n'est pas entre les deux",
+                spot.size
+            );
+        }
+
+        let after = at(&regions, 6.5);
+        assert!((after.scale - 1.5).abs() < 1e-6, "{}", after.scale);
+        let b = after.spotlight.expect("B porte un projecteur");
+        assert!((b.size - 0.20).abs() < 1e-6 && (b.dimming - 0.50).abs() < 1e-6);
+    }
+
+    /// Deux photogrammes voisins ne peuvent pas sauter : c'est la formulation numérique de
+    /// « pas de flash, pas de saut de position ».
+    #[test]
+    fn the_spotlight_never_jumps_between_two_frames_of_the_pan() {
+        let regions = chain(Some(effect(0.30, 0.35)), Some(effect(0.20, 0.50)));
+        let mut prev: Option<ZoomState> = None;
+        let mut worst = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        for k in 0..=180 {
+            let t = 3.5 + k as f32 / 60.0;
+            let s = at(&regions, t);
+            if let Some(p) = prev {
+                if let (Some(cur), Some(before)) = (s.spotlight, p.spotlight) {
+                    worst.0 = worst.0.max((cur.dimming - before.dimming).abs());
+                    worst.1 = worst.1.max((cur.size - before.size).abs());
+                }
+                worst.2 = worst.2.max((s.scale - p.scale).abs());
+                worst.3 = worst.3.max((s.focus[0] - p.focus[0]).abs());
+            }
+            prev = Some(s);
+        }
+        println!(
+            "worst per-frame step: dimming {:.4}, size {:.4}, scale {:.4}, focusX {:.4}",
+            worst.0, worst.1, worst.2, worst.3
+        );
+        assert!(worst.0 < 0.02, "saut de dimming entre deux frames : {}", worst.0);
+        assert!(worst.1 < 0.005, "saut de taille entre deux frames : {}", worst.1);
+        assert!(worst.2 < 0.02, "saut d'échelle entre deux frames : {}", worst.2);
+        // Le focus parcourt 0,35 en une seconde : l'ease le plus raide en fait ~0,015 par frame.
+        // Un changement de branche se verrait à l'échelle du trajet entier (0,35), soit 20× ce
+        // seuil — c'est cette marche-là que le test interdit, pas la pente de l'ease.
+        assert!(worst.3 < 0.02, "saut de focus entre deux frames : {}", worst.3);
+    }
+
+    /// Un projecteur que seule la PREMIÈRE région porte s'éteint avec l'image : il ne reste pas
+    /// accroché au cadrage qui appartient déjà à la seconde.
+    #[test]
+    fn a_spotlight_only_the_first_zoom_has_fades_out() {
+        let regions = chain(Some(effect(0.30, 0.35)), None);
+        let start = at(&regions, 4.0).spotlight.expect("plein au départ");
+        assert!((start.dimming - 0.35).abs() < 1e-5);
+
+        let mut last = start.dimming;
+        for t in [4.25f32, 4.5, 4.75] {
+            let dimming = at(&regions, t).spotlight.map_or(0.0, |e| e.dimming);
+            assert!(dimming < last, "t {t} : {dimming} ne descend pas depuis {last}");
+            assert!(dimming < 0.35 && dimming > 0.0, "t {t} : {dimming}");
+            last = dimming;
+        }
+        let gone = at(&regions, 6.5);
+        assert!(
+            gone.spotlight.is_none(),
+            "la lumière de A survit à B : {:?}",
+            gone.spotlight
+        );
+    }
+
+    /// Un projecteur que seule la SECONDE région porte s'allume progressivement, et rien ne
+    /// s'allume avant que la première ne cède la place.
+    #[test]
+    fn a_spotlight_only_the_second_zoom_has_fades_in() {
+        let regions = chain(None, Some(effect(0.20, 0.50)));
+        assert!(
+            at(&regions, 3.5).spotlight.is_none(),
+            "rien ne doit s'allumer pendant A"
+        );
+
+        let mut last = 0.0;
+        for t in [4.25f32, 4.5, 4.75] {
+            let dimming = at(&regions, t).spotlight.map_or(0.0, |e| e.dimming);
+            assert!(dimming > last, "t {t} : {dimming} ne monte pas depuis {last}");
+            assert!(dimming > 0.0 && dimming < 0.50, "t {t} : {dimming}");
+            last = dimming;
+        }
+        let full = at(&regions, 6.5).spotlight.expect("plein sur B");
+        assert!((full.dimming - 0.50).abs() < 1e-6);
+        assert!((full.size - 0.20).abs() < 1e-6);
+    }
+
+    /// Sans projecteur nulle part, il n'y a rien à dessiner — et l'état du zoom est celui
+    /// d'avant la fonctionnalité, au bit près.
+    #[test]
+    fn a_chain_without_any_spotlight_asks_for_none() {
+        let regions = chain(None, None);
+        for k in 0..=240 {
+            let t = 1.0 + k as f32 / 60.0;
+            assert!(at(&regions, t).spotlight.is_none(), "t {t}");
+        }
+    }
+}

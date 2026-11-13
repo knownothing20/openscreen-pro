@@ -23,6 +23,7 @@ import {
 	DEFAULT_SCREEN_MOTION_TIMING,
 	SCREEN_MOTION_DEFAULT_TARGET,
 } from "../screenMotion/presets";
+import { ZOOM_SPOTLIGHT_DEFAULT } from "../timeline/zoomSpotlight";
 import { useProjectStore } from "./projectStore";
 import { clearHistory, redo, undo } from "./undo";
 import { future, past } from "./undoStack";
@@ -3470,5 +3471,113 @@ describe("batch editing a multi-selection of moves", () => {
 		expect(outcome).toBe("invalidTarget");
 		expect(motion().map((r) => r.id)).toEqual(ids);
 		expect(screenMotion()).toHaveLength(0);
+	});
+});
+
+// The spotlight of an APPLIED zoom.
+//
+// The Smart Zoom pane could only light a suggestion that had not been applied yet, so once a
+// zoom was on the timeline its dimming/size/feather were frozen at whatever the suggestion
+// carried. These four bind the pane's new door to the same rules the rest of the store
+// follows: one undo step per gesture, off keeps the zoom, reset returns the shared numbers.
+describe("useTimeline zoom spotlight", () => {
+	const zoomDoc = (effect?: {
+		size: number;
+		softness: number;
+		dimming: number;
+	}): AxcutDocument => ({
+		...sampleDoc,
+		zoomRanges: [
+			{
+				id: "zoom_1",
+				startMs: 1000,
+				endMs: 4000,
+				depth: 3,
+				focus: { cx: 0.5, cy: 0.5 },
+				focusMode: "manual",
+				...(effect ? { focusEffect: { shape: "radial" as const, ...effect } } : {}),
+			},
+		],
+	});
+
+	const zoom = () => useProjectStore.getState().document?.zoomRanges[0];
+
+	beforeEach(() => {
+		clearHistory();
+		useProjectStore.getState().clear();
+		bridgeMocks.save.mockReset();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: zoomDoc(),
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	it("switches a spotlight on with the shared default numbers, as one undo step", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.setZoomSpotlight("zoom_1", true);
+		});
+		expect(zoom()?.focusEffect).toEqual({ ...ZOOM_SPOTLIGHT_DEFAULT });
+		expect(past).toHaveLength(1);
+
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(zoom()?.focusEffect).toBeUndefined();
+	});
+
+	it("switches it off without touching the zoom itself", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.setZoomSpotlight("zoom_1", true);
+		});
+		await act(async () => {
+			await result.current.setZoomSpotlight("zoom_1", false);
+		});
+		const region = zoom();
+		expect(region?.focusEffect ?? null).toBeNull();
+		expect(region).toMatchObject({ id: "zoom_1", startMs: 1000, endMs: 4000, depth: 3 });
+		expect(region?.focus).toEqual({ cx: 0.5, cy: 0.5 });
+	});
+
+	it("records a whole slider drag as ONE undo step", async () => {
+		useProjectStore.setState({ document: zoomDoc({ size: 0.3, softness: 0.25, dimming: 0.35 }) });
+		const { result } = renderTimeline();
+		const stepsBefore = past.length;
+
+		await act(async () => {
+			for (const value of [40, 50, 60]) {
+				result.current.setZoomFocusEffectLive("zoom_1", { dimming: value / 100 });
+			}
+		});
+		expect(zoom()?.focusEffect?.dimming).toBeCloseTo(0.6, 6);
+		expect(past).toHaveLength(stepsBefore);
+
+		await act(async () => {
+			await result.current.commitZoomFocusEffect();
+		});
+		expect(past).toHaveLength(stepsBefore + 1);
+
+		await act(async () => {
+			expect(undo()).toBe(true);
+		});
+		expect(zoom()?.focusEffect?.dimming).toBeCloseTo(0.35, 6);
+	});
+
+	it("resets to the defaults a suggestion would have produced", async () => {
+		useProjectStore.setState({ document: zoomDoc({ size: 0.15, softness: 0.6, dimming: 0.7 }) });
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.resetZoomSpotlight("zoom_1");
+		});
+		expect(zoom()?.focusEffect).toEqual({ ...ZOOM_SPOTLIGHT_DEFAULT });
 	});
 });

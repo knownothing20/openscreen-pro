@@ -3713,34 +3713,23 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         // lumière entre et sort donc avec le même mouvement que l'image, sans second jeu d'easings
         // qui pourrait se désynchroniser.
         //
-        // Le centre est le point de focus du zoom porté dans l'espace canvas par `s_dst` — le
-        // rectangle où le cadre est effectivement dessiné. Utiliser `focus.cx/cy` tel quel le
-        // laisserait dans les coordonnées de la SOURCE, donc à côté dès qu'il y a crop, letterbox
-        // ou zoom.
-        let auto_focus = || -> Option<crate::screen_motion::FocusEffectSample> {
-            // Déjà résolu par `zoom_state_in` sur la MÊME région que l'image, mélange de
-            // transition et extinction compris. Redemander « la région qui commence le plus tard »
-            // ici rouvrait exactement le décalage que ce champ existe pour fermer.
-            let effect = zoom_spotlight?;
-            if zoom_strength <= 0.0 {
-                return None;
-            }
-            Some(crate::screen_motion::FocusEffectSample {
-                shape: effect.shape,
-                angle_degrees: effect.angle_degrees.rem_euclid(360.0),
-                center: [
-                    s_dst[0] + p.focus[0] * s_dst[2],
-                    s_dst[1] + p.focus[1] * s_dst[3],
-                ],
-                size: effect.size,
-                softness: effect.softness,
-                dimming: effect.dimming,
-                progress: zoom_strength,
-            })
-        };
-        let focus = authored_focus.or_else(auto_focus);
+        // Le centre est calculé APRÈS le cadre (plus bas, sur `geo`), parce qu'il a besoin de
+        // deux choses que seul le cadre fini connaît :
+        //
+        // 1. `focus_in_cut` — le focus du zoom est exprimé dans le crop utilisateur, alors que
+        //    `s_dst` est la boîte de la COUPE dessinée. Les deux ne coïncident que quand rien ne
+        //    rogne la coupe ; dès qu'un cover (sortie 9:16, 1:1, `screenCover`) en retire un
+        //    bord, recopier `focus` tel quel place le projecteur à côté — mesuré 5 % de la
+        //    largeur sur un 9:16 recadré. `focus_in_cut` est la fonction qui existe déjà pour
+        //    exactement cette question (elle sert à la caméra réelle et au plan de netteté).
+        // 2. `screen_tilt` — sous un angle 3D ou la caméra réelle, le contenu n'est plus dans le
+        //    rect `s_dst` mais dans un quad. `TiltedQuad::point_px` est la correspondance directe
+        //    du warp que le shader parcourt à l'envers, donc le seul point qui retombe sur le
+        //    pixel réellement dessiné. À plat, le quad est l'identité et la formule se réduit à
+        //    `s_dst.xy + local × s_dst.wh`.
+        let focus = authored_focus;
 
-    FrameGeometry {
+    let mut geo = FrameGeometry {
         scene_preset,
         mb_taps,
         mb_amount,
@@ -3774,7 +3763,38 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
         window_frame,
         screen_mask,
         focus,
+    };
+    // Le projecteur d'un zoom automatique, maintenant que le cadre existe : son centre se lit sur
+    // le cadre fini (coupe, puis quad incliné), jamais sur les coordonnées de la source.
+    if geo.focus.is_none() && zoom_strength > 0.0 {
+        if let Some(effect) = zoom_spotlight {
+            let local = focus_in_cut(u_max, v_max, active_crop, p.focus, cut);
+            let center = match geo.screen_tilt([geo.s_dst[2] * rw, geo.s_dst[3] * rh]) {
+                Some(quad) => {
+                    // `point_px` rend des px relatifs au CENTRE du rect d'origine.
+                    let (rx, ry) = quad.point_px(local[0], local[1]);
+                    [
+                        geo.s_dst[0] + geo.s_dst[2] * 0.5 + rx / rw,
+                        geo.s_dst[1] + geo.s_dst[3] * 0.5 + ry / rh,
+                    ]
+                }
+                None => [
+                    geo.s_dst[0] + local[0] * geo.s_dst[2],
+                    geo.s_dst[1] + local[1] * geo.s_dst[3],
+                ],
+            };
+            geo.focus = Some(crate::screen_motion::FocusEffectSample {
+                shape: effect.shape,
+                angle_degrees: effect.angle_degrees.rem_euclid(360.0),
+                center,
+                size: effect.size,
+                softness: effect.softness,
+                dimming: effect.dimming,
+                progress: zoom_strength,
+            });
+        }
     }
+    geo
 }
 
 /// Le curseur, prêt à dessiner : où, à quelle taille, avec quelle traînée.
@@ -5055,6 +5075,75 @@ mod tests {
         Scene::from_json(zoomed_golden_scene_json()).expect("zoomed golden scene")
     }
 
+    /// Le projecteur éclaire, il ne DÉPLACE rien.
+    ///
+    /// Il est lu après le calcul du cadre (`authored_focus.or_else(auto_focus)`), donc il ne
+    /// peut pas peser sur le gagnant d'un mouvement d'écran — mais « ne peut pas » se vérifie :
+    /// la même scène, une fois avec `focusEffect` et une fois sans, doit produire des cadres
+    /// IDENTIQUES, et seule la lumière doit apparaître. Le centre, lui, est le point de focus du
+    /// zoom porté dans l'espace du canvas (`s_dst`), c'est-à-dire l'endroit que le zoom vient de
+    /// cadrer : le vérifier ici est ce qui empêche de recopier un `focusX` resté en coordonnées
+    /// source.
+    #[test]
+    fn a_spotlight_never_moves_the_picture_it_lights() {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        let unlit = zoomed_golden_scene();
+        let lit = Scene::from_json(
+            &zoomed_golden_scene_json().replace(
+                r#""rotation":"none""#,
+                r#""rotation":"none","focusEffect":{"shape":"radial","size":0.3,"softness":0.25,"dimming":0.35}"#,
+            ),
+        )
+        .expect("scène éclairée");
+        assert!(
+            lit.zoom_regions[0].focus_effect.is_some(),
+            "la substitution doit avoir posé le projecteur sur la région de zoom"
+        );
+
+        let mut lit_frames = 0;
+        for t in [0.6f32, 1.0, 1.5, 2.0, 3.0, 4.2] {
+            let plan = |scene: &Scene| {
+                plan_frame(&FrameGeometryInput {
+                    timeline_t_override: Some(t),
+                    ..golden_input(scene, &cfg)
+                })
+            };
+            let a = plan(&unlit);
+            let b = plan(&lit);
+            assert_eq!(a.s_dst, b.s_dst, "t {t} : le projecteur a bougé la boîte écran");
+            assert_eq!(a.s_dst_prev, b.s_dst_prev, "t {t}");
+            assert_eq!(a.s_ann, b.s_ann, "t {t}");
+            assert_eq!(a.s_radius, b.s_radius, "t {t}");
+            assert_eq!(a.padding_scale, b.padding_scale, "t {t}");
+            assert_eq!(a.frame_min_px, b.frame_min_px, "t {t}");
+            assert_eq!(a.zoom_rotation, b.zoom_rotation, "t {t}");
+            assert!(
+                a.focus.is_none(),
+                "t {t} : un zoom sans projecteur en a dessiné un"
+            );
+            if let Some(f) = b.focus {
+                lit_frames += 1;
+                let zs = crate::regions::zoom_state_at(&lit.zoom_regions, t, None);
+                let want = [
+                    b.s_dst[0] + zs.focus[0] * b.s_dst[2],
+                    b.s_dst[1] + zs.focus[1] * b.s_dst[3],
+                ];
+                assert!(
+                    (f.center[0] - want[0]).abs() < 1e-5 && (f.center[1] - want[1]).abs() < 1e-5,
+                    "t {t} : centre {:?} au lieu de {want:?}",
+                    f.center
+                );
+                assert!((f.size - 0.3).abs() < 1e-6, "t {t} : taille {}", f.size);
+                assert!(
+                    (f.dimming - 0.35).abs() < 1e-6,
+                    "t {t} : dimming {}",
+                    f.dimming
+                );
+            }
+        }
+        assert!(lit_frames >= 5, "seulement {lit_frames} frames éclairées");
+    }
+
     /// L'ancre des annotations ne bouge PAS avec le zoom, alors que la boîte écran, si.
     ///
     /// C'est tout le contrat de `SceneAnnotation` : l'overlay web est frère de l'élément qui
@@ -5106,6 +5195,205 @@ mod tests {
         }}"##
         ))
         .expect("framed scene")
+    }
+
+    /// Un mouvement d'écran HUMAIN et un projecteur automatique ne se cumulent pas.
+    ///
+    /// La règle est un `or_else` : le focus authored gagne, l'automatique n'est même pas calculé.
+    /// Ce test la vérifie là où les deux se disputent la même frame — et vérifie du même coup
+    /// qu'une seule forme sort de `FrameGeometry` (il n'y a qu'un `focus`, donc aucune seconde
+    /// passe de dessin n'est possible).
+    #[test]
+    fn a_hand_made_focus_wins_over_the_zoom_spotlight() {
+        let json = |spot_on_zoom: bool, motion: bool| {
+            format!(
+                r##"{{
+                "clips":[{{"screenPath":"/s.mp4","webcamPath":"","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":false}}],
+                "layout":{{"preset":"no-webcam","webcamSize":1,"webcamShape":"rounded","webcamMirror":false,"webcamPosition":null,
+                          "webcamReactiveZoom":false,"screenRect":null,"screenCover":false}},
+                "effects":{{"padding":0.1,"blur":false,"shadow":0.35,"roundnessFrac":0.03,"motionBlur":0}},
+                "background":{{"kind":"color","color":"#1e1e2e"}},
+                "zoomRegions":[{{"clipIndex":0,"startSec":0.0,"endSec":5.0,"scale":2.0,"focusX":0.3,"focusY":0.4,"rotation":null{zoom_spot}}}],
+                "screenMotionRegions":[{motion}],
+                "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":1,"clipToBounds":false,"theme":"default"}},
+                "cropByClip":[null],
+                "output":{{"width":1920,"height":1080,"fps":60}}
+            }}"##,
+                zoom_spot = if spot_on_zoom {
+                    r##","focusEffect":{"shape":"radial","size":0.3,"softness":0.25,"dimming":0.35}"##
+                } else {
+                    ""
+                },
+                motion = if motion {
+                    r##"{"clipIndex":0,"startSec":0.0,"endSec":5.0,"target":{"positionX":0.42,"positionY":0.44,"scale":1.04,"rotationX":0,"rotationY":0,"rotationZ":0,"perspective":0},"leadInSec":0.5,"returnSec":0.5,"easing":"cubic","focusEffect":{"shape":"radial","centerX":0.3,"centerY":0.3,"size":0.5,"softness":0.2,"dimming":0.6}}"##
+                } else {
+                    ""
+                },
+            )
+        };
+        let plan = |spot: bool, motion: bool| {
+            let scene = Scene::from_json(&json(spot, motion)).expect("scène");
+            let cfg = crate::config::all().pop().expect("au moins une config");
+            plan_frame(&FrameGeometryInput {
+                timeline_t_override: Some(2.0),
+                ..golden_input(&scene, &cfg)
+            })
+        };
+        let zoom_only = plan(true, false);
+        let both = plan(true, true);
+        let motion_only = plan(false, true);
+
+        let authored = both.focus.expect("le focus authored doit être dessiné");
+        assert!(
+            (authored.center[0] - 0.3).abs() < 1e-5 && (authored.center[1] - 0.3).abs() < 1e-5,
+            "le projecteur automatique a pris la place du mouvement d'écran : {:?}",
+            authored.center
+        );
+        assert!(
+            (authored.size - 0.5).abs() < 1e-5 && (authored.dimming - 0.6).abs() < 0.02,
+            "les réglages dessinés ne sont pas ceux du mouvement d'écran : {:?}",
+            (authored.size, authored.dimming)
+        );
+        let auto = zoom_only.focus.expect("seul, le zoom éclaire");
+        assert!(
+            (auto.center[0] - authored.center[0]).abs() > 0.01,
+            "les deux sources donnent le même point : le test ne distingue rien"
+        );
+        // Le mouvement d'écran, lui, ne change pas parce qu'un projecteur s'est ajouté.
+        assert_eq!(
+            motion_only.s_dst, both.s_dst,
+            "le projecteur du zoom a déplacé le mouvement d'écran"
+        );
+        assert_eq!(motion_only.s_radius, both.s_radius);
+    }
+
+    /// Une scène de projecteur, avec crop et cover choisis par l'appelant.
+    fn spotlight_scene(
+        crop: &str,
+        focus: [f32; 2],
+        out: (u32, u32),
+        cover: bool,
+        rotation: &str,
+    ) -> Scene {
+        Scene::from_json(&format!(
+            r##"{{
+            "clips":[{{"screenPath":"/s.mp4","webcamPath":"","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":false}}],
+            "layout":{{"preset":"no-webcam","webcamSize":1,"webcamShape":"rounded","webcamMirror":false,"webcamPosition":null,
+                      "webcamReactiveZoom":false,"screenRect":{{"x":0.05,"y":0.15,"width":0.7,"height":0.6}},"screenCover":{cover}}},
+            "effects":{{"padding":0.3,"blur":false,"shadow":0.5,"roundnessFrac":0.03,"motionBlur":0}},
+            "background":{{"kind":"color","color":"#1e1e2e"}},
+            "zoomRegions":[{{"clipIndex":0,"startSec":0.0,"endSec":5.0,"scale":2.0,"focusX":{fx},"focusY":{fy},"rotation":{rotation},"focusEffect":{{"shape":"radial","size":0.3,"softness":0.25,"dimming":0.35}}}}],
+            "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":1,"clipToBounds":false,"theme":"default"}},
+            {crop},
+            "output":{{"width":{w},"height":{h},"fps":60}}
+        }}"##,
+            cover = cover,
+            fx = focus[0],
+            fy = focus[1],
+            rotation = rotation,
+            crop = crop,
+            w = out.0,
+            h = out.1,
+        ))
+        .expect("scène de projecteur")
+    }
+
+    fn spotlight_plan(scene: &Scene) -> FrameGeometry {
+        let cfg = crate::config::all().pop().expect("au moins une config");
+        plan_frame(&FrameGeometryInput {
+            timeline_t_override: Some(1.5),
+            ..golden_input(scene, &cfg)
+        })
+    }
+
+    /// Le projecteur tombe sur le contenu que le zoom vient de cadrer — y compris quand un cover
+    /// rogne la coupe.
+    ///
+    /// La boîte `s_dst` décrit la COUPE dessinée, pas le crop utilisateur : dès qu'une sortie 9:16
+    /// ou 1:1 en retire un bord, `s_dst.xy + focus × s_dst.wh` (l'ancienne formule) désigne un
+    /// point qui n'est plus dans l'image. Le point correct passe par `focus_in_cut`, et le
+    /// contrat visible est celui-ci : quand la fenêtre de zoom n'est pas bridée par un bord, le
+    /// point visé EST au centre de la boîte écran. Les cas bridés sont mesurés contre la même
+    /// correspondance, et l'écart avec l'ancienne formule est chiffré pour que le test tombe si
+    /// elle revient.
+    #[test]
+    fn the_spotlight_lands_where_the_zoom_put_the_content() {
+        // (nom, crop json, crop pour focus_in_cut, focus, sortie, cover, bridé ?)
+        let cases: &[(&str, &str, Option<(f32, f32, f32, f32)>, [f32; 2], (u32, u32), bool, bool)] = &[
+            ("16:9 sans crop", r##""cropByClip":[null]"##, None, [0.3, 0.4], (1920, 1080), false, false),
+            ("9:16 cover", r##""cropByClip":[null]"##, None, [0.3, 0.4], (1080, 1920), true, false),
+            ("crop 16:9", r##""cropByClip":[{"x":0.2,"y":0.2,"width":0.6,"height":0.6}]"##, Some((0.2, 0.2, 0.6, 0.6)), [0.5, 0.5], (1920, 1080), false, false),
+            ("crop 9:16 cover", r##""cropByClip":[{"x":0.2,"y":0.2,"width":0.6,"height":0.6}]"##, Some((0.2, 0.2, 0.6, 0.6)), [0.8, 0.75], (1080, 1920), true, true),
+            ("crop 1:1 cover", r##""cropByClip":[{"x":0.1,"y":0.3,"width":0.5,"height":0.4}]"##, Some((0.1, 0.3, 0.5, 0.4)), [0.9, 0.1], (1920, 1920), true, true),
+        ];
+        for (name, crop_json, crop_val, focus, out, cover, clamped) in cases {
+            let scene = spotlight_scene(crop_json, *focus, *out, *cover, "null");
+            let g = spotlight_plan(&scene);
+            let spot = g.focus.unwrap_or_else(|| panic!("{name} : aucun projecteur"));
+            let zs = crate::regions::zoom_state_at(&scene.zoom_regions, 1.5, None);
+            let crop = crop_val.map(|(x, y, width, height)| crate::scene::SceneCrop { x, y, width, height });
+            let local = focus_in_cut(1.0, 1080.0 / 1088.0, crop, zs.focus, g.cut);
+            assert!(
+                (spot.center[0] - (g.s_dst[0] + local[0] * g.s_dst[2])).abs() < 1e-4,
+                "{name} : centre {:?} hors de la coupe {local:?}",
+                spot.center
+            );
+            assert!(
+                (spot.center[1] - (g.s_dst[1] + local[1] * g.s_dst[3])).abs() < 1e-4,
+                "{name} : centre {:?} hors de la coupe {local:?}",
+                spot.center
+            );
+            if !*clamped {
+                // Le zoom cadre le point visé : il doit être au centre de la boîte écran
+                // d'AVANT zoom (`s_ann`), pas au centre de `s_dst` — sous un x2, `s_dst` déborde
+                // du canvas et son centre n'est plus ce que le spectateur voit au milieu du cadre.
+                let cx = g.s_ann[0] + g.s_ann[2] * 0.5;
+                let cy = g.s_ann[1] + g.s_ann[3] * 0.5;
+                assert!(
+                    (spot.center[0] - cx).abs() < 1e-4 && (spot.center[1] - cy).abs() < 1e-4,
+                    "{name} : {:?} au lieu du centre de la boîte ({cx}, {cy})",
+                    spot.center
+                );
+            } else {
+                let naive = [g.s_dst[0] + zs.focus[0] * g.s_dst[2], g.s_dst[1] + zs.focus[1] * g.s_dst[3]];
+                let off = (spot.center[0] - naive[0]).abs().max((spot.center[1] - naive[1]).abs());
+                assert!(off > 0.02, "{name} : l'ancienne formule suffisait ({off}) — cas de test inutile");
+            }
+        }
+    }
+
+    /// Sous un angle 3D, le contenu n'est plus dans le rect `s_dst` mais dans un quad : le
+    /// projecteur doit suivre le PLAN, pas la boîte droite. `TiltedQuad::point_px` est la même
+    /// correspondance que le warp du shader, donc y passer est la seule façon d'être sur le pixel
+    /// dessiné. Le test vérifie les deux : le point a bougé par rapport au rect droit, et il est
+    /// exactement là où le quad le place.
+    #[test]
+    fn the_spotlight_follows_a_tilted_zoom_onto_the_plane() {
+        let flat = spotlight_scene(r##""cropByClip":[null]"##, [0.3, 0.4], (1920, 1080), false, "null");
+        let tilted = spotlight_scene(r##""cropByClip":[null]"##, [0.3, 0.4], (1920, 1080), false, r##""left""##);
+        let g_flat = spotlight_plan(&flat);
+        let g_tilt = spotlight_plan(&tilted);
+        let (a, b) = (
+            g_flat.focus.expect("à plat").center,
+            g_tilt.focus.expect("incliné").center,
+        );
+        let quad = g_tilt
+            .screen_tilt([g_tilt.s_dst[2] * 1920.0, g_tilt.s_dst[3] * 1080.0])
+            .expect("un angle fixe donne un quad");
+        let (rx, ry) = quad.point_px(0.3, 0.4);
+        let want = [
+            g_tilt.s_dst[0] + g_tilt.s_dst[2] * 0.5 + rx / 1920.0,
+            g_tilt.s_dst[1] + g_tilt.s_dst[3] * 0.5 + ry / 1080.0,
+        ];
+        println!("à plat {a:?} / incliné {b:?} / quad {want:?}");
+        assert!(
+            (b[0] - want[0]).abs() < 1e-4 && (b[1] - want[1]).abs() < 1e-4,
+            "le projecteur n'est pas passé par le quad : {b:?} vs {want:?}"
+        );
+        assert!(
+            (b[0] - a[0]).abs() > 0.01 || (b[1] - a[1]).abs() > 0.01,
+            "l'angle n'a rien déplacé : le test ne prouve rien ({a:?} vs {b:?})"
+        );
     }
 
     fn framed_plan(scene: &Scene) -> FrameGeometry {

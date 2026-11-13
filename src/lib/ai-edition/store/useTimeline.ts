@@ -13,6 +13,11 @@ import type {
 } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
 import { virtualSpanToSourceSpans } from "@/lib/ai-edition/timeline/region-ventilation";
+import {
+	type ZoomSpotlight,
+	zoomSpotlightDefaults,
+	zoomSpotlightOf,
+} from "@/lib/ai-edition/timeline/zoomSpotlight";
 import { DEFAULT_TEXT_PLATE } from "../annotations/background";
 import { fitTextBox } from "../annotations/placement";
 import { parseCameraMotionRegion } from "../cameraMotion/parse";
@@ -142,6 +147,24 @@ function patchPillById<T extends { id: string; startMs: number; endMs: number }>
 }
 
 /**
+ * The same "every fragment of the pill" rule, for the spotlight: one effect per pill, merged
+ * onto whatever the fragment already carries. `null` is not "patch the effect with null" but
+ * "this zoom has no spotlight", which is a value the schema and the scene both understand.
+ */
+function zoomRangesWithSpotlight(
+	regions: AxcutDocument["zoomRanges"],
+	id: string,
+	next: (
+		current: AxcutDocument["zoomRanges"][number]["focusEffect"],
+	) => Partial<ZoomSpotlight> | null,
+): AxcutDocument["zoomRanges"] {
+	const under = new Set(resolvePillIds(regions, id));
+	return regions.map((region) =>
+		under.has(region.id) ? { ...region, focusEffect: next(region.focusEffect) } : region,
+	);
+}
+
+/**
  * Playhead position at CALL time, read imperatively — deliberately not a
  * subscription.
  *
@@ -199,6 +222,10 @@ export function useTimeline() {
 	// was never written.
 	const zoomFocusRollbackRef = useRef<AxcutDocument | null>(null);
 	const zoomFocusLiveRef = useRef<AxcutDocument | null>(null);
+	// The spotlight's own pair. Separate from the focus point's: the two are edited by
+	// different gestures, and one commit must not mistake the other's live write for its own.
+	const zoomSpotRollbackRef = useRef<AxcutDocument | null>(null);
+	const zoomSpotLiveRef = useRef<AxcutDocument | null>(null);
 	// And the focus drag's last value, which its commit puts back if a zoom write lands over it,
 	// with the write epoch it was made in.
 	const zoomFocusEditRef = useRef<{
@@ -1482,6 +1509,66 @@ export function useTimeline() {
 		}
 	}, [queueZoomWrite, saveDocument]);
 
+	// The spotlight of an APPLIED zoom. Until now only the Smart Zoom pane could set one, on a
+	// suggestion that had not been applied yet — so a zoom already on the timeline could never
+	// be lit, which is the one thing a user does after watching the result.
+	//
+	// Same live/commit split as the focus point above, and for the same reason: a slider drag
+	// fires at pointer frequency, and persisting each frame turned dragging into a stutter.
+	// One live write per move, one save on release, therefore one Ctrl+Z per gesture.
+	const setZoomFocusEffectLive = useCallback(
+		(id: string, patch: Partial<ZoomSpotlight>) => {
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			if (zoomSpotLiveRef.current !== doc) zoomSpotRollbackRef.current = doc;
+			const next: AxcutDocument = {
+				...doc,
+				zoomRanges: zoomRangesWithSpotlight(doc.zoomRanges, id, (current) => ({
+					...zoomSpotlightOf(current),
+					...patch,
+				})),
+			};
+			setDocument(next, { history: false });
+			zoomSpotLiveRef.current = next;
+		},
+		[setDocument],
+	);
+
+	// The commit half. `historyBase` is the document the drag started from, so the whole
+	// gesture is ONE undo step; a failed save puts it back, but only while the dragged
+	// document is still the one on screen (anything else there came from a write that landed,
+	// or from an undo, and is not this commit's to overwrite).
+	const commitZoomFocusEffect = useCallback(async () => {
+		const live = zoomSpotLiveRef.current;
+		const rollback = zoomSpotRollbackRef.current;
+		zoomSpotLiveRef.current = null;
+		zoomSpotRollbackRef.current = null;
+		if (!live || !rollback) return;
+		const outcome = await queueZoomWrite((doc) =>
+			saveDocument(doc, { history: true, historyBase: doc === live ? rollback : undefined }),
+		);
+		if (outcome === false) {
+			useProjectStore.setState((state) =>
+				state.document === live ? { document: rollback, revision: state.revision + 1 } : {},
+			);
+		}
+	}, [queueZoomWrite, saveDocument]);
+
+	// The switch itself: a discrete edit, so it goes straight through the zoom chain and lands
+	// as one undo step. Off writes `null` — the zoom stays, its spotlight does not.
+	const setZoomSpotlight = useCallback(
+		(id: string, on: boolean) =>
+			saveZoomPatch(id, { focusEffect: on ? zoomSpotlightDefaults() : null }),
+		[saveZoomPatch],
+	);
+
+	// "Back to the numbers a suggestion would have produced", not back to zero: a reset that
+	// dimmed nothing would look like the spotlight had been switched off.
+	const resetZoomSpotlight = useCallback(
+		(id: string) => saveZoomPatch(id, { focusEffect: zoomSpotlightDefaults() }),
+		[saveZoomPatch],
+	);
+
 	// A preset level (`ZOOM_DEPTH_SCALES`, 1.25×–5×). It clears any custom scale, which
 	// would otherwise keep overriding the depth: the level picked is the level rendered.
 	const updateZoomDepth = useCallback(
@@ -2420,6 +2507,10 @@ export function useTimeline() {
 		updateZoomSpan,
 		updateZoomFocusLive,
 		commitZoomFocus,
+		setZoomFocusEffectLive,
+		commitZoomFocusEffect,
+		setZoomSpotlight,
+		resetZoomSpotlight,
 		updateZoomDepth,
 		updateZoomCustomScale,
 		updateZoomRotation,

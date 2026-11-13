@@ -73,6 +73,11 @@ import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
 import { coalescedTrimGroups } from "@/lib/ai-edition/timeline/trim-mapping";
+import {
+	hasZoomSpotlight,
+	ZOOM_SPOTLIGHT_LIMITS,
+	zoomSpotlightOf,
+} from "@/lib/ai-edition/timeline/zoomSpotlight";
 import { clampToBound } from "@/lib/projectDefaults";
 import { annotationFootageRect, zoomScaleLimit } from "@/native/sceneDescription";
 import { ColorField } from "../ColorField";
@@ -837,6 +842,13 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 	if (selection.kind === "zoom") {
 		const region = tl.zoomRegions.find((z) => z.id === selection.id);
 		if (!region) return null;
+		// The spotlight this zoom carries, if any. The pane is a form: a zoom without one shows
+		// the shared defaults (`ZOOM_SPOTLIGHT_DEFAULT`, the same numbers the Smart Zoom
+		// suggestions use), and the switch is what turns them into a stored effect.
+		const spot = zoomSpotlightOf(region.focusEffect);
+		const spotOn = hasZoomSpotlight(region.focusEffect);
+		const liveSpot = (patch: Parameters<typeof tl.setZoomFocusEffectLive>[1]) =>
+			tl.setZoomFocusEffectLive(region.id, patch);
 		const cameraLabel = (preset: Rotation3DPreset | "off") =>
 			ts(preset === "off" ? "zoom.camera.off" : `zoom.camera.preset.${preset}`);
 		return (
@@ -924,6 +936,67 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 							onChange={(v) => void tl.updateZoomHideCursor(region.id, v === "hide")}
 						/>,
 					)}
+					{/* The spotlight of THIS zoom. Same switch, same numbers as the Smart Zoom pane:
+					    one setting, two doors. Off writes `null`, so the zoom keeps its span, depth
+					    and focus point and only the pool goes away. */}
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "space-between",
+							gap: 8,
+						}}
+					>
+						<span className={shell.groupLabel}>{ts("cursor.spotlight")}</span>
+						<Toggle
+							checked={spotOn}
+							ariaLabel={ts("cursor.spotlight")}
+							onChange={(next) => void tl.setZoomSpotlight(region.id, next)}
+						/>
+					</div>
+					{spotOn ? (
+						<>
+							<div style={{ display: "grid" }}>
+								<SliderCell
+									label={tt("screenMotion.focus.dimming")}
+									value={Math.round(spot.dimming * 100)}
+									min={ZOOM_SPOTLIGHT_LIMITS.dimmingMin * 100}
+									max={ZOOM_SPOTLIGHT_LIMITS.dimmingMax * 100}
+									step={1}
+									suffix="%"
+									onChange={(next) => liveSpot({ dimming: next / 100 })}
+									onCommit={() => void tl.commitZoomFocusEffect()}
+								/>
+								<SliderCell
+									label={tt("screenMotion.focus.size")}
+									value={Math.round(spot.size * 100)}
+									min={ZOOM_SPOTLIGHT_LIMITS.sizeMin * 100}
+									max={ZOOM_SPOTLIGHT_LIMITS.sizeMax * 100}
+									step={1}
+									suffix="%"
+									onChange={(next) => liveSpot({ size: next / 100 })}
+									onCommit={() => void tl.commitZoomFocusEffect()}
+								/>
+								<SliderCell
+									label={tt("screenMotion.focus.softness")}
+									value={Math.round(spot.softness * 100)}
+									min={ZOOM_SPOTLIGHT_LIMITS.softnessMin * 100}
+									max={ZOOM_SPOTLIGHT_LIMITS.softnessMax * 100}
+									step={1}
+									suffix="%"
+									onChange={(next) => liveSpot({ softness: next / 100 })}
+									onCommit={() => void tl.commitZoomFocusEffect()}
+								/>
+							</div>
+							<button
+								type="button"
+								onClick={() => void tl.resetZoomSpotlight(region.id)}
+								className={PANE_BUTTON}
+							>
+								{tc("actions.resetToDefault")}
+							</button>
+						</>
+					) : null}
 					{autoFocusAll || region.focusMode === "auto" ? (
 						// Auto resamples the focus from cursor telemetry every frame, so there is no fixed
 						// point to reset and no gimbal on the canvas (ZoomFocusOverlay bows out) — the

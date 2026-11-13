@@ -133,6 +133,7 @@ import { removedRawSpans } from "@/lib/ai-edition/timeline/programme-time";
 import { DEFAULT_SHORTCUT_OVERLAY } from "@/lib/ai-edition/timeline/shortcutOverlay";
 import { type StepSuggestion, suggestSteps } from "@/lib/ai-edition/timeline/stepSuggestions";
 import type { AutoZoomSuggestion } from "@/lib/ai-edition/timeline/zoom-suggestions";
+import { ZOOM_SPOTLIGHT_DEFAULT } from "@/lib/ai-edition/timeline/zoomSpotlight";
 import {
 	type AssetTranscriptionView,
 	type TranscriptGateReason,
@@ -3953,13 +3954,19 @@ export function CursorPane() {
 	// Which suggestions the user wants. Kept parallel to `autoZooms` and reset whenever a new
 	// analysis lands, so a stale tick can never apply to a plan it was not made for.
 	const [autoZoomPicked, setAutoZoomPicked] = useState<boolean[]>([]);
-	// Spotlight for the auto-zooms. `dimming = 0.35` is the value the real-MP4 pass landed on:
-	// 0.75 greyed the whole frame and left the subject at 73% brightness.
+	// Spotlight for the auto-zooms. The starting numbers are `ZOOM_SPOTLIGHT_DEFAULT` — the ONE
+	// spec, shared with the Zoom Inspector's own switch, so a suggestion applied with the
+	// spotlight on and a zoom lit afterwards start from the same pool. 0.35 dimming is what the
+	// real-MP4 pass landed on: 0.75 greyed the whole frame and left the subject at 73 %.
 	const [spotlightOn, setSpotlightOn] = useState(false);
-	const [spotlightDimming, setSpotlightDimming] = useState(0.35);
-	const [spotlightSize, setSpotlightSize] = useState(0.3);
+	const [spotlightDimming, setSpotlightDimming] = useState(ZOOM_SPOTLIGHT_DEFAULT.dimming);
+	const [spotlightSize, setSpotlightSize] = useState(ZOOM_SPOTLIGHT_DEFAULT.size);
 	const spotlightConfig = spotlightOn
-		? { size: spotlightSize, softness: 0.25, dimming: spotlightDimming }
+		? {
+				size: spotlightSize,
+				softness: ZOOM_SPOTLIGHT_DEFAULT.softness,
+				dimming: spotlightDimming,
+			}
 		: null;
 
 	// Tutorial steps (V2.8): clicks in, marker suggestions out. Same shape as the zoom plan —
