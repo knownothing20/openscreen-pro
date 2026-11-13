@@ -1,9 +1,9 @@
 import { nativeBridgeClient } from "@/native/client";
 import type { SceneAnnotation, SceneDescription } from "@/native/sceneDescription";
+import { readSpeedRegions } from "../document/timeline";
 import type { AxcutDocument } from "../schema";
 import { getEditorSettings } from "../store/editorSettings";
 import { looksLikeChord, type RecordedShortcut, shortcutCardSpans } from "./shortcutOverlay";
-import { readSpeedRegions } from "../document/timeline";
 
 /**
  * The shortcut overlay, applied to a finished scene.

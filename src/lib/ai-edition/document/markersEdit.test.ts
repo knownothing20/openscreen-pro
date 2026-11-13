@@ -14,7 +14,10 @@ const clip = (id: string, assetId: string, srcStart: number, srcEnd: number, tlS
 	reason: "",
 });
 
-const doc = (markers: Array<{ id: string; assetId?: string; sourceTimeSec: number; label?: string }>, clips: unknown[]) =>
+const doc = (
+	markers: Array<{ id: string; assetId?: string; sourceTimeSec: number; label?: string }>,
+	clips: unknown[],
+) =>
 	({
 		timeline: { clips },
 		markers: markers.map((m, i) => ({
@@ -48,7 +51,10 @@ describe("markerSourceTimeAtRawTime", () => {
 
 describe("moveMarkerToRawTime", () => {
 	it("moves the marker and leaves id, label and createdAt alone", () => {
-		const d = doc([{ id: "m1", assetId: "a1", sourceTimeSec: 1, label: "Open" }], [clip("c1", "a1", 0, 5, 10)]);
+		const d = doc(
+			[{ id: "m1", assetId: "a1", sourceTimeSec: 1, label: "Open" }],
+			[clip("c1", "a1", 0, 5, 10)],
+		);
 		const next = moveMarkerToRawTime(d, "m1", 13);
 		const m = next.markers[0];
 		expect(m.id).toBe("m1");

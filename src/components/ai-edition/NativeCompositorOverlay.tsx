@@ -4,9 +4,9 @@ import { readSpeedRegions } from "@/lib/ai-edition/document/timeline";
 import { noteUiProbeClipSwitch } from "@/lib/ai-edition/perf/uiFrameProbe";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { previewRegionsFor } from "@/lib/ai-edition/timeline/apply-auto-zooms";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { withShortcutOverlay } from "@/lib/ai-edition/timeline/shortcutOverlayScene";
-import { previewRegionsFor } from "@/lib/ai-edition/timeline/apply-auto-zooms";
 import { findActiveSpeedRegion, type SpeedRegion } from "@/lib/ai-edition/timeline/speed";
 import { resolveNativePosition } from "@/lib/ai-edition/timeline/timelineMap";
 import {

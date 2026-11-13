@@ -2058,13 +2058,25 @@ describe("reanchorAcrossCut — a voiceover crossing the cut", () => {
 	};
 
 	it("still covers the whole span, on both sides of the cut", () => {
-		const tracks = reanchorAcrossCut(withAudio(), "clip_a", "clip_tail", BOUNDARY_MS, () => "vo_frag").audioTracks;
+		const tracks = reanchorAcrossCut(
+			withAudio(),
+			"clip_a",
+			"clip_tail",
+			BOUNDARY_MS,
+			() => "vo_frag",
+		).audioTracks;
 		const covered = tracks.reduce((n, t) => n + (t.endMs - t.startMs), 0);
 		expect(covered).toBe(6000);
 	});
 
 	it("keeps the media offsets continuous across the seam", () => {
-		const tracks = reanchorAcrossCut(withAudio(), "clip_a", "clip_tail", BOUNDARY_MS, () => "vo_frag").audioTracks;
+		const tracks = reanchorAcrossCut(
+			withAudio(),
+			"clip_a",
+			"clip_tail",
+			BOUNDARY_MS,
+			() => "vo_frag",
+		).audioTracks;
 		const ordered = [...tracks].sort((a, b) => a.startMs - b.startMs);
 		expect(ordered.length).toBeGreaterThan(1);
 		for (let i = 1; i < ordered.length; i++) {
@@ -2078,9 +2090,13 @@ describe("reanchorAcrossCut — a voiceover crossing the cut", () => {
 	});
 
 	it("keeps a fade only on the outermost fragments", () => {
-		const ordered = reanchorAcrossCut(withAudio(), "clip_a", "clip_tail", BOUNDARY_MS, () => "vo_frag").audioTracks.sort(
-			(a, b) => a.startMs - b.startMs,
-		);
+		const ordered = reanchorAcrossCut(
+			withAudio(),
+			"clip_a",
+			"clip_tail",
+			BOUNDARY_MS,
+			() => "vo_frag",
+		).audioTracks.sort((a, b) => a.startMs - b.startMs);
 		expect(ordered[0].fadeInMs).toBe(300);
 		for (let i = 1; i < ordered.length; i++) expect(ordered[i].fadeInMs).toBe(0);
 		for (let i = 0; i < ordered.length - 1; i++) expect(ordered[i].fadeOutMs).toBe(0);

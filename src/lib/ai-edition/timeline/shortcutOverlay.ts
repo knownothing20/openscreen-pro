@@ -158,10 +158,7 @@ export interface ShortcutCardSpan {
  * A card never spills past its clip's end: if the chord lands in the last second of a clip, the
  * card is cut there rather than bleeding into the next shot.
  */
-import {
-	outputDurationOfRawSpan,
-	type PlaybackSpeedRegion,
-} from "../document/timeline";
+import { outputDurationOfRawSpan, type PlaybackSpeedRegion } from "../document/timeline";
 
 /**
  * How much SOURCE time the card has to cover to stay on screen for `outputSec` of programme.
@@ -185,7 +182,11 @@ export function sourceSpanSecForOutputSec(
 	let lo = outputSec * slowest;
 	let hi = outputSec * fastest;
 	// Bracket first: hi must already produce at least `outputSec` of programme.
-	for (let i = 0; i < 8 && outputDurationOfRawSpan(atSec, atSec + hi, [...speedRegions]) < outputSec; i++) {
+	for (
+		let i = 0;
+		i < 8 && outputDurationOfRawSpan(atSec, atSec + hi, [...speedRegions]) < outputSec;
+		i++
+	) {
 		hi *= 2;
 	}
 	for (let i = 0; i < 60; i++) {

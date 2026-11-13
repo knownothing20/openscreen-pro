@@ -158,8 +158,6 @@ const DECLARED: WritePath[] = [
 	w("src/components/ai-edition/RightPanes.tsx", "writeMarkers", "save", "gesture"),
 	w("src/components/ai-edition/RightPanes.tsx", "writeMarkers", "set", "automatic"),
 
-
-
 	w("src/components/ai-edition/NewEditorShell.tsx", "handleRenameProject", "save", "gesture"),
 	// Ctrl+S / File > Save.
 	w("src/components/ai-edition/NewEditorShell.tsx", "handleSave", "save", "gesture"),

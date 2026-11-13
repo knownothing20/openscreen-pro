@@ -322,7 +322,10 @@ impl Player {
                 feature_level: gpu.feature_level,
                 backend: gpu.backend,
                 // Same physical adapter, so the same descriptor: this is a refcount copy, not a
-                // new device.
+                // new device. Windows-only, because only the Windows `Gpu` carries one — it is
+                // what `Decoder::open` reads to choose D3D11VA, and Metal/Vulkan have no such
+                // field to copy.
+                #[cfg(windows)]
                 adapter: gpu.adapter.clone(),
             },
             webcam_decoder_is_real,
@@ -1303,6 +1306,8 @@ unsafe fn maybe_start_prefetch(
         context: gpu.context.clone(),
         feature_level: gpu.feature_level,
         backend: gpu.backend,
+        // Même raison que dans `Player::open` : le champ n'existe que côté Windows.
+        #[cfg(windows)]
         adapter: gpu.adapter.clone(),
     };
     let (tx, rx) = std::sync::mpsc::channel();

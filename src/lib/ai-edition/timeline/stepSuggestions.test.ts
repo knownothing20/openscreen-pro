@@ -26,11 +26,7 @@ describe("suggestSteps", () => {
 	});
 
 	it("merges clicks in one place inside the gap into a single step", () => {
-		const steps = suggestSteps([
-			click(1000, 100, 100),
-			click(1600, 108, 104),
-			click(2200, 96, 99),
-		]);
+		const steps = suggestSteps([click(1000, 100, 100), click(1600, 108, 104), click(2200, 96, 99)]);
 		expect(steps).toHaveLength(1);
 		expect(steps[0]).toEqual({ startMs: 1000, clicks: 3 });
 	});
@@ -52,12 +48,7 @@ describe("suggestSteps", () => {
 		// Each hop is small; the cumulative move is not. Comparing with the previous click
 		// would call this one place and hide two separate actions.
 		const steps = suggestSteps(
-			[
-				click(1000, 0, 0),
-				click(1400, 200, 150),
-				click(1800, 400, 300),
-				click(2200, 600, 450),
-			],
+			[click(1000, 0, 0), click(1400, 200, 150), click(1800, 400, 300), click(2200, 600, 450)],
 			{ frameWidth: 1920, frameHeight: 1080, regionFraction: 0.28 },
 		);
 		expect(steps.length).toBeGreaterThan(1);

@@ -45,13 +45,9 @@ describe("sourceSpanSecForOutputSec", () => {
 
 describe("shortcutCardSpans with speed regions", () => {
 	it("keeps the card on screen for the set duration of programme at 2x", () => {
-		const spans = shortcutCardSpans(
-			[clip(0, 10)],
-			[event(2500)],
-			ON,
-			"C://take.mp4",
-			[region(0, 10, 2)],
-		);
+		const spans = shortcutCardSpans([clip(0, 10)], [event(2500)], ON, "C://take.mp4", [
+			region(0, 10, 2),
+		]);
 		expect(spans).toHaveLength(1);
 		expect(spans[0].endSec - spans[0].startSec).toBeCloseTo(3.0, 2);
 	});
