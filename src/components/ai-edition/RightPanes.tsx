@@ -4713,6 +4713,9 @@ export function CursorPane() {
 							<button
 								type="button"
 								key={entry.position}
+								className={`${styles.cursorCell} ${
+									shortcutOverlay.position === entry.position ? styles.isActive : ""
+								}`}
 								aria-label={ts(entry.label)}
 								aria-pressed={shortcutOverlay.position === entry.position}
 								disabled={!hasDocument}
@@ -4763,13 +4766,16 @@ export function CursorPane() {
 						{/* Opacity is stored but the text box has no alpha channel yet: no
 						    slider here until it actually changes the picture. */}
 					</div>
-					<button
-						type="button"
-						disabled={!hasDocument}
-						onClick={() => void set({ cursor: { shortcutOverlay: DEFAULT_SHORTCUT_OVERLAY } })}
-					>
-						{ts("cursor.shortcutReset")}
-					</button>
+					<div className={styles.paneActions}>
+						<button
+							type="button"
+							className={`${styles.btn} ${styles.btnSecondary}`}
+							disabled={!hasDocument}
+							onClick={() => void set({ cursor: { shortcutOverlay: DEFAULT_SHORTCUT_OVERLAY } })}
+						>
+							{ts("cursor.shortcutReset")}
+						</button>
+					</div>
 				</>
 			) : null}
 			{/* Smart zoom (V2.8): plan from the recorded clicks, write on demand. Analysis only
@@ -4785,6 +4791,7 @@ export function CursorPane() {
 				</span>
 				<button
 					type="button"
+					className={`${styles.btn} ${styles.btnSecondary}`}
 					disabled={!hasDocument || stepsBusy}
 					onClick={() => void analyzeSteps()}
 				>
@@ -4794,9 +4801,10 @@ export function CursorPane() {
 			{steps && steps.length > 0 ? (
 				<>
 					{steps.map((step, index) => (
-						<div className={styles.paneRow} key={`${step.startMs}-${index}`}>
+						<div className={styles.itemRow} key={`${step.startMs}-${index}`}>
 							<button
 								type="button"
+								className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSmall}`}
 								disabled={!hasDocument}
 								onClick={() => useProjectStore.getState().setCurrentTime(step.startMs / 1000)}
 							>
@@ -4807,15 +4815,20 @@ export function CursorPane() {
 							</span>
 						</div>
 					))}
-					<div className={styles.sliderGrid}>
+					<div className={styles.paneActions}>
 						<button
 							type="button"
+							className={`${styles.btn} ${styles.btnPrimary}`}
 							disabled={!hasDocument || stepsBusy}
 							onClick={() => void applySteps()}
 						>
 							{ts("cursor.stepsApply")}
 						</button>
-						<button type="button" onClick={() => setSteps(null)}>
+						<button
+							type="button"
+							className={`${styles.btn} ${styles.btnSecondary}`}
+							onClick={() => setSteps(null)}
+						>
 							{ts("cursor.stepsClear")}
 						</button>
 					</div>
@@ -4827,7 +4840,7 @@ export function CursorPane() {
 				<>
 					<div className={styles.sectionLabel}>{ts("cursor.appliedSteps")}</div>
 					{appliedMarkers.map((marker, index) => (
-						<div className={styles.paneRow} key={marker.id}>
+						<div className={styles.stepItem} key={marker.id}>
 							{/* The merge button below has always been gated on two picked steps, but
 							    nothing ever picked one: the list offered rename, move and delete only,
 							    so `mergeMarkers` was unreachable from the UI (which is why an
@@ -4846,6 +4859,7 @@ export function CursorPane() {
 							/>
 							<input
 								type="text"
+								className={styles.stepName}
 								defaultValue={marker.label}
 								aria-label={ts("cursor.stepLabel").replace("{n}", String(index + 1))}
 								onBlur={(event) => {
@@ -4860,67 +4874,80 @@ export function CursorPane() {
 									}
 								}}
 							/>
-							<span className={styles.label}>{`${marker.sourceTimeSec.toFixed(1)}s`}</span>
-							<button
-								type="button"
-								disabled={!hasDocument}
-								title={ts("cursor.markerMoveHere")}
-								onClick={() => void moveMarkerToPlayhead(marker.id)}
-							>
-								{ts("cursor.markerMove")}
-							</button>
-							<button
-								type="button"
-								disabled={!hasDocument}
-								onClick={() => void deleteMarker(marker.id)}
-							>
-								{ts("cursor.markerDelete")}
-							</button>
+							<div className={styles.stepMeta}>
+								<span className={styles.stepTime}>{`${marker.sourceTimeSec.toFixed(1)}s`}</span>
+								<button
+									type="button"
+									className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSmall}`}
+									disabled={!hasDocument}
+									title={ts("cursor.markerMoveHere")}
+									onClick={() => void moveMarkerToPlayhead(marker.id)}
+								>
+									{ts("cursor.markerMove")}
+								</button>
+								<button
+									type="button"
+									className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSmall}`}
+									disabled={!hasDocument}
+									onClick={() => void deleteMarker(marker.id)}
+								>
+									{ts("cursor.markerDelete")}
+								</button>
+							</div>
 						</div>
 					))}
 					{pickedMarkers.length >= 2 ? (
-						<button type="button" onClick={() => void mergePickedMarkers()}>
-							{ts("cursor.markerMerge").replace("{count}", String(pickedMarkers.length))}
-						</button>
+						<div className={styles.paneActions}>
+							<button
+								type="button"
+								className={`${styles.btn} ${styles.btnPrimary}`}
+								onClick={() => void mergePickedMarkers()}
+							>
+								{ts("cursor.markerMerge").replace("{count}", String(pickedMarkers.length))}
+							</button>
+						</div>
 					) : null}
 				</>
 			) : null}
 			{/* Spotlight on the auto-zooms. The compositor draws it from the zoom it is already
 			    rendering, so this only decides whether to send the configuration. */}
 			<div className={styles.paneRow}>
-				<label className={styles.label}>
-					<input
-						type="checkbox"
-						checked={spotlightOn}
-						onChange={(event) => setSpotlightOn(event.currentTarget.checked)}
-					/>
-					{ts("cursor.spotlight")}
-				</label>
+				<span className={styles.label}>{ts("cursor.spotlight")}</span>
+				<Toggle
+					ariaLabel={ts("cursor.spotlight")}
+					checked={spotlightOn}
+					disabled={!hasDocument}
+					onChange={setSpotlightOn}
+				/>
 			</div>
 			{spotlightOn ? (
 				<div className={styles.sliderGrid}>
-					<label className={styles.label}>
-						{`${ts("cursor.spotlightDimming")} ${Math.round(spotlightDimming * 100)}%`}
-						<input
-							type="range"
-							min={0.05}
-							max={0.8}
-							step={0.05}
-							value={spotlightDimming}
-							onChange={(event) => setSpotlightDimming(Number(event.currentTarget.value))}
-						/>
-					</label>
-					<label className={styles.label}>
-						{`${ts("cursor.spotlightSize")} ${Math.round(spotlightSize * 100)}%`}
-						<input
-							type="range"
-							min={0.1}
-							max={0.6}
-							step={0.02}
-							value={spotlightSize}
-							onChange={(event) => setSpotlightSize(Number(event.currentTarget.value))}
-						/>
-					</label>
+					{/* The pane's own slider, not a bare `<input type=range>`: the raw one drew a
+					    white rail with no thumb, which is what made this block look unfinished
+					    next to the cursor rows above it. Nothing to persist — the value only
+					    decides what the next suggestion carries — so the commit is a no-op. */}
+					<SliderCell
+						label={ts("cursor.spotlightDimming")}
+						value={Math.round(spotlightDimming * 100)}
+						min={5}
+						max={80}
+						step={1}
+						suffix="%"
+						disabled={!hasDocument}
+						onChange={(next) => setSpotlightDimming(next / 100)}
+						onCommit={() => undefined}
+					/>
+					<SliderCell
+						label={ts("cursor.spotlightSize")}
+						value={Math.round(spotlightSize * 100)}
+						min={10}
+						max={60}
+						step={1}
+						suffix="%"
+						disabled={!hasDocument}
+						onChange={(next) => setSpotlightSize(next / 100)}
+						onCommit={() => undefined}
+					/>
 				</div>
 			) : null}
 			<div className={styles.sectionLabel}>{ts("cursor.smartZoom")}</div>
@@ -4932,6 +4959,7 @@ export function CursorPane() {
 				</span>
 				<button
 					type="button"
+					className={`${styles.btn} ${styles.btnSecondary}`}
 					disabled={!hasDocument || autoZoomBusy}
 					onClick={() => void analyzeAutoZooms()}
 				>
@@ -4943,7 +4971,7 @@ export function CursorPane() {
 			{autoZooms && autoZooms.length > 0 ? (
 				<>
 					{autoZooms.map((suggestion, index) => (
-						<div className={styles.paneRow} key={`${suggestion.span.start}-${index}`}>
+						<div className={styles.itemRow} key={`${suggestion.span.start}-${index}`}>
 							<input
 								type="checkbox"
 								checked={autoZoomPicked[index] !== false}
@@ -4959,6 +4987,7 @@ export function CursorPane() {
 							/>
 							<button
 								type="button"
+								className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSmall}`}
 								disabled={!hasDocument}
 								onClick={() =>
 									useProjectStore.getState().setCurrentTime(suggestion.span.start / 1000)
@@ -4968,6 +4997,7 @@ export function CursorPane() {
 							</button>
 							<button
 								type="button"
+								className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSmall}`}
 								disabled={!hasDocument}
 								onClick={() => previewAutoZoom(suggestion)}
 							>
@@ -4975,9 +5005,12 @@ export function CursorPane() {
 							</button>
 						</div>
 					))}
-					<div className={styles.sliderGrid}>
+					{/* Four actions, two by two: one column per pair keeps them from stacking into a
+					    menu of plain words, and "Apply" keeps the filled weight it earns. */}
+					<div className={styles.paneActions}>
 						<button
 							type="button"
+							className={`${styles.btn} ${styles.btnSecondary}`}
 							disabled={!hasDocument}
 							onClick={() => setAutoZoomPicked(autoZooms.map(() => true))}
 						>
@@ -4985,13 +5018,17 @@ export function CursorPane() {
 						</button>
 						<button
 							type="button"
+							className={`${styles.btn} ${styles.btnSecondary}`}
 							disabled={!hasDocument}
 							onClick={() => setAutoZoomPicked(autoZooms.map(() => false))}
 						>
 							{ts("cursor.smartZoomNone")}
 						</button>
+					</div>
+					<div className={styles.paneActions}>
 						<button
 							type="button"
+							className={`${styles.btn} ${styles.btnPrimary}`}
 							disabled={!hasDocument || autoZoomBusy}
 							onClick={() => void applyAutoZooms()}
 						>
@@ -5002,6 +5039,7 @@ export function CursorPane() {
 						</button>
 						<button
 							type="button"
+							className={`${styles.btn} ${styles.btnSecondary}`}
 							disabled={autoZooms === null}
 							onClick={() => {
 								clearAutoZoomPreview();

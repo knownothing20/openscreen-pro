@@ -1409,6 +1409,61 @@ textarea.control {
 .sliderCell input[type=range]:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ─── cursor style grid ────────────────────────────────────────── */
+/* Two or more buttons side by side, inside the pane inset. The Smart Zoom block's four
+   actions sat in `.sliderGrid`, whose single column stacked them one per line. */
+.paneActions {
+	display: grid;
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(0, 1fr);
+	gap: 8px;
+	padding: 0 var(--sp-4) var(--sp-4);
+}
+/* The same button, short enough to sit on a row that already carries a label and a value. */
+.btnSmall {
+	height: 28px;
+	padding: 0 10px;
+	font: 500 12px/1 var(--font-body);
+}
+/* One proposal: pick it, read when it is, act on it. */
+.itemRow {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 6px 8px;
+	padding: 6px var(--sp-4);
+}
+/* One applied step: the name on its own line, the time and its actions underneath. A single
+   line kept the checkbox, the field and two buttons inside 230 px, which is what made the
+   list read as a rumour of controls rather than a list. */
+.stepItem {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: 6px 8px;
+	padding: 8px var(--sp-4);
+}
+.stepMeta {
+	grid-column: 2;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.stepTime {
+	margin-right: auto;
+	font: 400 12px/1 var(--font-body);
+	color: var(--muted);
+}
+.stepName {
+	min-width: 0;
+	height: 30px;
+	padding: 0 10px;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--border);
+	background: var(--surface-2);
+	color: var(--fg);
+	font: 500 var(--fs-app) var(--font-body);
+}
+.stepName:focus { outline: none; border-color: var(--accent); }
 .cursorGrid {
 	display: grid;
 	grid-template-columns: repeat(5, 1fr);
