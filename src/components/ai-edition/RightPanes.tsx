@@ -4828,6 +4828,22 @@ export function CursorPane() {
 					<div className={styles.sectionLabel}>{ts("cursor.appliedSteps")}</div>
 					{appliedMarkers.map((marker, index) => (
 						<div className={styles.paneRow} key={marker.id}>
+							{/* The merge button below has always been gated on two picked steps, but
+							    nothing ever picked one: the list offered rename, move and delete only,
+							    so `mergeMarkers` was unreachable from the UI (which is why an
+							    acceptance run kept looking for a checkbox and finding none). */}
+							<input
+								type="checkbox"
+								aria-label={`${ts("cursor.appliedSteps")} ${index + 1}`}
+								checked={pickedMarkers.includes(marker.id)}
+								onChange={(event) =>
+									setPickedMarkers((previous) =>
+										event.currentTarget.checked
+											? [...previous, marker.id]
+											: previous.filter((id) => id !== marker.id),
+									)
+								}
+							/>
 							<input
 								type="text"
 								defaultValue={marker.label}

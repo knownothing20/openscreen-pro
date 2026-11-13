@@ -503,6 +503,7 @@ interface Window {
 			canceled?: boolean;
 			error?: string;
 		}>;
+		testProjectPath: () => Promise<string | null>;
 		onMenuNewProject: (callback: () => void) => () => void;
 		onMenuImportVideo: (callback: () => void) => () => void;
 		onMenuLoadProject: (callback: () => void) => () => void;

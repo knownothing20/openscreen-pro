@@ -11,7 +11,7 @@
 // so this is the single render path for the feature.
 
 import { AlertCircle, Circle, Film, FolderOpen, Upload, X } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
@@ -107,6 +107,28 @@ export function EditorEmptyState({
 		} catch {
 			setDropError("load-failed");
 		}
+	}, [openLoadedProject]);
+
+	// Test-only: an acceptance run tells main which project to open, and the editor asks for it
+	// once on mount. Same two steps the drop zone uses — the native load and the very same
+	// `openLoadedProject` — so what the test exercises is the product's own path. Main answers
+	// `null` unless `OPENSCREEN_TEST_PROJECT` is set, so an ordinary launch loads nothing here.
+	useEffect(() => {
+		let cancelled = false;
+		void (async () => {
+			const filePath = await window.electronAPI?.testProjectPath?.();
+			if (!filePath || cancelled) return;
+			const result = await window.electronAPI?.loadProjectFileFromPath?.(filePath);
+			if (cancelled) return;
+			if (!result?.success || !result.project) {
+				setDropError("load-failed");
+				return;
+			}
+			if (!(await openLoadedProject(result.project))) setDropError("load-failed");
+		})();
+		return () => {
+			cancelled = true;
+		};
 	}, [openLoadedProject]);
 
 	const handleDragOver = useCallback((e: React.DragEvent) => {

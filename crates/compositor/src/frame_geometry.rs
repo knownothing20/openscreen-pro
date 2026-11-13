@@ -3783,6 +3783,12 @@ pub fn plan_frame(input: &FrameGeometryInput) -> FrameGeometry {
                     geo.s_dst[1] + local[1] * geo.s_dst[3],
                 ],
             };
+            // Hors du cadre, il n'y a rien à éclairer : dessiner quand même noircit TOUTE la
+            // frame, le trou étant dehors (voir `a_spotlight_whose_target_the_fill_window_does_not_show_is_not_drawn`).
+            let on_screen = (0.0..=1.0).contains(&center[0]) && (0.0..=1.0).contains(&center[1]);
+            if !on_screen {
+                return geo;
+            }
             geo.focus = Some(crate::screen_motion::FocusEffectSample {
                 shape: effect.shape,
                 angle_degrees: effect.angle_degrees.rem_euclid(360.0),
@@ -6893,6 +6899,56 @@ mod tests {
             let w = seen(&g);
             assert!((0.5 * (w[0] + w[2]) - 0.5).abs() < 1e-3, "fenêtre centrée attendue, {w:?}");
         }
+    }
+
+    /// Une cible que la fenêtre de remplissage ne montre pas ne s'éclaire pas.
+    ///
+    /// `screenFollow` fait suivre au cover une fenêtre étroite autour du pointeur. Un zoom dont le
+    /// focus est resté ailleurs vise alors un point que le rendu ne montre pas : le trou du
+    /// projecteur sort du cadre et la frame entière s'assombrit — mesuré sur un vrai export 9:16,
+    /// luminance moyenne 241 → 153, sans le moindre cercle clair. La dégradation retenue est de ne
+    /// rien dessiner : un cercle collé au bord éclairerait un autre contenu que la cible.
+    #[test]
+    fn a_spotlight_whose_target_the_fill_window_does_not_show_is_not_drawn() {
+        let plan = |pointer: (f32, f32), focus: (f32, f32)| {
+            let cfg = crate::config::all().pop().expect("au moins une config");
+            let scene = Scene::from_json(&format!(
+                r##"{{
+                "clips":[{{"screenPath":"/s.mp4","webcamPath":"","sourceStartSec":0,"sourceEndSec":10,"webcamOffsetSec":0,"hasAudio":false}}],
+                "layout":{{"preset":"no-webcam","webcamSize":1,"webcamShape":"rounded","webcamMirror":false,"webcamPosition":null,
+                          "webcamReactiveZoom":false,"screenRect":{{"x":0.1,"y":0.1,"width":0.8,"height":0.8}},
+                          "screenCover":true,"screenFollow":true}},
+                "effects":{{"padding":0.5,"blur":false,"shadow":0.5,"roundnessFrac":0.02,"motionBlur":0}},
+                "background":{{"kind":"color","color":"#1e1e2e"}},
+                "zoomRegions":[{{"clipIndex":0,"startSec":0.0,"endSec":5.0,"scale":1.8,
+                    "focusX":{fx},"focusY":{fy},"rotation":null,
+                    "focusEffect":{{"shape":"radial","size":0.3,"softness":0.25,"dimming":0.35}}}}],
+                "cursor":{{"show":false,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":1,"clipToBounds":false,"theme":"default"}},
+                "cropByClip":[null],
+                "output":{{"width":1080,"height":1920,"fps":60}}
+            }}"##,
+                fx = focus.0,
+                fy = focus.1
+            ))
+            .expect("scène remplie");
+            let mut input = golden_input(&scene, &cfg);
+            input.render_px = [1080.0, 1920.0];
+            input.timeline_t_override = Some(1.5);
+            input.cursor = Some(parked_track(pointer.0, pointer.1));
+            plan_frame(&input)
+        };
+
+        // Le pointeur tient la fenêtre à gauche, le zoom vise à droite : la cible n'est pas montrée.
+        assert!(
+            plan((0.2, 0.5), (0.75, 0.6)).focus.is_none(),
+            "le projecteur est dessiné alors que sa cible est hors de la fenêtre remplie"
+        );
+        // Même zoom, fenêtre à droite : la cible est dans l'image, la lumière est dessinée.
+        let shown = plan((0.7, 0.5), (0.75, 0.6)).focus;
+        assert!(
+            shown.is_some_and(|f| (0.0..=1.0).contains(&f.center[0])),
+            "la cible est visible, le projecteur devrait l'être aussi : {shown:?}"
+        );
     }
 
     /// `slot_scene` à 1,5 s (zoom tenu), pointeur garé en `pointer` (la caméra en orbite le suit).

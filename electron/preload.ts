@@ -465,6 +465,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	loadCurrentProjectFile: () => {
 		return ipcRenderer.invoke("load-current-project-file");
 	},
+	/** Test only: the project an acceptance run asked the editor to load. `null` on every
+	 *  ordinary launch — main answers from `OPENSCREEN_TEST_PROJECT`, which nothing sets. */
+	testProjectPath: () => ipcRenderer.invoke("test-project-path") as Promise<string | null>,
 	onMenuNewProject: (callback: () => void) => {
 		const listener = () => callback();
 		ipcRenderer.on("menu-new-project", listener);
