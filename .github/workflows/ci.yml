@@ -303,6 +303,17 @@ jobs:
           # Fait ECHOUER `cpu_backend_linux.rs` s'il n'obtient pas le backend CPU,
           # au lieu de le sauter en silence comme sur un poste sans lavapipe.
           OPENSCREEN_REQUIRE_CPU_BACKEND: "1"
+          # One test thread at a time. This job runs on lavapipe — a software Vulkan
+          # driver — and the suite died with `SIGSEGV` (signal 11) partway through,
+          # after `seg_visual_renders_the_four_modes_from_a_real_photo`, with no
+          # `failures:` list: the process was killed from inside, not a test asserting.
+          # The same commit compiled to the same test binary passed on one run and
+          # crashed on the next (3 green out of 8 runs), which is the shape of a race
+          # in the driver or in wgpu's device setup rather than a defect in a test.
+          # Serialising is the cheap, honest way to remove that variable: a real defect
+          # still fails, a race in the software GPU stops being one. Measured cost on
+          # this runner: minutes, not tens of minutes.
+          RUST_TEST_THREADS: "1"
         run: |
           cd crates
           cargo test -p openscreen-compositor --lib --tests
