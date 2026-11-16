@@ -63,6 +63,21 @@ D:\OpenScreen-Test\
 
 真实录屏**不许**拷进 `D:\OpenScreen-Test\media\`——那是资产，留在录屏目录，测试工程引用原路径。
 
+### 仓库内 `tmp\` —— 单次验收的产物
+
+`D:\OpenScreen-Test\` 放**跨版本复用**的素材；**单次验收**的产物（导出、截图、探测脚本、
+CI 安装包）放仓库根目录的 `tmp\`，跟仓库同生命周期。`/tmp/` 已在 `.gitignore` 里，不会被提交。
+
+```
+tmp\v28\              V2.8 一次完整验收
+├── ci-artifact\      CI 构建的安装包（发布说明里的 SHA256 就指着它）
+├── out\              验证导出（像素比对用）
+└── *.mjs             造工程 / 测量的脚本
+```
+
+写报告引用这些路径时用 `tmp/v28/...`（相对仓库根），**不要**写 `D:\tmp\...`——绝对路径换台机器
+就失效，还会把本机路径带进公开仓库。
+
 ## 4. 报告里的证据 —— 数字优先，图片限量
 
 报告要的是**结论和数字**（"差 31.54% 像素"），不是把 MP4 塞进仓库。
@@ -76,15 +91,17 @@ D:\OpenScreen-Test\
 | 场景 | 动作 |
 |---|---|
 | 一次打包完成后 | 跑 `npm run artifacts:clean`，按提示删掉上上代 |
-| 一次验收完成后 | 删掉 `D:\OpenScreen-Test\out\` 里的导出，保留 `media/` 里还要复用的素材 |
+| 一次验收完成后 | 删掉 `D:\OpenScreen-Test\out\` 的导出与 `tmp\<版本>\` 里不再需要的产物，保留 `media/` 里还要复用的素材 |
 | 换版本 | 新目录 `release/<new>-<purpose>`，不覆盖旧目录（覆盖就没法回退） |
 | 觉得占地方 | 先看这份文件，再决定删哪一类——**录屏永远最后考虑** |
 
-## 6. 现状（2026-11-12 清理后）
+## 6. 现状（2026-11-16 清理后）
 
 | 位置 | 大小 | 说明 |
 |---|---|---|
 | `%APPDATA%\openscreen\recordings` | 112 MB | 5 段真实录屏，**不动** |
-| `release/` | 26 GB | 待按"留两代"收敛（脚本已就绪） |
-| `dist` + `dist-electron` | 89 MB | 可删可重建 |
-| `%TEMP%\os-v272` | 4 MB | 遗留驱动脚本，下次验收后清 |
+| `crates/thirdparty/ffmpeg-*` | 351 MB | Windows 构建必需的 ffmpeg SDK，**勿删** |
+| `tmp/v28/` | 322 MB | V2.8 单次验收产物，已被 `.gitignore` 忽略，可整目录删 |
+| `dist` + `dist-electron` | 139 MB | 可删可重建（本地跑 Electron 截图依赖它） |
+| `release/` | 0 | 已删：本地包作废，安装包改由 CI 出 |
+| `crates/target`、`.vite-cache`、`test-results` | 0 | 已删，全部可再生 |

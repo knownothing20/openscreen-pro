@@ -136,3 +136,7 @@ workbench/fixtures/
 /aur_ci.pub
 /aur_known_hosts
 tmp_handoff.md
+
+# Espace de travail local : artefacts d'acceptation, exports de preuve et anciens
+# installeurs CI (plusieurs centaines de Mo). Ne quitte jamais cette machine.
+/tmp/
